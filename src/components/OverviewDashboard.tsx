@@ -94,7 +94,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
             {getTimeGreeting()}, {getFirstName()}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Here’s what needs your attention across the chambers.
+            Here’s what needs your attention across the firm workspace.
           </p>
         </div>
 

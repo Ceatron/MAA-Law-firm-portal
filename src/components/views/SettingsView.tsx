@@ -58,7 +58,7 @@ export const SettingsView: React.FC = () => {
           ...prev,
           logoUrl: e.target?.result as string,
         }));
-        showToast('Company logo updated! Click "Save Chambers Settings" to apply across the app.');
+        showToast('Company logo updated! Click "Save Firm Workspace Settings" to apply across the app.');
       }
     };
     reader.readAsDataURL(file);
@@ -140,10 +140,10 @@ export const SettingsView: React.FC = () => {
       <div className="border-b border-[#e2dfd5] pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="font-serif-title text-2xl font-bold text-[#1a1d20]">
-            Chambers & System Preferences
+            Firm Workspace & System Preferences
           </h2>
           <p className="mt-1 text-xs text-stone-600">
-            Configure {settings.firmName} chambers branding, company logo, LSK practicing setup, templates & integrations
+            Configure {settings.firmName} firm workspace branding, company logo, LSK practicing setup, templates & integrations
           </p>
         </div>
 
@@ -244,7 +244,7 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div className="flex items-center space-x-2 font-serif-title font-bold text-stone-900 text-sm">
                 <ImageIcon className="h-4 w-4 text-[#0070ba]" />
-                <span>Chambers Company Logo & Visual Identity</span>
+                <span>Firm Workspace Company Logo & Visual Identity</span>
               </div>
               <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-[#0070ba]">
                 {settings.logoUrl ? 'Custom Logo Active' : 'Default Monogram'}
@@ -340,11 +340,11 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          {/* SECTION 2: Firm Chambers Profile Information */}
+          {/* SECTION 2: Firm Workspace Profile Information */}
           <div className="rounded-xl border border-[#d1d7dc] bg-white p-5 shadow-2xs space-y-4">
             <div className="flex items-center space-x-2 border-b border-stone-100 pb-3 font-serif-title font-bold text-stone-900 text-sm">
               <Building2 className="h-4 w-4 text-[#0070ba]" />
-              <span>Chambers Registration & Contact Information</span>
+              <span>Firm Workspace Registration & Contact Information</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -359,7 +359,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-stone-700 font-bold mb-1">Chambers Motto / Tagline</label>
+                <label className="block text-stone-700 font-bold mb-1">Firm Workspace Motto / Tagline</label>
                 <input
                   type="text"
                   value={settings.tagline}
@@ -389,7 +389,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-stone-700 font-bold mb-1">Physical Chambers Location</label>
+                <label className="block text-stone-700 font-bold mb-1">Physical Firm Workspace Location</label>
                 <input
                   type="text"
                   value={settings.physicalAddress}
@@ -409,7 +409,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-stone-700 font-bold mb-1">Official Chambers Phone</label>
+                <label className="block text-stone-700 font-bold mb-1">Official Firm Workspace Phone</label>
                 <input
                   type="text"
                   value={settings.phone}
@@ -419,7 +419,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-stone-700 font-bold mb-1">Official Chambers Email</label>
+                <label className="block text-stone-700 font-bold mb-1">Official Firm Workspace Email</label>
                 <input
                   type="email"
                   value={settings.email}
@@ -439,7 +439,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-stone-700 font-bold mb-1">Chambers Website</label>
+                <label className="block text-stone-700 font-bold mb-1">Firm Workspace Website</label>
                 <input
                   type="text"
                   value={settings.website}
@@ -464,7 +464,7 @@ export const SettingsView: React.FC = () => {
           <div className="rounded-xl border border-[#d1d7dc] bg-white p-5 shadow-2xs space-y-4">
             <div className="flex items-center space-x-2 border-b border-stone-100 pb-3 font-serif-title font-bold text-stone-900 text-sm">
               <Landmark className="h-4 w-4 text-[#0070ba]" />
-              <span>Chambers Bank & Escrow Accounts (For Fee Notes & Trust Accounts)</span>
+              <span>Firm Workspace Bank & Escrow Accounts (For Fee Notes & Trust Accounts)</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -569,7 +569,7 @@ export const SettingsView: React.FC = () => {
               className="flex items-center space-x-2 rounded-lg bg-[#0070ba] px-6 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#005a96] transition-colors cursor-pointer disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
-              <span>{isSaving ? 'Saving Changes...' : 'Save Chambers Settings'}</span>
+              <span>{isSaving ? 'Saving Changes...' : 'Save Firm Workspace Settings'}</span>
             </button>
           </div>
         </div>

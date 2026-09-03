@@ -43,19 +43,28 @@ import {
   Flame,
   Briefcase,
 } from 'lucide-react';
-import { LegalMatter, TaskItem, Advocate } from '../types';
+import { LegalMatter, TaskItem, Advocate, Client } from '../types';
 import { loadVisibleStaffRoster } from '../utils/staffStorage';
 import { MatterTimeline } from './MatterTimeline';
 import { CaseReportModal } from './CaseReportModal';
 import { VoiceDictationModal } from './VoiceDictationModal';
 import { MatterTagModal, getTagColorClass } from './MatterTagModal';
 import { FiledDocumentsList } from './FiledDocumentsList';
+import { EditMatterModal } from './EditMatterModal';
+import {
+  generateTaskAssignmentEmail,
+  dispatchAssignmentEmail,
+  resolveStaffEmail,
+} from '../utils/assignmentNotificationService';
 
 interface MatterDetailDrawerProps {
   matter: LegalMatter | null;
   onClose: () => void;
   onUpdateStatus: (id: string, newStatus: any) => void;
   onUpdateTags?: (id: string, newTags: string[]) => void;
+  onUpdateMatter?: (updatedMatter: LegalMatter) => void;
+  clients?: Client[];
+  advocates?: Advocate[];
   tasks?: TaskItem[];
   onUpdateTasks?: (tasks: TaskItem[]) => void;
   currentAdvocate?: Advocate;
@@ -66,6 +75,9 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
   onClose,
   onUpdateStatus,
   onUpdateTags,
+  onUpdateMatter,
+  clients = [],
+  advocates = [],
   tasks = [],
   onUpdateTasks,
   currentAdvocate,
@@ -80,8 +92,10 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
   const [showDictationModal, setShowDictationModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [archiveReasonInput, setArchiveReasonInput] = useState('');
   const [archiveToast, setArchiveToast] = useState<string | null>(null);
+  const [editToast, setEditToast] = useState<string | null>(null);
 
   // In-Matter Task Assignment State
   const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
@@ -129,7 +143,7 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
       matterRef: matter.referenceNumber,
       clientName: matter.clientName,
       assignedTo: taskAssignedTo,
-      createdBy: `${currentAdvocate?.name || 'Advocate'} (${currentAdvocate?.title || 'Chambers'})`,
+      createdBy: `${currentAdvocate?.name || 'Advocate'} (${currentAdvocate?.title || 'Firm Workspace'})`,
       priority: mappedPriority as any,
       status: mappedStatus as any,
       startDate: new Date().toISOString().split('T')[0],
@@ -147,12 +161,27 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     if (onUpdateTasks) {
       onUpdateTasks([newTask, ...(tasks || [])]);
     }
+
+    // Automated Email Notification Dispatch
+    try {
+      const emailPayload = generateTaskAssignmentEmail(
+        newTask,
+        advocates,
+        matter,
+        currentAdvocate?.name || 'Firm Workspace Advocate'
+      );
+      dispatchAssignmentEmail(emailPayload);
+    } catch (err) {
+      console.warn('Failed to dispatch task assignment email:', err);
+    }
+
+    const recipient = resolveStaffEmail(taskAssignedTo, advocates);
     setIsAssignTaskModalOpen(false);
     setTaskTitle('');
     setTaskDescription('');
     setTaskSubtasks([]);
-    setTaskToast(`New workload task assigned to ${taskAssignedTo} on matter ${matter.referenceNumber}!`);
-    setTimeout(() => setTaskToast(null), 4000);
+    setTaskToast(`Task assigned & automated email dispatched to ${recipient.name} (${recipient.email})!`);
+    setTimeout(() => setTaskToast(null), 5000);
   };
 
   const handleToggleMatterSubtask = (taskId: string, subtaskId: string) => {
@@ -593,6 +622,16 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
             )}
 
             <button
+              id="drawer-edit-matter-button"
+              onClick={() => setShowEditModal(true)}
+              className="flex items-center space-x-1.5 rounded border border-stone-300 bg-white px-3 py-1 font-bold text-stone-700 hover:bg-stone-50 hover:text-stone-900 transition-colors cursor-pointer shadow-2xs"
+              title="Edit matter details, court dates, financial estimates, and counsel assignment"
+            >
+              <Edit className="h-3.5 w-3.5 text-stone-600" />
+              <span>Edit Matter</span>
+            </button>
+
+            <button
               onClick={() => {
                 setTaskAssignedTo(
                   matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
@@ -645,6 +684,13 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
           <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-xs font-bold text-emerald-900 flex items-center space-x-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
             <span>{taskToast}</span>
+          </div>
+        )}
+
+        {editToast && (
+          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-xs font-bold text-emerald-900 flex items-center space-x-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+            <span>{editToast}</span>
           </div>
         )}
 
@@ -719,7 +765,23 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
           {activeTab === 'overview' && (
             <>
               {/* Key Case Details Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 rounded-lg border border-[#e2dfd5] bg-white p-4">
+              <div className="rounded-lg border border-[#e2dfd5] bg-white p-4">
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#f0eee6]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-stone-800 text-xs">Key Case Details</span>
+                    <span className="text-[10px] text-stone-500 font-mono">({matter.referenceNumber})</span>
+                  </div>
+                  <button
+                    id="overview-edit-details-btn"
+                    type="button"
+                    onClick={() => setShowEditModal(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0B63E5] hover:text-[#0256D0] hover:underline cursor-pointer"
+                  >
+                    <Edit className="h-3 w-3" />
+                    <span>Edit Details</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <div>
                   <span className="text-[10px] text-stone-400 font-semibold tracking-wider">
                     Court Forum & Registry
@@ -782,6 +844,7 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     )}
                   </div>
                 </div>
+              </div>
               </div>
 
               {/* Quick Notes & Call Observations Panel */}
@@ -1250,26 +1313,43 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
 
               {/* Financial Snapshot */}
               <div className="rounded-lg border border-[#e2dfd5] bg-white p-4 space-y-3">
-                <h3 className="font-serif-title font-bold text-stone-900 text-sm">
-                  Fee Note Snapshot (Kenyan Shillings)
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif-title font-bold text-stone-900 text-sm">
+                    Fee Note Snapshot (Kenyan Shillings)
+                  </h3>
+                  {(matter.feeToBeDiscussedLater || !matter.estimatedFeeKES || matter.estimatedFeeKES === 0) && (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Fee TBD Later
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
                     <span className="text-[10px] text-stone-500 font-semibold">Agreed Fee</span>
                     <p className="font-bold text-stone-900 text-sm mt-0.5">
-                      KES {(matter.estimatedFeeKES / 1000000).toFixed(2)}M
+                      {matter.feeToBeDiscussedLater || !matter.estimatedFeeKES || matter.estimatedFeeKES === 0 ? (
+                        <span className="text-amber-800 text-xs font-semibold">To be discussed</span>
+                      ) : matter.estimatedFeeKES >= 1000000 ? (
+                        `KES ${(matter.estimatedFeeKES / 1000000).toFixed(2)}M`
+                      ) : (
+                        `KES ${matter.estimatedFeeKES.toLocaleString()}`
+                      )}
                     </p>
                   </div>
                   <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
                     <span className="text-[10px] text-stone-500 font-semibold">Billed</span>
                     <p className="font-bold text-[#0B63E5] text-sm mt-0.5">
-                      KES {(matter.billedKES / 1000000).toFixed(2)}M
+                      {matter.billedKES >= 1000000
+                        ? `KES ${(matter.billedKES / 1000000).toFixed(2)}M`
+                        : `KES ${(matter.billedKES || 0).toLocaleString()}`}
                     </p>
                   </div>
                   <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
                     <span className="text-[10px] text-stone-500 font-semibold">Paid</span>
                     <p className="font-bold text-emerald-700 text-sm mt-0.5">
-                      KES {(matter.paidKES / 1000000).toFixed(2)}M
+                      {matter.paidKES >= 1000000
+                        ? `KES ${(matter.paidKES / 1000000).toFixed(2)}M`
+                        : `KES ${(matter.paidKES || 0).toLocaleString()}`}
                     </p>
                   </div>
                 </div>
@@ -2528,6 +2608,20 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
             onUpdateTags(matterId, newTags);
           }
         }}
+      />
+
+      {/* Edit Matter Modal */}
+      <EditMatterModal
+        isOpen={showEditModal}
+        matter={matter}
+        onClose={() => setShowEditModal(false)}
+        onSaveMatter={(updated) => {
+          onUpdateMatter?.(updated);
+          setEditToast('Matter details updated successfully');
+          setTimeout(() => setEditToast(null), 3500);
+        }}
+        clients={clients}
+        advocates={advocates}
       />
     </div>
   );

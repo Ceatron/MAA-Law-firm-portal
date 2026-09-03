@@ -8,6 +8,7 @@ interface NotificationsPopoverProps {
   onClose: () => void;
   onMarkAllRead: () => void;
   notifications?: NotificationItem[];
+  onViewEmail?: (payload: any) => void;
 }
 
 export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
@@ -15,6 +16,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
   onClose,
   onMarkAllRead,
   notifications = mockNotifications,
+  onViewEmail,
 }) => {
   if (!isOpen) return null;
 
@@ -63,7 +65,12 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
             </div>
           ) : (
             notifications.map((n) => {
-              const isEmailNotif = n.title.includes('Task Assigned') || n.message.includes('email');
+              const isEmailNotif =
+                n.title.includes('Task Assigned') ||
+                n.title.includes('Matter Assigned') ||
+                n.title.includes('Matter Reassigned') ||
+                n.message.includes('email') ||
+                !!n.emailPayload;
               return (
                 <div
                   key={n.id}
@@ -89,6 +96,22 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                   <p className="mt-1.5 text-stone-600 leading-relaxed text-[11px]">
                     {n.message}
                   </p>
+                  {n.emailPayload && onViewEmail && (
+                    <div className="mt-2.5 pt-2 border-t border-stone-100 flex items-center justify-between">
+                      <span className="text-[10px] text-emerald-700 font-mono font-medium flex items-center gap-1">
+                        <Check className="h-3 w-3" />
+                        <span>Dispatched to {n.recipientEmail || n.emailPayload.toEmail}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onViewEmail(n.emailPayload)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                      >
+                        <Mail className="h-3 w-3" />
+                        <span>View Email</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })

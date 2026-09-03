@@ -14,6 +14,7 @@ import {
   ChevronUp,
   X,
   Plus,
+  Edit,
 } from 'lucide-react';
 import { LegalMatter, MatterStatus, Advocate, MatterPriority } from '../types';
 import { mockAdvocates } from '../data/mockData';
@@ -24,6 +25,7 @@ interface MattersTableProps {
   onSelectMatter: (matter: LegalMatter) => void;
   onOpenNewMatter: () => void;
   onUpdateMatterTags?: (matterId: string, tags: string[]) => void;
+  onEditMatter?: (matter: LegalMatter) => void;
   currentAdvocate?: Advocate;
   isManagingAdvocate?: boolean;
   allAdvocates?: Advocate[];
@@ -36,6 +38,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
   onSelectMatter,
   onOpenNewMatter,
   onUpdateMatterTags,
+  onEditMatter,
   currentAdvocate,
   isManagingAdvocate = true,
   allAdvocates = mockAdvocates,
@@ -551,7 +554,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
                 {matters.length === 0
                   ? isArchivedView
                     ? 'The archived matters register is currently empty.'
-                    : 'The chambers register is empty. Register your first case or dispute file to start tracking it here.'
+                    : 'The firm workspace register is empty. Register your first case or dispute file to start tracking it here.'
                   : 'No matters match your selected filter criteria. Try adjusting or clearing search filters.'}
               </p>
 
@@ -742,17 +745,35 @@ export const MattersTable: React.FC<MattersTableProps> = ({
 
                     {/* Action */}
                     <td className="py-3 px-6 text-right whitespace-nowrap align-middle">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectMatter(matter);
-                        }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 font-semibold transition cursor-pointer shadow-2xs text-[11px]"
-                      >
-                        <span>Open</span>
-                        <ChevronRight className="h-3 w-3 text-slate-400" />
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        {onEditMatter && (
+                          <button
+                            id={`matter-table-edit-${matter.id}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditMatter(matter);
+                            }}
+                            title="Edit matter details"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition cursor-pointer shadow-2xs text-[11px]"
+                          >
+                            <Edit className="h-3 w-3 text-slate-500" />
+                            <span>Edit</span>
+                          </button>
+                        )}
+                        <button
+                          id={`matter-table-open-${matter.id}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectMatter(matter);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 font-semibold transition cursor-pointer shadow-2xs text-[11px]"
+                        >
+                          <span>Open</span>
+                          <ChevronRight className="h-3 w-3 text-slate-400" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

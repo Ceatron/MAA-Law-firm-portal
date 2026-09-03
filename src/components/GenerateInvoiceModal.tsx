@@ -562,7 +562,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                       onChange={(e) => setSelectedMatterId(e.target.value)}
                       className="w-full rounded-md border border-stone-300 bg-white p-2.5 text-xs font-medium text-stone-800 focus:border-[#0098db] focus:ring-1 focus:ring-[#0098db]"
                     >
-                      <option value="">-- General Chambers Legal Retainer / Non-Litigation --</option>
+                      <option value="">-- General Firm Workspace Legal Retainer / Non-Litigation --</option>
                       {matters.map((m) => (
                         <option key={m.id} value={m.id}>
                           [{m.referenceNumber}] {m.clientName} - {m.title}
@@ -751,7 +751,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                     <span>Step 3: Line Items & Standardized Particulars</span>
                   </div>
                   <p className="text-[11px] text-stone-500 mt-0.5">
-                    Select a reusable Fee Note Template from Chambers Settings or add standardized legal services.
+                    Select a reusable Fee Note Template from Firm Workspace Settings or add standardized legal services.
                   </p>
                 </div>
 

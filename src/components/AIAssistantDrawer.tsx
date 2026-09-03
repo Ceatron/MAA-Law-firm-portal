@@ -147,7 +147,7 @@ Ask me to draft court prayers, analyze statutory limitation periods, look up pre
                 Gemini 3.7
               </span>
             </div>
-            <p className="text-[10px] text-[#9cb3c3]">Quick Chambers Co-Pilot</p>
+            <p className="text-[10px] text-[#9cb3c3]">Quick Firm Workspace Co-Pilot</p>
           </div>
         </div>
 

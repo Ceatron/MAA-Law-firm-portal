@@ -331,7 +331,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             <div className="pt-2 border-t border-slate-100">
               <div className="flex items-center space-x-2 text-[10px] font-bold text-slate-400 tracking-wider mb-2">
                 <UserCheck className="h-3.5 w-3.5 text-slate-600" />
-                <span>Chambers Advocates ({matchingAdvocates.length})</span>
+                <span>Firm Workspace Advocates ({matchingAdvocates.length})</span>
               </div>
               <div className="space-y-1">
                 {matchingAdvocates.map((a) => (

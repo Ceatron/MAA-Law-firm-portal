@@ -10,7 +10,7 @@ export const TEMPLATE_VARIABLES: LegalTemplateVariable[] = [
 
   // Matter Variables
   { key: 'matter_title', label: 'Matter Title / Case Name', category: 'Matter', example: 'Safaricom PLC v. Competition Authority of Kenya' },
-  { key: 'matter_ref', label: 'Chambers Ref Number', category: 'Matter', example: 'MAA/HC/COM/2026/0142' },
+  { key: 'matter_ref', label: 'Firm Workspace Ref Number', category: 'Matter', example: 'MAA/HC/COM/2026/0142' },
   { key: 'court_name', label: 'Court / Registry Name', category: 'Matter', example: 'High Court Commercial Div. - Milimani' },
   { key: 'court_case_number', label: 'Court Case / Petition No.', category: 'Matter', example: 'Civil Suit No. E142 of 2026' },
   { key: 'opposing_party', label: 'Opposing Party / Defendant', category: 'Matter', example: 'Competition Authority of Kenya (CAK)' },

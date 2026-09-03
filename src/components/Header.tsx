@@ -102,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'Office Manager',
           badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200',
           ruleDesc:
-            'Office Manager: Full operational oversight over chambers registry, billing fee notes, HRM leave & client services.',
+            'Office Manager: Full operational oversight over firm workspace registry, billing fee notes, HRM leave & client services.',
         };
       case 'Legal Support Clerk':
         return {
@@ -115,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
         return {
           label: role,
           badgeClass: 'text-slate-700 bg-slate-100 border-slate-200',
-          ruleDesc: 'Staff Member: Access to chambers workspace and assigned tasks.',
+          ruleDesc: 'Staff Member: Access to firm workspace and assigned tasks.',
         };
     }
   };
@@ -148,7 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div>
           <p className="text-[11px] font-semibold tracking-[0.16em] text-amber-700">
-            Chambers Workspace
+            Firm Workspace
           </p>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 font-medium">

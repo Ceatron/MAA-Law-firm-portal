@@ -408,7 +408,7 @@ export const AISummarizeModal: React.FC<AISummarizeModalProps> = ({
                   Gemini API is analyzing legal document...
                 </h4>
                 <p className="text-xs text-stone-600 mt-1 max-w-md mx-auto">
-                  Extracting key legal issues, material facts, statutory provisions, and strategic action points for Chambers review.
+                  Extracting key legal issues, material facts, statutory provisions, and strategic action points for Firm Workspace review.
                 </p>
               </div>
             </div>
@@ -461,7 +461,7 @@ export const AISummarizeModal: React.FC<AISummarizeModalProps> = ({
         <div className="flex items-center justify-between border-t border-[#e2dfd5] bg-stone-100 px-6 py-3 shrink-0 text-xs">
           <div className="flex items-center space-x-2 text-stone-500">
             <Sparkles className="h-3.5 w-3.5 text-[#0B63E5]" />
-            <span>Muthoni Ahago Advocates Chambers • Powered by Gemini 3.6 Flash</span>
+            <span>Muthoni Ahago Advocates Firm Workspace • Powered by Gemini 3.6 Flash</span>
           </div>
 
           <button

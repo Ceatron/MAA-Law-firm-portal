@@ -279,7 +279,7 @@ export const CaseLifecycleChart: React.FC<CaseLifecycleChartProps> = ({
           </div>
           <div>
             <span className="text-[10px] text-slate-500 font-semibold block">
-              Chambers Win Rate
+              Firm Workspace Win Rate
             </span>
             <span className="font-serif-title font-bold text-teal-700 text-base">
               {avgChambersSuccessRate}%

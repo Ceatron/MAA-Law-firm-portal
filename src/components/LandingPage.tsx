@@ -341,7 +341,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
                   Welcome back
                 </h1>
                 <p className="text-xs sm:text-sm text-[#5B6D80] mt-1.5 leading-relaxed">
-                  Sign in with your work email and password to access chambers workspace.
+                  Sign in with your work email and password to access firm workspace.
                 </p>
               </div>
 

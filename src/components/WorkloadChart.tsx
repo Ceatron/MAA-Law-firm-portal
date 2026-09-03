@@ -36,7 +36,7 @@ export const WorkloadChart: React.FC<WorkloadChartProps> = ({ advocates }) => {
             </h2>
           </div>
           <p className="mt-0.5 text-xs text-slate-500">
-            Active matter assignment and capacity across Chambers Counsel
+            Active matter assignment and capacity across Firm Workspace Counsel
           </p>
         </div>
       </div>

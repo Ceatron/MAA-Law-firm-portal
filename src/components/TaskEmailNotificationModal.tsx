@@ -14,13 +14,17 @@ import {
   Send,
   ExternalLink,
   ShieldCheck,
+  Scale,
+  FileText,
+  Building,
+  RefreshCw,
 } from 'lucide-react';
-import { TaskEmailPayload } from '../utils/taskNotificationHelper';
+import { AssignmentEmailPayload, dispatchAssignmentEmail } from '../utils/assignmentNotificationService';
 
 interface TaskEmailNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  emailPayload: TaskEmailPayload | null;
+  emailPayload: AssignmentEmailPayload | any | null;
 }
 
 export const TaskEmailNotificationModal: React.FC<TaskEmailNotificationModalProps> = ({
@@ -29,11 +33,15 @@ export const TaskEmailNotificationModal: React.FC<TaskEmailNotificationModalProp
   emailPayload,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   if (!isOpen || !emailPayload) return null;
 
+  const isMatter = emailPayload.type === 'matter_assignment' || !!emailPayload.matterId;
+
   const handleCopy = () => {
-    const fullText = `
+    const fullText = emailPayload.bodyText || `
 Subject: ${emailPayload.subject}
 To: ${emailPayload.toName} <${emailPayload.toEmail}>
 From: ${emailPayload.fromName} <${emailPayload.fromEmail}>
@@ -41,28 +49,25 @@ Date: ${emailPayload.assignedAt}
 
 Dear ${emailPayload.toName},
 
-You have been assigned a new ${emailPayload.priority} priority task in Muthoni Ahago Advocates Chambers Practice Engine.
-
-TASK DETAILS:
-- Action Item: ${emailPayload.taskTitle}
-- Legal Matter: ${emailPayload.matterRef} ${emailPayload.matterTitle ? `(${emailPayload.matterTitle})` : ''}
-- Client: ${emailPayload.clientName}
-- Target Deadline: ${emailPayload.dueDate}
-- Priority: ${emailPayload.priority}
-- Assigned By: ${emailPayload.assignedBy}
-
-INSTRUCTIONS / BRIEF:
-${emailPayload.description}
-
-CHECKLIST / ACTION STEPS:
-${emailPayload.subtasks.map((st, i) => `${i + 1}. [${st.completed ? 'COMPLETED' : 'PENDING'}] ${st.text}`).join('\n')}
-
-Please log in to the Muthoni Ahago Advocates practice portal to update progress, upload draft pleadings, and record billable time.
+${emailPayload.description || ''}
     `.trim();
 
     navigator.clipboard.writeText(fullText);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
+  };
+
+  const handleResend = async () => {
+    setIsResending(true);
+    try {
+      await dispatchAssignmentEmail(emailPayload);
+      setResendSuccess(true);
+      setTimeout(() => setResendSuccess(false), 3000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsResending(false);
+    }
   };
 
   const isHigh =
@@ -73,25 +78,27 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
   const isMedium = emailPayload.priority === 'Medium';
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Email Client Header */}
         <div className="flex items-center justify-between bg-[#0b1f2d] px-6 py-4 text-white">
           <div className="flex items-center space-x-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300">
-              <Mail className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300 shrink-0">
+              {isMatter ? <Scale className="h-5 w-5" /> : <Mail className="h-5 w-5" />}
             </div>
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-heading font-bold text-sm text-white">
-                  Automated Task Assignment Email
+                  {isMatter ? 'Automated Matter Assignment Email' : 'Automated Task Assignment Email'}
                 </h3>
                 <span className="rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono px-2 py-0.2">
                   Dispatched via SMTP
                 </span>
               </div>
               <p className="text-[11px] text-slate-300">
-                Automated legal workload notification sent to assigned advocate
+                {isMatter
+                  ? 'Official case assignment notification delivered to counsel inbox'
+                  : 'Automated legal workload notification sent to assigned advocate'}
               </p>
             </div>
           </div>
@@ -141,7 +148,7 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
           </div>
         </div>
 
-        {/* Email HTML Body Rendering */}
+        {/* Email Body Rendering */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-white text-xs text-slate-800">
           {/* Chambers Letterhead / Email Banner */}
           <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-[#0b1f2d] p-4 text-white flex items-center justify-between">
@@ -150,7 +157,7 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
                 Muthoni Ahago Advocates
               </p>
               <h4 className="font-heading text-sm font-bold text-white mt-0.5">
-                Chambers Workload & Practice Dispatch System
+                {isMatter ? 'Official Case File Registry & Assignment Desk' : 'Chambers Workload & Practice Dispatch System'}
               </h4>
             </div>
             <div className="hidden sm:flex items-center space-x-1 rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-200">
@@ -165,8 +172,18 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
               Dear {emailPayload.toName},
             </p>
             <p className="text-xs text-slate-600 leading-relaxed">
-              This is an automated notification from Chambers Practice Management. A new legal task has been assigned to you by{' '}
-              <span className="font-semibold text-slate-900">{emailPayload.assignedBy}</span>.
+              {isMatter ? (
+                <>
+                  You have been assigned as the counsel on record for matter{' '}
+                  <strong className="text-stone-900 font-mono font-semibold">{emailPayload.matterRef}</strong> by{' '}
+                  <span className="font-semibold text-slate-900">{emailPayload.assignedBy}</span>. The brief has been registered in the chambers practice engine.
+                </>
+              ) : (
+                <>
+                  This is an automated notification from Chambers Practice Management. A new legal task has been assigned to you by{' '}
+                  <span className="font-semibold text-slate-900">{emailPayload.assignedBy}</span>.
+                </>
+              )}
             </p>
           </div>
 
@@ -190,57 +207,110 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
               )}
               <div>
                 <span className="block text-[10px] font-bold uppercase tracking-wider font-mono">
-                  {emailPayload.priority} Priority Workload
+                  {emailPayload.priority || 'Normal'} Priority {isMatter ? 'Matter' : 'Workload'}
                 </span>
-                <span className="text-xs font-bold">{emailPayload.taskTitle}</span>
+                <span className="text-xs font-bold">
+                  {isMatter ? emailPayload.matterTitle || emailPayload.matterRef : emailPayload.taskTitle}
+                </span>
               </div>
             </div>
 
             <div className="text-right shrink-0">
-              <span className="block text-[10px] text-slate-500 font-medium">Target Deadline</span>
-              <span className="font-mono font-bold text-xs">{emailPayload.dueDate}</span>
-            </div>
-          </div>
-
-          {/* Case & Matter Details Box */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-              <span className="font-bold text-slate-700 text-xs">Attached Matter Brief</span>
-              <span className="font-mono font-bold text-amber-800 text-[11px]">
-                {emailPayload.matterRef}
+              <span className="block text-[10px] text-slate-500 font-medium">
+                {isMatter ? 'Next Court Date' : 'Target Deadline'}
+              </span>
+              <span className="font-mono font-bold text-xs">
+                {isMatter ? emailPayload.nextCourtDate || 'Advisory / Non-court' : emailPayload.dueDate}
               </span>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <span className="block text-[10px] text-slate-400 font-semibold">Client / Instructing Party:</span>
-                <span className="font-semibold text-slate-800">{emailPayload.clientName}</span>
-              </div>
-              {emailPayload.matterTitle && (
-                <div>
-                  <span className="block text-[10px] text-slate-400 font-semibold">Matter Description:</span>
-                  <span className="font-medium text-slate-800 line-clamp-1">{emailPayload.matterTitle}</span>
-                </div>
-              )}
-            </div>
           </div>
+
+          {/* Detailed Metadata Box */}
+          {isMatter ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <span className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Case Registry Particulars</span>
+                </span>
+                <span className="font-mono font-bold text-amber-800 text-[11px]">
+                  {emailPayload.matterRef}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Client / Instructing Party:</span>
+                  <span className="font-semibold text-slate-800">{emailPayload.clientName || 'Firm Workspace Client'}</span>
+                </div>
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Opposing / Adverse Party:</span>
+                  <span className="font-medium text-slate-800">{emailPayload.opposingParty || 'N/A (Non-contentious)'}</span>
+                </div>
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Practice Area:</span>
+                  <span className="font-medium text-slate-800">{emailPayload.practiceArea || 'Civil Litigation'}</span>
+                </div>
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Court / Registry:</span>
+                  <span className="font-medium text-slate-800">{emailPayload.courtRegistry || 'Firm Workspace Non-Court File'}</span>
+                </div>
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Agreed Legal Fee:</span>
+                  <span className="font-medium text-slate-800">
+                    {emailPayload.feeToBeDiscussedLater || !emailPayload.estimatedFeeKES
+                      ? 'Fee to be discussed later'
+                      : `KES ${emailPayload.estimatedFeeKES.toLocaleString()}`}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Next Court Purpose:</span>
+                  <span className="font-medium text-slate-800">{emailPayload.courtDatePurpose || 'Advisory / Mention'}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <span className="font-bold text-slate-700 text-xs">Attached Matter Brief</span>
+                <span className="font-mono font-bold text-amber-800 text-[11px]">
+                  {emailPayload.matterRef}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="block text-[10px] text-slate-400 font-semibold">Client / Instructing Party:</span>
+                  <span className="font-semibold text-slate-800">{emailPayload.clientName}</span>
+                </div>
+                {emailPayload.matterTitle && (
+                  <div>
+                    <span className="block text-[10px] text-slate-400 font-semibold">Matter Description:</span>
+                    <span className="font-medium text-slate-800 line-clamp-1">{emailPayload.matterTitle}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Briefing Instructions */}
           <div className="space-y-1.5">
-            <h5 className="font-bold text-slate-800 text-xs">Partner Instructions & Scope:</h5>
-            <div className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs text-slate-700 leading-relaxed">
-              {emailPayload.description || 'No additional instructions provided. Refer to active case file.'}
+            <h5 className="font-bold text-slate-800 text-xs">
+              {isMatter ? 'Case Instructions & Client Brief:' : 'Partner Instructions & Scope:'}
+            </h5>
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+              {emailPayload.description || 'Pleadings and client instructions are registered in the firm workspace portal. Please review the file.'}
             </div>
           </div>
 
-          {/* Subtask Action Steps */}
-          {emailPayload.subtasks && emailPayload.subtasks.length > 0 && (
+          {/* Subtasks (for tasks) or Action Steps (for matters) */}
+          {!isMatter && emailPayload.subtasks && emailPayload.subtasks.length > 0 && (
             <div className="space-y-2">
               <h5 className="font-bold text-slate-800 text-xs">
                 Checklist Steps ({emailPayload.subtasks.length} items):
               </h5>
               <div className="space-y-1 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                {emailPayload.subtasks.map((st, i) => (
+                {emailPayload.subtasks.map((st: any, i: number) => (
                   <div key={st.id || i} className="flex items-center space-x-2 text-xs">
                     <span className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700 shrink-0">
                       {i + 1}
@@ -254,35 +324,61 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
             </div>
           )}
 
+          {isMatter && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3.5 text-xs text-blue-900 space-y-1.5">
+              <h6 className="font-bold flex items-center gap-1.5 text-blue-950">
+                <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+                <span>Next Immediate Steps for Counsel:</span>
+              </h6>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-blue-800">
+                <li>Review all pleadings, client correspondence, and evidence in the case file.</li>
+                <li>Verify conflict search clearance before filing documents.</li>
+                <li>Diarize court mention or hearing dates in the firm workspace calendar.</li>
+              </ul>
+            </div>
+          )}
+
           {/* Footer Signature */}
           <div className="border-t border-slate-200 pt-4 text-[11px] text-slate-500 space-y-1">
             <p className="font-semibold text-slate-700">Muthoni Ahago Advocates & Legal Consultants</p>
-            <p>Upper Hill Chambers, 4th Floor, 2nd Ngong Avenue, Nairobi, Kenya</p>
+            <p>1st Floor, The Triple Two Address, Ruiru • Milimani Law Courts, Nairobi</p>
             <p className="text-[10px] text-slate-400">
-              This automated email alert was generated by the Chambers Legal Management Suite.
+              This automated email notification was dispatched by the Firm Workspace Practice Engine to {emailPayload.toEmail}.
             </p>
           </div>
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="border-t border-slate-200 bg-slate-50 px-6 py-3.5 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-emerald-700">Email Copied to Clipboard</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5 text-slate-500" />
-                <span>Copy Full Email Text</span>
-              </>
-            )}
-          </button>
+        <div className="border-t border-slate-200 bg-slate-50 px-6 py-3.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-emerald-700">Copied to Clipboard</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Copy Raw Email</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={isResending}
+              className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isResending ? 'animate-spin' : ''}`} />
+              <span>{resendSuccess ? 'Dispatched Again!' : isResending ? 'Sending...' : 'Resend Email'}</span>
+            </button>
+          </div>
 
           <button
             type="button"
@@ -296,3 +392,4 @@ Please log in to the Muthoni Ahago Advocates practice portal to update progress,
     </div>
   );
 };
+

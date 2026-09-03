@@ -121,7 +121,7 @@ export const HRMView: React.FC = () => {
     const newReq: LeaveRequest = {
       id: `lvr-${Date.now()}`,
       staffName: leaveStaffName,
-      role: staffList.find((a) => a.name === leaveStaffName)?.title || 'Chambers Staff',
+      role: staffList.find((a) => a.name === leaveStaffName)?.title || 'Firm Workspace Staff',
       leaveType,
       startDate: leaveStartDate,
       endDate: leaveEndDate,
@@ -523,7 +523,7 @@ export const HRMView: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-[#e2dfd5] shadow-2xs">
             <div>
               <h3 className="font-serif font-bold text-stone-900 text-base">
-                Chambers HRM & Annual Leave Utilization Report
+                Firm Workspace HRM & Annual Leave Utilization Report
               </h3>
               <p className="text-xs text-stone-500 mt-0.5">
                 Executive summary of staff leave trends, advocate relief coverage & statutory compliance

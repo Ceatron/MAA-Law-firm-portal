@@ -103,7 +103,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
       category: newCategory,
       content: newContent.trim(),
       postedBy: currentAdvocate?.name || 'Advocate Staff',
-      postedRole: currentAdvocate?.title || 'Chambers Advocate',
+      postedRole: currentAdvocate?.title || 'Firm Workspace Advocate',
       date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       priority: newPriority,
       pinned: newPinned,
@@ -305,7 +305,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
             </h2>
           </div>
           <p className="mt-1 text-xs text-stone-600">
-            Chambers news, official announcements, court vacation & holiday schedules, and team birthdays
+            Firm Workspace news, official announcements, court vacation & holiday schedules, and team birthdays
           </p>
         </div>
 
@@ -313,7 +313,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
           <button
             type="button"
             onClick={handlePrint}
-            title="Print Chambers Notices"
+            title="Print Firm Workspace Notices"
             className="flex items-center space-x-1.5 rounded-md border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 shadow-2xs hover:bg-stone-50 cursor-pointer"
           >
             <Printer className="h-3.5 w-3.5 text-stone-500" />
@@ -339,7 +339,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2 text-amber-800 text-xs font-bold tracking-wider">
                 <Flame className="h-4 w-4 text-amber-600 animate-pulse" />
-                <span>Chambers Highlights & Urgent Notices</span>
+                <span>Firm Workspace Highlights & Urgent Notices</span>
               </div>
               <span className="text-[11px] font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full">
                 {pinnedNotices.length} Pinned
@@ -435,7 +435,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
           </div>
 
           <div className="mt-3 pt-2 border-t border-pink-200/50 flex items-center justify-between text-[10px] text-pink-800 font-semibold">
-            <span>Chambers Welfare Committee</span>
+            <span>Firm Workspace Welfare Committee</span>
             <span>All Staff</span>
           </div>
         </div>
@@ -801,7 +801,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
                 </span>
                 <div>
                   <h3 className="font-serif-title text-lg font-bold text-stone-900">
-                    Post Notice to Chambers Board
+                    Post Notice to Firm Workspace Board
                   </h3>
                   <p className="text-xs text-stone-500">
                     Publish official news, court recess & holiday schedules, or birthday greetings
@@ -866,7 +866,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
                   rows={4}
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="Provide comprehensive details, instructions, event timings, or chambers directives..."
+                  placeholder="Provide comprehensive details, instructions, event timings, or firm workspace directives..."
                   className="w-full rounded-lg border border-stone-300 p-2.5 text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#0098db]/30 focus:border-[#0098db]"
                 />
               </div>
@@ -893,7 +893,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
                     type="text"
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
-                    placeholder="e.g. Executive Boardroom / Main Chambers"
+                    placeholder="e.g. Executive Boardroom / Main Firm Workspace"
                     className="w-full rounded-lg border border-stone-300 p-2 text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#0098db]/30"
                   />
                 </div>

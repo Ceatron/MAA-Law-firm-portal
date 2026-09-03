@@ -229,7 +229,7 @@ export const LoginAuditLogViewer: React.FC<LoginAuditLogViewerProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-serif-title font-bold text-[#0B2540] text-base">
-                  Chambers Login & Authentication Audit Trail
+                  Firm Workspace Login & Authentication Audit Trail
                 </h3>
                 <span className="rounded-full bg-[#0070ba] text-white text-[10px] font-bold px-2.5 py-0.5 tracking-wide">
                   LSK Compliance Enforced
@@ -322,7 +322,7 @@ export const LoginAuditLogViewer: React.FC<LoginAuditLogViewerProps> = ({
           </div>
           <div className="mt-2 flex items-baseline space-x-2">
             <span className="text-2xl font-bold text-[#0B2540]">{stats.uniqueUsers24h}</span>
-            <span className="text-[11px] text-stone-500">Chambers Personnel</span>
+            <span className="text-[11px] text-stone-500">Firm Workspace Personnel</span>
           </div>
         </div>
       </div>
@@ -479,7 +479,7 @@ export const LoginAuditLogViewer: React.FC<LoginAuditLogViewerProps> = ({
               <tr>
                 <th className="py-3 px-4">Timestamp (EAT)</th>
                 <th className="py-3 px-4">User & Identifier</th>
-                <th className="py-3 px-4">Chambers Role</th>
+                <th className="py-3 px-4">Firm Workspace Role</th>
                 <th className="py-3 px-4">Status & Reason</th>
                 <th className="py-3 px-4">Method</th>
                 <th className="py-3 px-4">IP Address & Location</th>
@@ -540,7 +540,7 @@ export const LoginAuditLogViewer: React.FC<LoginAuditLogViewerProps> = ({
                         </div>
                       </td>
 
-                      {/* Chambers Role */}
+                      {/* Firm Workspace Role */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
                           log.userRole?.includes('Managing')

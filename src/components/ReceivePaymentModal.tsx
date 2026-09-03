@@ -231,7 +231,7 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
       paymentMethod: paymentMethod,
       paymentDate: paymentDate,
       notes: notes.trim() || undefined,
-      receivedBy: 'Chambers Invoicing Desk',
+      receivedBy: 'Firm Workspace Invoicing Desk',
       createdAt: new Date().toISOString(),
     };
 

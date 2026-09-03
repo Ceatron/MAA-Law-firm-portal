@@ -89,7 +89,7 @@ export const TemplateManager: React.FC = () => {
   };
 
   const handleResetDefaults = () => {
-    if (window.confirm('Reset all templates to Chambers default system templates? Any unsaved custom templates will be replaced.')) {
+    if (window.confirm('Reset all templates to Firm Workspace default system templates? Any unsaved custom templates will be replaced.')) {
       setTemplates(INITIAL_TEMPLATES);
       showToast('Templates reset to system defaults.');
     }
@@ -227,7 +227,7 @@ export const TemplateManager: React.FC = () => {
             </p>
           </div>
           <div className="rounded-lg bg-stone-50 p-3 border border-stone-200">
-            <span className="text-[10px] text-stone-500 font-semibold">Chambers Custom</span>
+            <span className="text-[10px] text-stone-500 font-semibold">Firm Workspace Custom</span>
             <p className="font-serif-title font-bold text-emerald-700 text-lg mt-0.5">
               {templates.filter((t) => !t.isSystemDefault).length}
             </p>
@@ -420,7 +420,7 @@ export const TemplateManager: React.FC = () => {
       {/* Reset Defaults Action */}
       <div className="flex items-center justify-between border-t border-[#e2dfd5] pt-4 text-xs">
         <span className="text-stone-500">
-          Chambers System Templates are maintained under LSK & Judiciary guidelines.
+          Firm Workspace System Templates are maintained under LSK & Judiciary guidelines.
         </span>
         <button
           onClick={handleResetDefaults}

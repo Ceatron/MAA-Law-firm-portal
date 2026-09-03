@@ -274,7 +274,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
         };
       default:
         return {
-          label: role || 'Chambers Staff',
+          label: role || 'Firm Workspace Staff',
           bg: 'bg-stone-100 text-stone-700 border-stone-200',
           ring: 'ring-stone-300',
           icon: UserCheck,
@@ -340,7 +340,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
             : newRole === 'System Admin'
             ? 'Systems Administrator & Legal Tech Officer'
             : newRole === 'Office Manager'
-            ? 'Office Manager & Head of Chambers Operations'
+            ? 'Office Manager & Head of Firm Workspace Operations'
             : newRole === 'Legal Support Clerk'
             ? 'Registry & Legal Support Clerk'
             : newRole === 'Consultant Advocate'
@@ -414,7 +414,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
 
     const newStaff = addStaffMember({
       name: formData.name.trim(),
-      title: formData.title.trim() || `${formData.role} - Muthoni & Ahago Chambers`,
+      title: formData.title.trim() || `${formData.role} - Muthoni & Ahago Firm Workspace`,
       role: formData.role,
       lskRollNo: formData.lskRollNo.trim() || 'REG/PENDING',
       email: formData.email.trim(),
@@ -493,7 +493,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
       const refreshed = loadVisibleStaffRoster();
       setRoster(refreshed);
       if (onUpdateAdvocates) onUpdateAdvocates(loadStaffRoster());
-      showToast(`User "${deleteCandidate.name}" removed from chambers roster.`);
+      showToast(`User "${deleteCandidate.name}" removed from firm workspace roster.`);
     } else {
       showToast('Failed to remove user account.');
     }
@@ -546,7 +546,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
     }
   };
 
-  // Filter Categories - Chambers Staff Only
+  // Filter Categories - Firm Workspace Staff Only
   const roleCategories = [
     { id: 'all', label: 'All Staff Personnel', count: roster.length },
     {
@@ -634,7 +634,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-stone-600 mt-0.5 max-w-3xl">
-                  You possess authorization to register new chambers personnel, adjust role assignments (Advocates, Clerks, Office Managers), reset portal passwords, and modify practice rate schedules.
+                  You possess authorization to register new firm workspace personnel, adjust role assignments (Advocates, Clerks, Office Managers), reset portal passwords, and modify practice rate schedules.
                 </p>
               </div>
             </div>
@@ -656,7 +656,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
           <div className="flex items-center space-x-2.5">
             <Shield className="h-4 w-4 text-stone-500 shrink-0" />
             <span>
-              Chambers Staff Directory — Log in as <strong>System Admin</strong> or <strong>Managing Advocate</strong> to add users, edit roles, reset passwords, or remove personnel.
+              Firm Workspace Staff Directory — Log in as <strong>System Admin</strong> or <strong>Managing Advocate</strong> to add users, edit roles, reset passwords, or remove personnel.
             </span>
           </div>
         </div>
@@ -712,7 +712,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#e2dfd5] pb-4">
             <div>
               <h2 className="font-serif-title text-2xl font-bold text-[#1a1d20] flex items-center space-x-2">
-                <span>Advocates & Chambers Staff Roster</span>
+                <span>Advocates & Firm Workspace Staff Roster</span>
                 <span className="rounded-full bg-stone-200 text-stone-700 text-xs px-2.5 py-0.5 font-sans font-bold">
                   {roster.length} Total
                 </span>
@@ -1123,7 +1123,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 </div>
                 <div>
                   <h3 className="font-serif-title text-base font-bold text-stone-900">
-                    Register New Chambers Staff / Advocate
+                    Register New Firm Workspace Staff / Advocate
                   </h3>
                   <p className="text-xs text-stone-500">
                     Assign role rights, LSK credentials, African model avatar, and initial login
@@ -1223,7 +1223,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-stone-700 mb-1">Chambers Title</label>
+                  <label className="block font-semibold text-stone-700 mb-1">Firm Workspace Title</label>
                   <input
                     type="text"
                     placeholder="e.g. Associate Advocate (Commercial)"
@@ -1311,7 +1311,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
               {/* Granular Permissions & Role Rights */}
               <div className="border-t border-stone-100 pt-3">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="font-bold text-stone-800">Chambers Access & Administrative Rights</label>
+                  <label className="font-bold text-stone-800">Firm Workspace Access & Administrative Rights</label>
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
@@ -1423,7 +1423,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       }
                       className="rounded border-stone-300 text-[#0070ba] focus:ring-[#0070ba]"
                     />
-                    <span>Export Chambers Reports & Lists</span>
+                    <span>Export Firm Workspace Reports & Lists</span>
                   </label>
                 </div>
               </div>
@@ -1559,7 +1559,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-stone-700 mb-1">Chambers Title</label>
+                  <label className="block font-semibold text-stone-700 mb-1">Firm Workspace Title</label>
                   <input
                     type="text"
                     value={formData.title}
@@ -1755,7 +1755,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       }
                       className="rounded border-stone-300 text-[#0070ba] focus:ring-[#0070ba]"
                     />
-                    <span>Export Chambers Reports & Lists</span>
+                    <span>Export Firm Workspace Reports & Lists</span>
                   </label>
                 </div>
               </div>
@@ -1973,7 +1973,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                   Remove Personnel Account
                 </h3>
                 <p className="text-xs text-stone-500">
-                  Confirm removal from chambers access registry
+                  Confirm removal from firm workspace access registry
                 </p>
               </div>
             </div>

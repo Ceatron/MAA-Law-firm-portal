@@ -434,7 +434,7 @@ export const TaskPerformanceCard: React.FC<TaskPerformanceCardProps> = ({
           {stats.total > 0 ? (
             <span>High-priority turnaround speed leads at <strong>{stats.avgTurnaroundDays} days avg</strong></span>
           ) : (
-            <span>No tasks logged yet in Chambers</span>
+            <span>No tasks logged yet in Firm Workspace</span>
           )}
         </div>
         {onViewTasks && (

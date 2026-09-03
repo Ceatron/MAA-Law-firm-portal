@@ -12,7 +12,17 @@ import { NewMatterModal } from './components/NewMatterModal';
 import { MatterDetailDrawer } from './components/MatterDetailDrawer';
 import { SearchModal } from './components/SearchModal';
 import { NotificationsPopover } from './components/NotificationsPopover';
-import { Briefcase, ShieldAlert, RotateCcw } from 'lucide-react';
+import { TaskEmailNotificationModal } from './components/TaskEmailNotificationModal';
+import { Briefcase, ShieldAlert, RotateCcw, Mail, Check, X as CloseIcon } from 'lucide-react';
+import {
+  AssignmentEmailPayload,
+  generateMatterAssignmentEmail,
+  generateTaskAssignmentEmail,
+  dispatchAssignmentEmail,
+  createMatterAssignmentNotification,
+  createTaskAssignmentNotification,
+  resolveStaffEmail,
+} from './utils/assignmentNotificationService';
 
 import { MattersView } from './components/views/MattersView';
 import { ClientsView } from './components/views/ClientsView';
@@ -231,6 +241,47 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isAIAssistantDrawerOpen, setIsAIAssistantDrawerOpen] = useState<boolean>(false);
 
+  // Automated Email Notification Preview Modal & Live Toast
+  const [selectedEmailPayload, setSelectedEmailPayload] = useState<AssignmentEmailPayload | null>(null);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState<boolean>(false);
+  const [emailToast, setEmailToast] = useState<{
+    id: string;
+    message: string;
+    payload: AssignmentEmailPayload;
+  } | null>(null);
+
+  // Listen for automated email dispatch events across all components
+  useEffect(() => {
+    const handleEmailDispatched = (e: any) => {
+      if (e?.detail?.payload) {
+        const payload: AssignmentEmailPayload = e.detail.payload;
+        const msg =
+          payload.type === 'matter_assignment'
+            ? `Case matter ${payload.matterRef || ''} assigned to ${payload.toName}. Email dispatched to ${payload.toEmail}.`
+            : `Workload task assigned to ${payload.toName}. Email dispatched to ${payload.toEmail}.`;
+        setEmailToast({
+          id: `toast-${Date.now()}`,
+          message: msg,
+          payload,
+        });
+      }
+    };
+
+    window.addEventListener('chambers-email-dispatched', handleEmailDispatched as EventListener);
+    return () => {
+      window.removeEventListener('chambers-email-dispatched', handleEmailDispatched as EventListener);
+    };
+  }, []);
+
+  // Auto-dismiss email toast after 8 seconds
+  useEffect(() => {
+    if (!emailToast) return;
+    const timer = setTimeout(() => {
+      setEmailToast(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [emailToast]);
+
   // Scoped active & archived matters for counts & badges
   const scopedActiveMatters = isManagingAdvocate
     ? matters.filter((m) => m.status !== 'Archived')
@@ -257,12 +308,33 @@ export default function App() {
   // Handlers
   const handleAddMatter = (newMatter: LegalMatter) => {
     setMatters([newMatter, ...matters]);
+
+    // Automated Email Dispatch to assigned advocate
+    try {
+      const emailPayload = generateMatterAssignmentEmail(
+        newMatter,
+        currentAdvocate.name,
+        advocates,
+        false
+      );
+      dispatchAssignmentEmail(emailPayload);
+      const inAppNotif = createMatterAssignmentNotification(
+        newMatter,
+        currentAdvocate.name,
+        advocates,
+        false
+      );
+      setNotifications((prev) => [inAppNotif, ...prev]);
+    } catch (err) {
+      console.warn('Failed to dispatch matter assignment email:', err);
+    }
+
     // Log Activity
     setActivities([
       {
         id: `act-${Date.now()}`,
         type: 'Court Event',
-        title: 'New Matter Registered in Chambers',
+        title: 'New Matter Registered in Firm Workspace',
         description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
         timestamp: 'Just now',
         user: currentAdvocate.name,
@@ -271,6 +343,86 @@ export default function App() {
       },
       ...activities,
     ]);
+  };
+
+  const handleUpdateMatter = (updatedMatter: LegalMatter) => {
+    const prevMatter = matters.find((m) => m.id === updatedMatter.id);
+    const isReassigned =
+      prevMatter &&
+      (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
+        prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
+
+    // If assigned advocate changed, dispatch automated reassignment email
+    if (isReassigned) {
+      try {
+        const emailPayload = generateMatterAssignmentEmail(
+          updatedMatter,
+          currentAdvocate.name,
+          advocates,
+          true
+        );
+        dispatchAssignmentEmail(emailPayload);
+        const inAppNotif = createMatterAssignmentNotification(
+          updatedMatter,
+          currentAdvocate.name,
+          advocates,
+          true
+        );
+        setNotifications((prev) => [inAppNotif, ...prev]);
+      } catch (err) {
+        console.warn('Failed to dispatch matter reassignment email:', err);
+      }
+    }
+
+    setMatters((prev) =>
+      prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m))
+    );
+    if (selectedMatter && selectedMatter.id === updatedMatter.id) {
+      setSelectedMatter(updatedMatter);
+    }
+    // Log Activity
+    setActivities((prev) => [
+      {
+        id: `act-${Date.now()}`,
+        type: 'Status Change',
+        title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
+        description: isReassigned
+          ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
+          : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
+        timestamp: 'Just now',
+        user: currentAdvocate.name,
+        matterId: updatedMatter.id,
+        matterRef: updatedMatter.referenceNumber,
+      },
+      ...prev,
+    ]);
+  };
+
+  const handleAddTask = (newTask: TaskItem) => {
+    setTasks((prev) => [newTask, ...prev]);
+
+    // Automated Email Dispatch to assigned advocate
+    try {
+      const targetMatter = matters.find(
+        (m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef
+      );
+      const emailPayload = generateTaskAssignmentEmail(
+        newTask,
+        advocates,
+        targetMatter,
+        currentAdvocate.name
+      );
+      dispatchAssignmentEmail(emailPayload);
+      const inAppNotif = createTaskAssignmentNotification(
+        newTask,
+        advocates,
+        targetMatter,
+        currentAdvocate.name
+      );
+      setNotifications((prev) => [inAppNotif, ...prev]);
+    } catch (err) {
+      console.warn('Failed to dispatch task assignment email:', err);
+    }
   };
 
   const handleUpdateMatterStatus = (id: string, newStatus: MatterStatus) => {
@@ -362,8 +514,10 @@ export default function App() {
           {activeTab === 'Matters' && (
             <MattersView
               matters={matters}
+              clients={clients}
               onSelectMatter={(m) => setSelectedMatter(m)}
               onOpenNewMatter={() => setIsNewMatterOpen(true)}
+              onUpdateMatter={handleUpdateMatter}
               onUpdateMatterTags={handleUpdateMatterTags}
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
@@ -396,7 +550,7 @@ export default function App() {
               matters={matters}
               onAddClient={(newClient) => setClients((prev) => [newClient, ...prev])}
               onAddMatter={handleAddMatter}
-              onAddTask={(newTask) => setTasks((prev) => [newTask, ...prev])}
+              onAddTask={handleAddTask}
             />
           )}
 
@@ -475,6 +629,9 @@ export default function App() {
         onClose={() => setSelectedMatter(null)}
         onUpdateStatus={handleUpdateMatterStatus}
         onUpdateTags={handleUpdateMatterTags}
+        onUpdateMatter={handleUpdateMatter}
+        clients={clients}
+        advocates={advocates}
         tasks={tasks}
         onUpdateTasks={setTasks}
         currentAdvocate={currentAdvocate}
@@ -491,7 +648,66 @@ export default function App() {
         onClose={() => setIsNotificationsOpen(false)}
         notifications={notifications}
         onMarkAllRead={handleMarkNotificationsRead}
+        onViewEmail={(payload) => {
+          setSelectedEmailPayload(payload);
+          setIsEmailModalOpen(true);
+        }}
       />
+
+      {/* Automated Email Preview Modal (Matters & Tasks) */}
+      <TaskEmailNotificationModal
+        isOpen={isEmailModalOpen}
+        onClose={() => {
+          setIsEmailModalOpen(false);
+          setSelectedEmailPayload(null);
+        }}
+        emailPayload={selectedEmailPayload}
+      />
+
+      {/* Floating Automated Email Dispatched Toast Banner */}
+      {emailToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 right-5 z-70 flex max-w-md items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300">
+            <Mail className="h-5 w-5" />
+          </div>
+          <div className="flex-1 space-y-1 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-100">Automated Email Dispatched</span>
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.2 font-mono text-[10px] text-emerald-300 border border-emerald-500/30">
+                Delivered
+              </span>
+            </div>
+            <p className="line-clamp-2 text-slate-300 text-[11px] leading-relaxed">
+              {emailToast.message}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedEmailPayload(emailToast.payload);
+                setIsEmailModalOpen(true);
+                setEmailToast(null);
+              }}
+              className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-slate-950 hover:bg-amber-300 transition cursor-pointer shadow-xs"
+            >
+              View Email
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmailToast(null)}
+              className="text-slate-400 hover:text-white cursor-pointer p-0.5"
+              aria-label="Close notification"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Wakili AI Floating Side Drawer */}
       <AIAssistantDrawer

@@ -58,7 +58,7 @@ export const CaseReportModal: React.FC<CaseReportModalProps> = ({
     `${matter.clientName} - Legal Department`
   );
   const [advocateName, setAdvocateName] = useState(
-    matter.responsibleAdvocateName || 'Chambers Advocate'
+    matter.responsibleAdvocateName || 'Firm Workspace Advocate'
   );
   const [reportDate] = useState(
     new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -604,7 +604,9 @@ Muthoni Ahago Advocates | Prudential Assurance Bldg, Nairobi
                         Total Agreed Fee Cap
                       </span>
                       <span className="font-serif-title font-bold text-sm text-stone-900">
-                        KES {(matter.estimatedFeeKES || 0).toLocaleString()}
+                        {matter.feeToBeDiscussedLater || !matter.estimatedFeeKES
+                          ? 'To be discussed later'
+                          : `KES ${matter.estimatedFeeKES.toLocaleString()}`}
                       </span>
                     </div>
 

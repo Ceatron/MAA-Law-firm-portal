@@ -97,7 +97,7 @@ export const PaymentReceiptDrawer: React.FC<PaymentReceiptDrawerProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="font-serif-title text-base font-bold text-white">
-                  Chambers Official Payment Receipt
+                  Firm Workspace Official Payment Receipt
                 </h2>
                 <span className="rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 text-[10px] font-bold font-mono">
                   VERIFIED
@@ -259,7 +259,7 @@ export const PaymentReceiptDrawer: React.FC<PaymentReceiptDrawerProps> = ({
               </div>
 
               <div className="text-right">
-                <p className="font-bold text-stone-800">Chambers Stamp:</p>
+                <p className="font-bold text-stone-800">Firm Workspace Stamp:</p>
                 <div className="h-10 flex items-center justify-end">
                   <span className="inline-block rounded-full border-2 border-dashed border-[#0098db]/60 text-[#0098db] px-3 py-1 text-[10px] font-bold uppercase tracking-wider">
                     ★ MUTHONI AHAGO CASH RECEIVED ★

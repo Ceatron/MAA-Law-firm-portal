@@ -261,7 +261,7 @@ export const MatterTagModal: React.FC<MatterTagModalProps> = ({
         <div className="mt-5 space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
             <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-            <span>Popular Chambers Keywords</span>
+            <span>Popular Firm Workspace Keywords</span>
           </div>
           <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
             {PRESET_SUGGESTED_TAGS.map((preset) => {

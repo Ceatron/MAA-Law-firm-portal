@@ -28,6 +28,7 @@ import {
   generateTaskEmailPayload,
   createTaskAssignmentNotification,
   getAdvocateEmailByName,
+  dispatchAssignmentEmail,
   TaskEmailPayload,
 } from '../../utils/taskNotificationHelper';
 import { TaskEmailNotificationModal } from '../TaskEmailNotificationModal';
@@ -257,6 +258,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
     // Dispatch automated Email Notification & In-App notification
     const emailPayload = generateTaskEmailPayload(newTask, staffList, selectedMatter);
+    dispatchAssignmentEmail(emailPayload);
     const inAppNotif = createTaskAssignmentNotification(newTask, staffList);
     
     if (onAddNotification) {

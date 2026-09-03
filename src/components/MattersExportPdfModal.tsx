@@ -49,7 +49,7 @@ export const MattersExportPdfModal: React.FC<MattersExportPdfModalProps> = ({
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
   const [includeFinancials, setIncludeFinancials] = useState(true);
   const [customRemarks, setCustomRemarks] = useState(
-    `Official Chambers status extract prepared for litigation committee review and registry compliance check on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}.`
+    `Official Firm Workspace status extract prepared for litigation committee review and registry compliance check on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}.`
   );
   const [isExporting, setIsExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -263,7 +263,7 @@ export const MattersExportPdfModal: React.FC<MattersExportPdfModalProps> = ({
           {/* Custom Remarks */}
           <div>
             <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-              Chambers Audit Remarks & Instructions (Header Note)
+              Firm Workspace Audit Remarks & Instructions (Header Note)
             </label>
             <textarea
               rows={2}

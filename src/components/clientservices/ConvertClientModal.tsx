@@ -59,7 +59,8 @@ export const ConvertClientModal: React.FC<ConvertClientModalProps> = ({
   const [responsibleAdvocateId, setResponsibleAdvocateId] = useState(
     interaction.assignedStaffId || advocates[0]?.id || 'adv-1'
   );
-  const [estimatedFeeKES, setEstimatedFeeKES] = useState(1500000);
+  const [estimatedFeeKES, setEstimatedFeeKES] = useState<string>('');
+  const [feeToBeDiscussedLater, setFeeToBeDiscussedLater] = useState<boolean>(true);
 
   const handleConvert = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +101,8 @@ export const ConvertClientModal: React.FC<ConvertClientModalProps> = ({
         status: 'Filing Pending',
         nextDeadlineDate: new Date(Date.now() + 86400000 * 7).toISOString().slice(0, 10),
         nextDeadlineDescription: 'Initial Client Brief & Retainer Execution',
-        estimatedFeeKES,
+        estimatedFeeKES: (!feeToBeDiscussedLater && estimatedFeeKES.trim()) ? parseFloat(estimatedFeeKES) || 0 : 0,
+        feeToBeDiscussedLater: feeToBeDiscussedLater || !estimatedFeeKES.trim() || parseFloat(estimatedFeeKES) === 0,
         billedKES: 0,
         paidKES: 0,
         createdDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -304,14 +306,38 @@ export const ConvertClientModal: React.FC<ConvertClientModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-stone-700 mb-1">Estimated Legal Fee (KES)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-stone-700">Estimated Legal Fee (KES)</label>
+                    {feeToBeDiscussedLater && (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                        Fee TBD
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
-                    step="50000"
-                    value={estimatedFeeKES}
-                    onChange={(e) => setEstimatedFeeKES(parseInt(e.target.value) || 0)}
-                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-mono"
+                    step="1000"
+                    min="0"
+                    disabled={feeToBeDiscussedLater}
+                    placeholder={feeToBeDiscussedLater ? 'Fee to be discussed later' : 'e.g. 150000'}
+                    value={feeToBeDiscussedLater ? '' : estimatedFeeKES}
+                    onChange={(e) => setEstimatedFeeKES(e.target.value)}
+                    className={`w-full rounded-lg border border-stone-300 px-3 py-2 text-xs font-mono ${
+                      feeToBeDiscussedLater ? 'bg-stone-100 text-stone-400 cursor-not-allowed italic' : 'bg-white'
+                    }`}
                   />
+                  <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={feeToBeDiscussedLater}
+                      onChange={(e) => {
+                        setFeeToBeDiscussedLater(e.target.checked);
+                        if (e.target.checked) setEstimatedFeeKES('');
+                      }}
+                      className="h-3.5 w-3.5 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
+                    />
+                    <span className="text-[11px] text-stone-600 font-medium">Fee to be discussed later</span>
+                  </label>
                 </div>
 
                 <div className="flex items-center pt-5 text-[11px] text-stone-600">

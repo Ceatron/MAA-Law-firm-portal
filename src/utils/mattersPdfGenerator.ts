@@ -106,7 +106,7 @@ export const generateMattersPdf = (options: MattersPdfExportOptions): jsPDF => {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...textDark);
 
-  const advocateLabel = currentAdvocate ? `${currentAdvocate.name} (${isManagingAdvocate ? 'Managing Advocate' : 'Staff Advocate'})` : 'Chambers Registry';
+  const advocateLabel = currentAdvocate ? `${currentAdvocate.name} (${isManagingAdvocate ? 'Managing Advocate' : 'Staff Advocate'})` : 'Firm Workspace Registry';
   const practiceFilter = filterSummary?.practiceArea || 'All Practice Areas';
   const priorityFilter = filterSummary?.priority || 'All Priorities';
   const statusFilter = filterSummary?.status || 'All Statuses';
@@ -295,7 +295,7 @@ export const generateMattersPdf = (options: MattersPdfExportOptions): jsPDF => {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(...textMuted);
-      const courtText = matter.courtCaseNumber || (titleLines[1] ? titleLines[1] : 'Chambers Advisory');
+      const courtText = matter.courtCaseNumber || (titleLines[1] ? titleLines[1] : 'Firm Workspace Advisory');
       const truncatedCourt = courtText.length > 40 ? courtText.substring(0, 37) + '...' : courtText;
       doc.text(truncatedCourt, curX + 2, currentY + 8.5);
       curX += columns[1].width;

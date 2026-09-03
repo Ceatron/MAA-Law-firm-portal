@@ -2,17 +2,21 @@ import React, { useState } from 'react';
 import {
   LegalMatter,
   Advocate,
+  Client,
 } from '../../types';
 import { loadVisibleStaffRoster } from '../../utils/staffStorage';
 import { MattersTable } from '../MattersTable';
 import { CaseLifecycleChart } from '../CaseLifecycleChart';
 import { WorkloadChart } from '../WorkloadChart';
 import { MattersExportPdfModal } from '../MattersExportPdfModal';
+import { EditMatterModal } from '../EditMatterModal';
 
 interface MattersViewProps {
   matters: LegalMatter[];
+  clients?: Client[];
   onSelectMatter: (matter: LegalMatter) => void;
   onOpenNewMatter: () => void;
+  onUpdateMatter?: (updatedMatter: LegalMatter) => void;
   onUpdateMatterTags?: (matterId: string, tags: string[]) => void;
   currentAdvocate?: Advocate;
   isManagingAdvocate?: boolean;
@@ -21,8 +25,10 @@ interface MattersViewProps {
 
 export const MattersView: React.FC<MattersViewProps> = ({
   matters,
+  clients = [],
   onSelectMatter,
   onOpenNewMatter,
+  onUpdateMatter,
   onUpdateMatterTags,
   currentAdvocate,
   isManagingAdvocate = true,
@@ -30,6 +36,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
 }) => {
   const [mattersSubView, setMattersSubView] = useState<'all' | 'archived' | 'analytics'>('all');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [matterToEdit, setMatterToEdit] = useState<LegalMatter | null>(null);
 
   // Scoped matters based on advocate permissions
   const activeMatters = matters.filter((m) => m.status !== 'Archived');
@@ -44,7 +51,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
             Matters
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            Active files, commercial transactions and registry filings across chambers.
+            Active files, commercial transactions and registry filings across firm workspace.
           </p>
         </div>
 
@@ -115,6 +122,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
           onSelectMatter={onSelectMatter}
           onOpenNewMatter={onOpenNewMatter}
           onUpdateMatterTags={onUpdateMatterTags}
+          onEditMatter={(m) => setMatterToEdit(m)}
           currentAdvocate={currentAdvocate}
           isManagingAdvocate={isManagingAdvocate}
           allAdvocates={allAdvocates}
@@ -129,6 +137,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
             onSelectMatter={onSelectMatter}
             onOpenNewMatter={onOpenNewMatter}
             onUpdateMatterTags={onUpdateMatterTags}
+            onEditMatter={(m) => setMatterToEdit(m)}
             currentAdvocate={currentAdvocate}
             isManagingAdvocate={isManagingAdvocate}
             allAdvocates={allAdvocates}
@@ -147,6 +156,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
             onSelectMatter={onSelectMatter}
             onOpenNewMatter={onOpenNewMatter}
             onUpdateMatterTags={onUpdateMatterTags}
+            onEditMatter={(m) => setMatterToEdit(m)}
             currentAdvocate={currentAdvocate}
             isManagingAdvocate={isManagingAdvocate}
             allAdvocates={allAdvocates}
@@ -162,6 +172,19 @@ export const MattersView: React.FC<MattersViewProps> = ({
         matters={mattersSubView === 'archived' ? archivedMatters : activeMatters}
         currentAdvocate={currentAdvocate}
         isManagingAdvocate={isManagingAdvocate}
+      />
+
+      {/* Edit Matter Modal */}
+      <EditMatterModal
+        isOpen={Boolean(matterToEdit)}
+        matter={matterToEdit}
+        onClose={() => setMatterToEdit(null)}
+        onSaveMatter={(updated) => {
+          onUpdateMatter?.(updated);
+          setMatterToEdit(null);
+        }}
+        clients={clients}
+        advocates={allAdvocates}
       />
     </div>
   );

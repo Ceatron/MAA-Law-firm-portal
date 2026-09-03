@@ -89,6 +89,8 @@ export interface LegalMatter {
   nextCourtDate?: string; // Alias for Next Court Date
   courtDatePurpose?: CourtDatePurpose | string; // Mention, Hearing, Ruling, Judgement, etc.
   estimatedFeeKES: number;
+  feeToBeDiscussedLater?: boolean;
+  feeNotes?: string;
   billedKES: number;
   paidKES: number;
   createdDate: string;
@@ -379,6 +381,8 @@ export interface NotificationItem {
   timestamp: string;
   read: boolean;
   type: 'Court' | 'Billing' | 'Filing' | 'System';
+  emailPayload?: any;
+  recipientEmail?: string;
 }
 
 export type MatterHealthScore = 'Healthy' | 'Attention Required' | 'Critical';
