@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 450" width="100%" height="100%">
+  <!-- Definitions for clean gradient effects if needed -->
+  <defs>
+    <linearGradient id="electricBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0066FF" />
+      <stop offset="100%" stop-color="#0052CC" />
+    </linearGradient>
+    <linearGradient id="navyBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E2368" />
+      <stop offset="100%" stop-color="#141848" />
+    </linearGradient>
+  </defs>
+
+  <!-- MONOGRAM "MA" -->
+  <g transform="translate(100, 20)">
+    <!-- 'M' - Left parallelogram leg -->
+    <path d="M 15,220 L 75,20 L 125,20 L 65,220 Z" fill="url(#electricBlueGrad)" />
+    
+    <!-- 'M' - Right diagonal / V leg -->
+    <path d="M 85,20 L 125,180 L 165,180 L 125,20 Z" fill="url(#electricBlueGrad)" />
+
+    <!-- 'A' - Interlocking diagonal stroke & leg -->
+    <path d="M 115,220 L 175,20 L 225,20 L 285,220 L 235,220 L 210,135 L 170,135 L 155,220 Z" fill="url(#navyBlueGrad)" />
+
+    <!-- 'A' - Inner counter cut / cutout -->
+    <path d="M 178,100 L 202,100 L 190,55 Z" fill="#FFFFFF" />
+  </g>
+
+  <!-- TYPOGRAPHY SECTION -->
+  <!-- "MUTHONI AHAGO" -->
+  <text x="250" y="300" text-anchor="middle" font-family="'Plus Jakarta Sans', 'Arial Black', sans-serif" font-weight="900" font-size="34" letter-spacing="2" fill="#111827">
+    MUTHONI AHAGO
+  </text>
+
+  <!-- "— ADVOCATES —" -->
+  <g transform="translate(0, 340)">
+    <!-- Left horizontal line -->
+    <line x1="50" y1="-7" x2="155" y2="-7" stroke="#1E2368" stroke-width="2" />
+    
+    <!-- ADVOCATES Text -->
+    <text x="250" y="0" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="22" letter-spacing="4" fill="#1E2368">
+      ADVOCATES
+    </text>
+    
+    <!-- Right horizontal line -->
+    <line x1="345" y1="-7" x2="450" y2="-7" stroke="#1E2368" stroke-width="2" />
+  </g>
+
+  <!-- TAGLINE "Exceptional Legal Insight" -->
+  <text x="250" y="395" text-anchor="middle" font-family="'Playfair Display', Georgia, serif" font-style="italic" font-weight="600" font-size="20" fill="#374151">
+    “Exceptional Legal Insight”
+  </text>
+</svg>
