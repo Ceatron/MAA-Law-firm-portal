@@ -13,6 +13,8 @@ import {
   Scale,
   Sparkles,
   KeyRound,
+  Database,
+  Download,
 } from 'lucide-react';
 import { Advocate } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
@@ -28,6 +30,7 @@ interface HeaderProps {
   onSelectAdvocate: (advocate: Advocate) => void;
   onLogout?: () => void;
   advocates?: Advocate[];
+  onOpenBackupModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectAdvocate,
   onLogout,
   advocates = loadVisibleStaffRoster(),
+  onOpenBackupModal,
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -125,7 +129,9 @@ export const Header: React.FC<HeaderProps> = ({
   const isDevAdmin =
     Boolean(currentAdvocate.isDeveloper) ||
     Boolean(currentAdvocate.isSystemAdmin) ||
-    currentAdvocate.id === 'dev-admin';
+    currentAdvocate.id === 'dev-admin' ||
+    currentAdvocate.role === 'System Admin' ||
+    isSysAdminUser(currentAdvocate);
 
   const formattedDate = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
@@ -185,6 +191,22 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-400" />
             <span className="hidden md:inline">Ask Wakili AI</span>
+          </button>
+        )}
+
+        {/* Admin-Only: Export Data Backup Trigger */}
+        {isDevAdmin && onOpenBackupModal && (
+          <button
+            type="button"
+            id="btn-header-export-backup"
+            onClick={onOpenBackupModal}
+            className="flex items-center gap-1.5 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-100 hover:border-amber-400 shadow-2xs cursor-pointer"
+            title="Admin Only: Non-destructive local storage backup export"
+            aria-label="Export Data Backup"
+          >
+            <Database className="h-3.5 w-3.5 text-amber-700" />
+            <span className="hidden sm:inline">Export Data Backup</span>
+            <span className="inline sm:hidden">Backup</span>
           </button>
         )}
 
@@ -309,6 +331,21 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <div className="p-1 border-t border-slate-100 space-y-0.5">
+                    {isDevAdmin && onOpenBackupModal && (
+                      <button
+                        type="button"
+                        id="btn-dropdown-export-backup"
+                        onClick={() => {
+                          setProfileDropdownOpen(false);
+                          onOpenBackupModal();
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition-colors cursor-pointer"
+                      >
+                        <Database className="h-3.5 w-3.5 text-amber-700" />
+                        <span>Export Data Backup (JSON)</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       id="btn-header-change-password"

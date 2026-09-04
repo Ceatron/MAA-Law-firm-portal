@@ -20,24 +20,46 @@ import {
   MapPin,
   Landmark,
   Receipt,
+  Database,
+  Download,
 } from 'lucide-react';
 import { TemplateManager } from '../TemplateManager';
 import { FeeNoteTemplateManager } from '../FeeNoteTemplateManager';
 import { CompanyLogo } from '../CompanyLogo';
 import { LoginAuditLogViewer } from '../LoginAuditLogViewer';
-import { ChambersSettings } from '../../types';
+import { ChambersSettings, Advocate } from '../../types';
+import { isSysAdminUser } from '../../utils/staffStorage';
 import {
   loadChambersSettings,
   saveChambersSettings,
   resetChambersSettings,
 } from '../../utils/settingsStorage';
 
-export const SettingsView: React.FC = () => {
+interface SettingsViewProps {
+  currentAdvocate?: Advocate;
+  isSystemAdmin?: boolean;
+  onOpenBackupModal?: () => void;
+}
+
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  currentAdvocate,
+  isSystemAdmin,
+  onOpenBackupModal,
+}) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security'>('profile');
   const [settings, setSettings] = useState<ChambersSettings>(() => loadChambersSettings());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  const isDevAdmin =
+    Boolean(isSystemAdmin) ||
+    (currentAdvocate &&
+      (Boolean(currentAdvocate.isDeveloper) ||
+        Boolean(currentAdvocate.isSystemAdmin) ||
+        currentAdvocate.id === 'dev-admin' ||
+        currentAdvocate.role === 'System Admin' ||
+        isSysAdminUser(currentAdvocate)));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -148,6 +170,19 @@ export const SettingsView: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+          {isDevAdmin && onOpenBackupModal && (
+            <button
+              type="button"
+              id="btn-settings-header-export-backup"
+              onClick={onOpenBackupModal}
+              className="flex items-center space-x-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-amber-100 hover:border-amber-400 transition-colors cursor-pointer shadow-2xs"
+              title="Admin Only: Non-destructive local storage backup export"
+            >
+              <Database className="h-3.5 w-3.5 text-amber-700" />
+              <span>Export Data Backup</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleReset}
@@ -705,6 +740,41 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Dedicated Admin Data Backup & Local Storage Archive */}
+          {isDevAdmin && onOpenBackupModal && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50/50 p-5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between border-b border-amber-200/80 pb-3">
+                <div className="flex items-center space-x-2 font-serif-title font-bold text-amber-950 text-sm">
+                  <Database className="h-4 w-4 text-amber-700" />
+                  <span>Firm Data Preservation & Backup (Admin Only)</span>
+                </div>
+                <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                  SYSTEM ADMIN
+                </span>
+              </div>
+
+              <p className="text-xs text-amber-900/90 leading-relaxed">
+                Generate an immediate, non-destructive JSON backup of all browser localStorage datasets.
+                This utility is strictly read-only and will not delete, reset, or overwrite any existing firm records.
+              </p>
+
+              <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-[11px] text-amber-800">
+                  <span>Captures matters, clients, tasks, fee notes, documents, staff accounts, client interactions & case notes.</span>
+                </div>
+                <button
+                  type="button"
+                  id="btn-settings-security-export-backup"
+                  onClick={onOpenBackupModal}
+                  className="flex items-center justify-center space-x-2 rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition-colors cursor-pointer"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export Data Backup</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Dedicated Login Audit Trail in Compliance Settings */}
           <div className="pt-2">

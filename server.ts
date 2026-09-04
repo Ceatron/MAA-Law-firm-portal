@@ -2,6 +2,12 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import {
+  sendEmail,
+  getActiveEmailProvider,
+  getDefaultFromAddress,
+  buildFirmBrandedHtml,
+} from "./server/emailService";
 
 async function startServer() {
   const app = express();
@@ -188,7 +194,22 @@ Always format output clearly using Markdown:
     }
   });
 
-  // Automated Email Notification Dispatcher (Matter & Task Assignments)
+  // Status check for transactional email configuration
+  app.get("/api/email-status", (req, res) => {
+    const provider = getActiveEmailProvider();
+    const isConfigured = provider !== "none";
+    return res.json({
+      configured: isConfigured,
+      provider,
+      defaultFrom: getDefaultFromAddress(),
+      supportedProviders: ["resend", "sendgrid", "smtp"],
+      description: isConfigured
+        ? `Real email delivery active via ${provider.toUpperCase()}`
+        : "No transactional email provider configured on server. Set RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials.",
+    });
+  });
+
+  // Automated Email Notification Dispatcher (Real Delivery via Resend / SendGrid / SMTP)
   app.post("/api/send-email", async (req, res) => {
     try {
       const {
@@ -201,45 +222,157 @@ Always format output clearly using Markdown:
         html,
         type = "assignment_notification",
         metadata = {},
+        idempotencyKey,
       } = req.body;
 
       if (!to || !subject) {
         return res.status(400).json({
+          success: false,
+          status: "failed",
           error: "Recipient email address ('to') and 'subject' are required.",
         });
       }
 
-      const messageId = `maa-msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const timestamp = new Date().toISOString();
-
-      console.log(`\n======================================================`);
-      console.log(`📧 [CHAMBERS EMAIL DISPATCHER] Automated Email Dispatched`);
-      console.log(`  Message ID:   ${messageId}`);
-      console.log(`  Type:         ${type.toUpperCase()}`);
-      console.log(`  To:           ${toName ? `"${toName}" <${to}>` : to}`);
-      console.log(`  From:         ${fromName ? `"${fromName}" <${from || 'notifications@muthoniahago.co.ke'}>` : (from || 'notifications@muthoniahago.co.ke')}`);
-      console.log(`  Subject:      ${subject}`);
-      console.log(`  Timestamp:    ${timestamp}`);
-      if (metadata && Object.keys(metadata).length > 0) {
-        console.log(`  Metadata:    `, JSON.stringify(metadata));
+      // Generate HTML with firm styling if raw text provided without HTML
+      let formattedHtml = html;
+      if (!formattedHtml && text) {
+        formattedHtml = buildFirmBrandedHtml({
+          headline: subject,
+          salutation: toName ? `Dear ${toName},` : "Dear Colleague,",
+          leadParagraph: text.replace(/\n\n/g, "<br/><br/>"),
+          notes: metadata?.matterRef
+            ? `Referenced Matter: <strong>${metadata.matterRef}</strong>`
+            : undefined,
+        });
       }
-      console.log(`======================================================\n`);
 
-      return res.json({
-        success: true,
-        messageId,
-        status: "Delivered",
+      console.info(
+        `[Chambers Email Gateway] Initiating delivery -> ${toName ? `"${toName}" <${to}>` : to} | Subject: "${subject}"`
+      );
+
+      const sendResult = await sendEmail({
+        to,
+        toName,
+        from,
+        fromName,
+        subject,
+        text,
+        html: formattedHtml,
+        type,
+        metadata,
+        idempotencyKey,
+      });
+
+      const deliveryMethod =
+        sendResult.provider === "none"
+          ? "Unconfigured Email Gateway"
+          : `Chambers Transactional Gateway (${sendResult.provider.toUpperCase()})`;
+
+      const responsePayload = {
+        success: sendResult.success,
+        messageId: sendResult.providerMessageId || `maa-unconfirmed-${Date.now()}`,
+        providerMessageId: sendResult.providerMessageId,
+        status: sendResult.status,
+        provider: sendResult.provider,
         recipient: to,
         recipientName: toName || to,
         subject,
         type,
-        timestamp,
-        deliveryMethod: "Chambers Automated Mail Gateway (SMTP)",
+        timestamp: sendResult.timestamp,
+        deliveryMethod,
+        error: sendResult.error,
+      };
+
+      if (!sendResult.success) {
+        const httpStatus = sendResult.status === "unconfigured" ? 503 : 502;
+        return res.status(httpStatus).json(responsePayload);
+      }
+
+      return res.json(responsePayload);
+    } catch (err: any) {
+      console.error("[Chambers Email Gateway] Unexpected Dispatcher Error:", err?.message || err);
+      return res.status(500).json({
+        success: false,
+        status: "failed",
+        error: err?.message || "Failed to dispatch email notification.",
+      });
+    }
+  });
+
+  // Admin Diagnostic Test Email Endpoint
+  app.post("/api/send-test-email", async (req, res) => {
+    try {
+      const { testEmail, recipientName = "Chambers Administrator" } = req.body;
+
+      if (!testEmail || !testEmail.includes("@")) {
+        return res.status(400).json({
+          success: false,
+          error: "A valid recipient email address is required for sending a test email.",
+        });
+      }
+
+      const provider = getActiveEmailProvider();
+      if (provider === "none") {
+        return res.status(503).json({
+          success: false,
+          status: "unconfigured",
+          provider: "none",
+          error:
+            "Cannot send test email: No transactional email provider is configured. Please configure RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials in your environment.",
+        });
+      }
+
+      const testTimestamp = new Date().toISOString();
+      const testHtml = buildFirmBrandedHtml({
+        headline: "[TEST] Chambers Email Gateway Verification",
+        subheadline: "Diagnostic test message initiated by authorized administrator",
+        salutation: `Dear ${recipientName},`,
+        leadParagraph:
+          "This is an official automated test email dispatched from the Muthoni Ahago Advocates Chambers Practice Management System to verify real transactional delivery.",
+        detailsTable: [
+          { label: "Active Provider", value: provider.toUpperCase() },
+          { label: "Delivery Environment", value: process.env.NODE_ENV || "production" },
+          { label: "Server Timestamp", value: testTimestamp },
+          { label: "Test Recipient", value: testEmail, isCode: true },
+        ],
+        notes:
+          "If you received this message, the transactional email gateway is operating successfully. No further action is required.",
+      });
+
+      const result = await sendEmail({
+        to: testEmail,
+        toName: recipientName,
+        subject: `[TEST] Muthoni Ahago Advocates - Email Gateway Verification (${provider.toUpperCase()})`,
+        text: `Muthoni Ahago Advocates Diagnostic Test Email.\n\nActive Provider: ${provider.toUpperCase()}\nDispatched: ${testTimestamp}\nRecipient: ${testEmail}\n\nEmail gateway is functioning properly.`,
+        html: testHtml,
+        type: "diagnostic_test",
+        idempotencyKey: `test-${testEmail}-${Date.now()}`,
+      });
+
+      if (!result.success) {
+        return res.status(502).json({
+          success: false,
+          status: result.status,
+          provider: result.provider,
+          error: result.error || "Test email delivery failed.",
+          details: result.details,
+        });
+      }
+
+      return res.json({
+        success: true,
+        status: result.status,
+        provider: result.provider,
+        providerMessageId: result.providerMessageId,
+        recipient: testEmail,
+        timestamp: result.timestamp,
+        message: `Test email successfully submitted to ${provider.toUpperCase()} (ID: ${result.providerMessageId}). Please check your inbox.`,
       });
     } catch (err: any) {
-      console.error("Email Dispatcher Error:", err);
+      console.error("[Email Test] Diagnostic Error:", err?.message || err);
       return res.status(500).json({
-        error: err?.message || "Failed to dispatch email notification.",
+        success: false,
+        error: err?.message || "Failed to execute email gateway diagnostic test.",
       });
     }
   });

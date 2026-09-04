@@ -34,7 +34,10 @@ export const TaskEmailNotificationModal: React.FC<TaskEmailNotificationModalProp
 }) => {
   const [copied, setCopied] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false);
+  const [resendStatus, setResendStatus] = useState<{
+    status: 'submitted' | 'unconfigured' | 'failed' | null;
+    message: string;
+  }>({ status: null, message: '' });
 
   if (!isOpen || !emailPayload) return null;
 
@@ -59,12 +62,32 @@ ${emailPayload.description || ''}
 
   const handleResend = async () => {
     setIsResending(true);
+    setResendStatus({ status: null, message: '' });
     try {
-      await dispatchAssignmentEmail(emailPayload);
-      setResendSuccess(true);
-      setTimeout(() => setResendSuccess(false), 3000);
-    } catch (e) {
-      console.error(e);
+      const res = await dispatchAssignmentEmail(emailPayload);
+      if (res.success && res.status === 'submitted') {
+        setResendStatus({
+          status: 'submitted',
+          message: `Submitted to ${res.provider?.toUpperCase() || 'Provider'} (${res.providerMessageId || res.messageId})`,
+        });
+      } else if (res.status === 'unconfigured') {
+        setResendStatus({
+          status: 'unconfigured',
+          message: 'Provider not configured in server environment (.env).',
+        });
+      } else {
+        setResendStatus({
+          status: 'failed',
+          message: res.error || 'Delivery failed. Check server logs.',
+        });
+      }
+      setTimeout(() => setResendStatus({ status: null, message: '' }), 5000);
+    } catch (e: any) {
+      setResendStatus({
+        status: 'failed',
+        message: e?.message || 'Network error.',
+      });
+      setTimeout(() => setResendStatus({ status: null, message: '' }), 5000);
     } finally {
       setIsResending(false);
     }
@@ -91,13 +114,13 @@ ${emailPayload.description || ''}
                 <h3 className="font-heading font-bold text-sm text-white">
                   {isMatter ? 'Automated Matter Assignment Email' : 'Automated Task Assignment Email'}
                 </h3>
-                <span className="rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono px-2 py-0.2">
-                  Dispatched via SMTP
+                <span className="rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-[10px] font-mono px-2 py-0.2">
+                  Transactional Gateway
                 </span>
               </div>
               <p className="text-[11px] text-slate-300">
                 {isMatter
-                  ? 'Official case assignment notification delivered to counsel inbox'
+                  ? 'Official case assignment notification dispatched to counsel inbox'
                   : 'Automated legal workload notification sent to assigned advocate'}
               </p>
             </div>
@@ -376,9 +399,34 @@ ${emailPayload.description || ''}
               className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs disabled:opacity-60"
             >
               <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isResending ? 'animate-spin' : ''}`} />
-              <span>{resendSuccess ? 'Dispatched Again!' : isResending ? 'Sending...' : 'Resend Email'}</span>
+              <span>
+                {isResending
+                  ? 'Submitting to Provider...'
+                  : resendStatus.status === 'submitted'
+                  ? 'Submitted to Provider!'
+                  : resendStatus.status === 'unconfigured'
+                  ? 'Unconfigured (.env)'
+                  : resendStatus.status === 'failed'
+                  ? 'Failed to Send'
+                  : 'Resend Email'}
+              </span>
             </button>
           </div>
+
+          {resendStatus.message && (
+            <span
+              className={`text-[11px] font-medium truncate max-w-[240px] ${
+                resendStatus.status === 'submitted'
+                  ? 'text-emerald-600'
+                  : resendStatus.status === 'unconfigured'
+                  ? 'text-amber-600'
+                  : 'text-rose-600'
+              }`}
+              title={resendStatus.message}
+            >
+              {resendStatus.message}
+            </span>
+          )}
 
           <button
             type="button"

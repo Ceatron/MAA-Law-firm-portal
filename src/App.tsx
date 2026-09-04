@@ -13,7 +13,8 @@ import { MatterDetailDrawer } from './components/MatterDetailDrawer';
 import { SearchModal } from './components/SearchModal';
 import { NotificationsPopover } from './components/NotificationsPopover';
 import { TaskEmailNotificationModal } from './components/TaskEmailNotificationModal';
-import { Briefcase, ShieldAlert, RotateCcw, Mail, Check, X as CloseIcon } from 'lucide-react';
+import { AdminBackupModal } from './components/AdminBackupModal';
+import { Briefcase, ShieldAlert, RotateCcw, Mail, Check, CheckCircle2, X as CloseIcon } from 'lucide-react';
 import {
   AssignmentEmailPayload,
   generateMatterAssignmentEmail,
@@ -240,6 +241,8 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isAIAssistantDrawerOpen, setIsAIAssistantDrawerOpen] = useState<boolean>(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [backupSuccessToast, setBackupSuccessToast] = useState<string | null>(null);
 
   // Automated Email Notification Preview Modal & Live Toast
   const [selectedEmailPayload, setSelectedEmailPayload] = useState<AssignmentEmailPayload | null>(null);
@@ -281,6 +284,15 @@ export default function App() {
     }, 8000);
     return () => clearTimeout(timer);
   }, [emailToast]);
+
+  // Auto-dismiss backup success toast after 8 seconds
+  useEffect(() => {
+    if (!backupSuccessToast) return;
+    const timer = setTimeout(() => {
+      setBackupSuccessToast(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [backupSuccessToast]);
 
   // Scoped active & archived matters for counts & badges
   const scopedActiveMatters = isManagingAdvocate
@@ -490,6 +502,7 @@ export default function App() {
           currentAdvocate={currentAdvocate}
           onSelectAdvocate={handleSwitchAdvocate}
           onLogout={handleLogout}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
         />
 
         {/* Dynamic Page Content */}
@@ -602,7 +615,13 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'Settings' && <SettingsView />}
+          {activeTab === 'Settings' && (
+            <SettingsView
+              currentAdvocate={currentAdvocate}
+              isSystemAdmin={isSystemAdmin}
+              onOpenBackupModal={() => setIsBackupModalOpen(true)}
+            />
+          )}
 
           {activeTab === 'AIAssistant' && (
             <AIAssistantView
@@ -720,6 +739,41 @@ export default function App() {
           setActiveTab('AIAssistant');
         }}
       />
+
+      {/* Admin-Only Data Backup Modal */}
+      <AdminBackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        currentAdvocate={currentAdvocate}
+        onSuccessNotification={(msg) => setBackupSuccessToast(msg)}
+      />
+
+      {/* Backup Export Success Toast */}
+      {backupSuccessToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-5 z-70 flex max-w-md items-center gap-3 rounded-2xl border border-emerald-500/40 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <div className="flex-1 space-y-0.5 text-xs">
+            <p className="font-bold text-slate-100">Data Backup Exported</p>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              {backupSuccessToast}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBackupSuccessToast(null)}
+            className="text-slate-400 hover:text-white cursor-pointer p-1"
+            aria-label="Close notification"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </aside>
+      )}
     </div>
   );
 }

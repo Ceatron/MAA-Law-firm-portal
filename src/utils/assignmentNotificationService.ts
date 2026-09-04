@@ -308,12 +308,23 @@ The Triple Two Address, 1st Floor, Ruiru • Milimani Law Courts
   };
 }
 
+export interface DispatchEmailResult {
+  success: boolean;
+  status: 'submitted' | 'failed' | 'unconfigured';
+  messageId: string;
+  providerMessageId?: string;
+  provider?: string;
+  recipient: string;
+  timestamp: string;
+  error?: string;
+}
+
 /**
  * Dispatches an automated assignment email to the server endpoint and records in the chambers outbound log.
  */
 export async function dispatchAssignmentEmail(
   payload: AssignmentEmailPayload
-): Promise<{ success: boolean; messageId: string; recipient: string; timestamp: string }> {
+): Promise<DispatchEmailResult> {
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
@@ -327,6 +338,7 @@ export async function dispatchAssignmentEmail(
         fromName: payload.fromName,
         subject: payload.subject,
         text: payload.bodyText,
+        html: payload.bodyHtml,
         type: payload.type,
         metadata: {
           matterRef: payload.matterRef,
@@ -338,19 +350,26 @@ export async function dispatchAssignmentEmail(
     });
 
     let resData: any = {};
-    if (response.ok) {
+    try {
       resData = await response.json();
+    } catch {
+      resData = {};
     }
 
-    const messageId = resData.messageId || `maa-local-${Date.now()}`;
+    const isSuccess = response.ok && resData.success === true;
+    const deliveryStatus: 'submitted' | 'failed' | 'unconfigured' =
+      resData.status || (isSuccess ? 'submitted' : response.status === 503 ? 'unconfigured' : 'failed');
+    const messageId = resData.providerMessageId || resData.messageId || `maa-unconfirmed-${Date.now()}`;
     const timestamp = resData.timestamp || new Date().toISOString();
 
-    // Store in Outbound Chambers Email Dispatch Log (persistent)
+    // Store in Outbound Chambers Email Dispatch Log (persistent with real status)
     try {
       const storedLogs = JSON.parse(localStorage.getItem('chambers_outbound_emails') || '[]');
       const updatedLogs = [
         {
           messageId,
+          providerMessageId: resData.providerMessageId,
+          provider: resData.provider || 'unknown',
           timestamp,
           toEmail: payload.toEmail,
           toName: payload.toName,
@@ -358,7 +377,8 @@ export async function dispatchAssignmentEmail(
           type: payload.type,
           matterRef: payload.matterRef,
           taskTitle: payload.taskTitle,
-          status: 'Delivered',
+          status: deliveryStatus,
+          error: resData.error,
         },
         ...storedLogs,
       ].slice(0, 100);
@@ -373,24 +393,120 @@ export async function dispatchAssignmentEmail(
         detail: {
           payload,
           messageId,
+          providerMessageId: resData.providerMessageId,
+          provider: resData.provider,
+          status: deliveryStatus,
           timestamp,
+          error: resData.error,
         },
       })
     );
 
     return {
-      success: true,
+      success: isSuccess,
+      status: deliveryStatus,
       messageId,
+      providerMessageId: resData.providerMessageId,
+      provider: resData.provider,
       recipient: payload.toEmail,
       timestamp,
+      error: resData.error,
     };
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Error sending assignment email via /api/send-email:', err);
+    const timestamp = new Date().toISOString();
+    const errorMsg = err?.message || 'Network failure communicating with email gateway';
+
+    try {
+      const storedLogs = JSON.parse(localStorage.getItem('chambers_outbound_emails') || '[]');
+      const updatedLogs = [
+        {
+          messageId: `err-${Date.now()}`,
+          timestamp,
+          toEmail: payload.toEmail,
+          toName: payload.toName,
+          subject: payload.subject,
+          type: payload.type,
+          matterRef: payload.matterRef,
+          taskTitle: payload.taskTitle,
+          status: 'failed',
+          error: errorMsg,
+        },
+        ...storedLogs,
+      ].slice(0, 100);
+      localStorage.setItem('chambers_outbound_emails', JSON.stringify(updatedLogs));
+    } catch (e) {
+      console.warn('Failed to record error in outbound email log:', e);
+    }
+
     return {
-      success: true,
-      messageId: `maa-fallback-${Date.now()}`,
+      success: false,
+      status: 'failed',
+      messageId: `err-${Date.now()}`,
       recipient: payload.toEmail,
+      timestamp,
+      error: errorMsg,
+    };
+  }
+}
+
+/**
+ * Dispatches an automated password reset email to a staff member via the real email gateway
+ */
+export async function dispatchPasswordResetEmail(
+  toEmail: string,
+  toName: string,
+  tempPassword?: string,
+  customText?: string
+): Promise<DispatchEmailResult> {
+  const subject = 'Password Reset - Muthoni Ahago Advocates Portal Credentials';
+  const textBody =
+    customText ||
+    `Dear ${toName},\n\nYour portal login credentials for the Muthoni Ahago Advocates Practice System have been reset.\n\n${
+      tempPassword ? `Temporary Password: ${tempPassword}\n\n` : ''
+    }Please sign in using your work email address (${toEmail}).\n\nSecurity Notice: If you did not request this password reset, please contact chambers administration immediately.\n\nBest regards,\nMuthoni Ahago Advocates IT & Security Administration`;
+
+  try {
+    const response = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: toEmail,
+        toName,
+        subject,
+        text: textBody,
+        type: 'password_reset',
+        metadata: {
+          action: 'password_reset',
+        },
+      }),
+    });
+
+    const resData = await response.json().catch(() => ({}));
+    const isSuccess = response.ok && resData.success === true;
+    const deliveryStatus: 'submitted' | 'failed' | 'unconfigured' =
+      resData.status || (isSuccess ? 'submitted' : response.status === 503 ? 'unconfigured' : 'failed');
+
+    return {
+      success: isSuccess,
+      status: deliveryStatus,
+      messageId: resData.providerMessageId || resData.messageId || `pwd-reset-${Date.now()}`,
+      providerMessageId: resData.providerMessageId,
+      provider: resData.provider,
+      recipient: toEmail,
+      timestamp: resData.timestamp || new Date().toISOString(),
+      error: resData.error,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      status: 'failed',
+      messageId: `pwd-err-${Date.now()}`,
+      recipient: toEmail,
       timestamp: new Date().toISOString(),
+      error: err?.message || 'Network error reaching email gateway',
     };
   }
 }
