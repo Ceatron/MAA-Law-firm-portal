@@ -19,6 +19,7 @@ import {
 import { LegalMatter, MatterStatus, Advocate, MatterPriority } from '../types';
 import { mockAdvocates } from '../data/mockData';
 import { MatterTagModal, getTagColorClass } from './MatterTagModal';
+import { isMatterVisibleToUser, canUserViewAll } from '../utils/visibilityRules';
 
 interface MattersTableProps {
   matters: LegalMatter[];
@@ -73,17 +74,12 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     { label: 'Intellectual Property', value: 'Intellectual Property' },
   ];
 
-  // Base matters based on role permission
-  const scopedMatters = isManagingAdvocate
+  // Base matters based on role permission (Managing Advocate & System Admin see ALL matters)
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
+  const scopedMatters = effectiveCanViewAll
     ? matters
-    : matters.filter(
-        (m) =>
-          m.responsibleAdvocateId === currentAdvocate?.id ||
-          (currentAdvocate?.name &&
-            m.responsibleAdvocateName
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase()))
-      );
+    : matters.filter((m) => isMatterVisibleToUser(m, currentAdvocate));
 
   // Extract unique tags across scoped matters
   const availableTags = Array.from(
@@ -96,7 +92,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     selectedPriority !== 'All',
     selectedPurpose !== 'All',
     selectedTag !== 'All',
-    isManagingAdvocate && selectedStaffFilter !== 'All',
+    effectiveCanViewAll && selectedStaffFilter !== 'All',
   ].filter(Boolean).length;
 
   const filteredMatters = scopedMatters.filter((m) => {

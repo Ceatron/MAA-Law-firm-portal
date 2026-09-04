@@ -4,9 +4,8 @@
  * SECURITY DIRECTIVES:
  * 1. STRICTLY runs on the server (Node.js/Express). Never bundled to the browser.
  * 2. Uses server-side environment variables ONLY:
- *    - RESEND_API_KEY or EMAIL_API_KEY (Recommended for Vercel/Serverless)
- *    - SENDGRID_API_KEY
- *    - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SECURE
+ *    - RESEND_API_KEY or EMAIL_API_KEY (Exclusively recommended transactional API provider)
+ *    - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SECURE (Optional traditional fallback)
  *    - EMAIL_FROM (Sender address, e.g. "Muthoni Ahago Advocates <notifications@muthoniahago.co.ke>")
  * 3. Never logs credentials, passwords, or API keys.
  * 4. Distinguishes 'submitted', 'failed', and 'unconfigured' states. Never fakes delivery.
@@ -30,7 +29,7 @@ export interface EmailOptions {
 export interface EmailSendResult {
   success: boolean;
   status: 'submitted' | 'failed' | 'unconfigured';
-  provider: 'resend' | 'sendgrid' | 'smtp' | 'none';
+  provider: 'resend' | 'smtp' | 'none';
   providerMessageId?: string;
   recipient: string;
   subject: string;
@@ -55,17 +54,13 @@ function cleanupRecentDispatches() {
 /**
  * Resolves the active email provider based on environment variables
  */
-export function getActiveEmailProvider(): 'resend' | 'sendgrid' | 'smtp' | 'none' {
+export function getActiveEmailProvider(): 'resend' | 'smtp' | 'none' {
   const explicit = (process.env.EMAIL_PROVIDER || '').toLowerCase().trim();
   if (explicit === 'resend') return 'resend';
-  if (explicit === 'sendgrid') return 'sendgrid';
   if (explicit === 'smtp') return 'smtp';
 
   if (process.env.RESEND_API_KEY || process.env.EMAIL_API_KEY) {
     return 'resend';
-  }
-  if (process.env.SENDGRID_API_KEY) {
-    return 'sendgrid';
   }
   if (process.env.SMTP_HOST && process.env.SMTP_USER) {
     return 'smtp';
@@ -268,80 +263,6 @@ async function sendViaResend(options: EmailOptions, apiKey: string): Promise<Ema
 }
 
 /**
- * Deliver email via SendGrid API (HTTPS-based)
- */
-async function sendViaSendGrid(options: EmailOptions, apiKey: string): Promise<EmailSendResult> {
-  const fromAddress = options.from || getDefaultFromAddress();
-  const timestamp = new Date().toISOString();
-
-  // Extract pure email from 'Name <email@domain.com>' if needed
-  const fromMatch = fromAddress.match(/<([^>]+)>/) || [null, fromAddress];
-  const fromEmail = fromMatch[1] || fromAddress;
-  const fromNameMatch = fromAddress.match(/^([^<]+)</);
-  const fromName = options.fromName || (fromNameMatch ? fromNameMatch[1].trim() : 'Muthoni Ahago Advocates');
-
-  const payload = {
-    personalizations: [
-      {
-        to: [{ email: options.to, name: options.toName || options.to }],
-        subject: options.subject,
-      },
-    ],
-    from: { email: fromEmail, name: fromName },
-    content: [
-      {
-        type: 'text/plain',
-        value: options.text || options.subject,
-      },
-      ...(options.html
-        ? [
-            {
-              type: 'text/html',
-              value: options.html,
-            },
-          ]
-        : []),
-    ],
-  };
-
-  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    console.error(`[EmailService:SendGrid] Failed to send email to ${options.to}:`, errorText);
-    return {
-      success: false,
-      status: 'failed',
-      provider: 'sendgrid',
-      recipient: options.to,
-      subject: options.subject,
-      timestamp,
-      error: `SendGrid returned HTTP ${response.status}: ${errorText}`,
-    };
-  }
-
-  const providerMessageId = response.headers.get('x-message-id') || `sg-${Date.now()}`;
-  console.info(`[EmailService:SendGrid] Email successfully submitted to SendGrid: ${providerMessageId} -> ${options.to}`);
-
-  return {
-    success: true,
-    status: 'submitted',
-    provider: 'sendgrid',
-    providerMessageId,
-    recipient: options.to,
-    subject: options.subject,
-    timestamp,
-  };
-}
-
-/**
  * Deliver email via authenticated SMTP (nodemailer)
  */
 async function sendViaSmtp(options: EmailOptions): Promise<EmailSendResult> {
@@ -460,7 +381,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailSendResult>
 
   // Check if provider is configured
   if (provider === 'none') {
-    const errorMsg = 'No real email provider configured. Please set RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials in your environment variables.';
+    const errorMsg = 'No transactional email provider configured. Please set RESEND_API_KEY in your environment variables (or SMTP credentials).';
     console.warn(`[EmailService] Unconfigured provider: email to ${options.to} was NOT sent.`);
     const result: EmailSendResult = {
       success: false,
@@ -483,9 +404,6 @@ export async function sendEmail(options: EmailOptions): Promise<EmailSendResult>
       if (provider === 'resend') {
         const apiKey = process.env.RESEND_API_KEY || process.env.EMAIL_API_KEY || '';
         lastResult = await sendViaResend(options, apiKey);
-      } else if (provider === 'sendgrid') {
-        const apiKey = process.env.SENDGRID_API_KEY || '';
-        lastResult = await sendViaSendGrid(options, apiKey);
       } else if (provider === 'smtp') {
         lastResult = await sendViaSmtp(options);
       }

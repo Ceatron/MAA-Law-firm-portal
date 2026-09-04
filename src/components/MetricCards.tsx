@@ -8,6 +8,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Advocate, LegalMatter, DeadlineItem, Client, FeeNote } from '../types';
+import { canUserViewAll, isMatterVisibleToUser, isDeadlineVisibleToUser } from '../utils/visibilityRules';
 
 interface MetricCardsProps {
   onNavigateTab: (tab: string) => void;
@@ -31,29 +32,20 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
   clients = [],
   feeNotes = [],
 }) => {
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
   // Scoped matters based on role
-  const userMatters = isManagingAdvocate
+  const userMatters = effectiveCanViewAll
     ? matters.filter((m) => m.status !== 'Archived')
     : matters.filter(
-        (m) =>
-          m.status !== 'Archived' &&
-          (m.responsibleAdvocateId === currentAdvocate?.id ||
-            (currentAdvocate?.name &&
-              m.responsibleAdvocateName
-                .toLowerCase()
-                .includes(currentAdvocate.name.toLowerCase())))
+        (m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate)
       );
 
   // Scoped deadlines
-  const userDeadlines = isManagingAdvocate
+  const userDeadlines = effectiveCanViewAll
     ? deadlines.filter((d) => !d.completed)
     : deadlines.filter(
-        (d) =>
-          !d.completed &&
-          (currentAdvocate?.name &&
-            d.advocateName
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase()))
+        (d) => !d.completed && isDeadlineVisibleToUser(d, currentAdvocate)
       );
 
   // Financial estimation & Total Receivables calculations

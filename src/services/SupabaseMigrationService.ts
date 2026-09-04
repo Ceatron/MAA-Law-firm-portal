@@ -30,38 +30,21 @@ import {
 import { loadStaffRoster } from '../utils/staffStorage';
 import { getStoredInteractions } from '../utils/clientServicesStorage';
 import { loadChambersSettings } from '../utils/settingsStorage';
+import { getSupabaseClient, isSupabaseConfigured, SUPABASE_URL } from '../utils/supabaseClient';
+
+const supabaseUrl = SUPABASE_URL;
 
 /**
- * Supabase client environment helper
+ * Exported Supabase client initialized safely without placeholder credentials
  */
-const getEnv = (key: string): string => {
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-    return (import.meta as any).env[key] || '';
-  }
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[key] || '';
-  }
-  return '';
-};
-
-const supabaseUrl =
-  getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || 'https://placeholder-project.supabase.co';
-const supabaseAnonKey =
-  getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY') || 'placeholder-anon-key';
-
-/**
- * Exported Supabase client initialized with anonymous access key
- */
-export const supabase: SupabaseClient<Database> = createClient<Database>(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
+export const supabase: SupabaseClient<Database> = (getSupabaseClient() ||
+  createClient<Database>(
+    'https://kbvtwmrpszmyznfhkagy.supabase.co',
+    'public-anon-key',
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  )) as SupabaseClient<Database>;
 
 /**
  * Defined 16 localStorage keys for migration
@@ -897,6 +880,36 @@ export class SupabaseMigrationService {
       notice: 'Migration batch upsert complete. 100% of localStorage records remain completely untouched.',
       errors: res.errors,
     };
+  }
+
+  /**
+   * Safe First-Boot Auto-Migration Guard:
+   * Uploads existing localStorage data to Supabase only on first launch with an active connection,
+   * without duplicating or endlessly repeating.
+   */
+  public static async autoMigrateOnFirstBoot(): Promise<boolean> {
+    if (typeof localStorage === 'undefined') return false;
+
+    // Strict guard: exit immediately if already marked as migrated
+    if (this.isMigrated()) {
+      return false;
+    }
+
+    if (!isSupabaseConfigured()) {
+      return false;
+    }
+
+    const client = getSupabaseClient();
+    if (!client) return false;
+
+    console.info('[SupabaseMigrationService] First-boot unmigrated state detected with valid Supabase config. Executing initial cloud migration...');
+    try {
+      const res = await this.executeMigration({ force: false, clientOverride: client });
+      return res.success;
+    } catch (err) {
+      console.warn('[SupabaseMigrationService] First-boot auto-migration encountered error:', err);
+      return false;
+    }
   }
 }
 

@@ -14,6 +14,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { DeadlineItem, DeadlineCategory, Advocate } from '../types';
+import { canUserViewAll, isDeadlineVisibleToUser, namesMatch } from '../utils/visibilityRules';
 
 interface UpcomingDeadlinesProps {
   deadlines: DeadlineItem[];
@@ -41,25 +42,19 @@ export const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({
     'Document Review',
   ];
 
-  // Role-based filtering
-  const scopedDeadlines = isManagingAdvocate
+  // Role-based filtering (Managing Advocate & System Admin see ALL deadlines)
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
+  const scopedDeadlines = effectiveCanViewAll
     ? deadlines
-    : deadlines.filter((d) =>
-        currentAdvocate?.name
-          ? d.advocateName
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase())
-          : true
-      );
+    : deadlines.filter((d) => isDeadlineVisibleToUser(d, currentAdvocate));
 
   const filteredDeadlines = scopedDeadlines.filter((d) => {
     const matchesCategory = filter === 'All' || d.category === filter;
     const matchesStaff =
-      !isManagingAdvocate ||
+      !effectiveCanViewAll ||
       selectedStaffFilter === 'All' ||
-      d.advocateName
-        .toLowerCase()
-        .includes(selectedStaffFilter.toLowerCase());
+      namesMatch(d.advocateName, selectedStaffFilter);
     return matchesCategory && matchesStaff;
   });
 

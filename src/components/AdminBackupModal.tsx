@@ -23,6 +23,12 @@ import {
   UploadCloud,
   Zap,
   CheckCircle,
+  Mail,
+  Send,
+  ExternalLink,
+  Key,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Advocate } from '../types';
 import { isSysAdminUser } from '../utils/staffStorage';
@@ -53,7 +59,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
   currentAdvocate,
   onSuccessNotification,
 }) => {
-  const [activeTab, setActiveTab] = useState<'backup' | 'supabase'>('backup');
+  const [activeTab, setActiveTab] = useState<'backup' | 'supabase' | 'email'>('backup');
   const [isExporting, setIsExporting] = useState(false);
   const [exportedFilename, setExportedFilename] = useState<string | null>(null);
   const [exportedSummary, setExportedSummary] = useState<{
@@ -61,6 +67,100 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
     itemsCount: number;
     timestamp: string;
   } | null>(null);
+
+  // Email Gateway Diagnostics & Verification State
+  const [emailStatus, setEmailStatus] = useState<{
+    configured: boolean;
+    provider: string;
+    defaultFrom: string;
+    description: string;
+  } | null>(null);
+  const [loadingEmailStatus, setLoadingEmailStatus] = useState(false);
+  const [testEmailRecipient, setTestEmailRecipient] = useState(
+    currentAdvocate?.email || 'ceatrontechnologies@gmail.com'
+  );
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: string;
+  } | null>(null);
+  const [copiedPreset, setCopiedPreset] = useState<string | null>(null);
+
+  const fetchEmailStatus = async () => {
+    setLoadingEmailStatus(true);
+    try {
+      const res = await fetch('/api/email-status');
+      if (res.ok) {
+        const data = await res.json();
+        setEmailStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch email status:', e);
+    } finally {
+      setLoadingEmailStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'email') {
+      fetchEmailStatus();
+    }
+  }, [activeTab]);
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailRecipient || !testEmailRecipient.includes('@')) {
+      setTestEmailResult({
+        success: false,
+        message: 'Please enter a valid recipient email address.',
+      });
+      return;
+    }
+
+    setIsSendingTestEmail(true);
+    setTestEmailResult(null);
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: testEmailRecipient,
+          toName: currentAdvocate?.name || 'Advocate',
+          subject: '🧪 Real Email Gateway Verification: Muthoni Ahago Advocates',
+          text: `This is an official automated test transmission from the Muthoni Ahago Advocates chambers portal to verify your transactional email gateway.\n\nGateway Verification Details:\n- Recipient: ${testEmailRecipient}\n- Dispatched by: ${currentAdvocate?.name || 'Managing Advocate'}\n- System Timestamp: ${new Date().toLocaleString()}\n\nIf you received this message in your inbox, your transactional email gateway is configured and fully operational for real-time matter and task assignment notifications!`,
+          type: 'system_test',
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setTestEmailResult({
+          success: true,
+          message: `Verification email sent successfully via ${data.provider?.toUpperCase() || 'Gateway'}! (Message ID: ${data.providerMessageId || data.messageId})`,
+        });
+      } else {
+        setTestEmailResult({
+          success: false,
+          message: data.error || `Server responded with HTTP ${res.status}`,
+          details: data.details ? JSON.stringify(data.details, null, 2) : undefined,
+        });
+      }
+    } catch (err: any) {
+      setTestEmailResult({
+        success: false,
+        message: err?.message || 'Network error attempting to send test email.',
+      });
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
+
+  const copyToClipboard = (text: string, presetName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPreset(presetName);
+    setTimeout(() => setCopiedPreset(null), 2500);
+  };
 
   // Supabase Foundation & Dry Run State
   const [isTestingConn, setIsTestingConn] = useState(false);
@@ -302,6 +402,18 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             >
               <Cloud className="h-3.5 w-3.5" />
               <span>Supabase Foundation & Dry Run</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('email')}
+              className={`flex items-center space-x-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                activeTab === 'email'
+                  ? 'bg-sky-400 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Mail className="h-3.5 w-3.5" />
+              <span>Email Gateway & SMTP</span>
             </button>
           </div>
         </div>
@@ -771,6 +883,246 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
         )}
 
+        {/* Modal Body: Tab 3 (Email Gateway & SMTP Diagnostics) */}
+        {activeTab === 'email' && (
+          <div className="p-6 space-y-5 max-h-[calc(85vh-190px)] overflow-y-auto">
+            {/* Live Gateway Status Alert */}
+            <div
+              className={`rounded-xl border p-4 transition ${
+                emailStatus?.configured
+                  ? 'border-emerald-300 bg-emerald-50/90'
+                  : 'border-amber-300 bg-amber-50/90'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  {emailStatus?.configured ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={`text-xs font-bold ${
+                          emailStatus?.configured ? 'text-emerald-900' : 'text-amber-900'
+                        }`}
+                      >
+                        {emailStatus?.configured
+                          ? `Live Email Delivery Active (${emailStatus.provider.toUpperCase()})`
+                          : 'Transactional Email Not Yet Configured in Secrets'}
+                      </p>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          emailStatus?.configured
+                            ? 'bg-emerald-200 text-emerald-800'
+                            : 'bg-amber-200 text-amber-800'
+                        }`}
+                      >
+                        {emailStatus?.configured ? 'Connected' : 'In-App Fallback Active'}
+                      </span>
+                    </div>
+                    <p
+                      className={`mt-1 text-[11px] leading-relaxed ${
+                        emailStatus?.configured ? 'text-emerald-800' : 'text-amber-800'
+                      }`}
+                    >
+                      {emailStatus?.configured
+                        ? `Default sender: ${emailStatus.defaultFrom}. Automated email notifications for case assignments and task delegations are actively dispatched via ${emailStatus.provider.toUpperCase()}.`
+                        : 'Advocate matter and task assignment notifications are currently saved in-app and can be manually dispatched or drafted in one click. To send actual automated emails directly to advocate inboxes, configure any ONE of the options below.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchEmailStatus}
+                  disabled={loadingEmailStatus}
+                  className="rounded-lg border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 transition cursor-pointer shrink-0 disabled:opacity-50"
+                  title="Refresh Gateway Status"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingEmailStatus ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Test Verification Email Card */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Send className="h-4 w-4 text-sky-600" />
+                  <h4 className="text-xs font-bold text-slate-800">
+                    Send Live Verification Test Email
+                  </h4>
+                </div>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  Validates secrets & server connection
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                <input
+                  type="email"
+                  value={testEmailRecipient}
+                  onChange={(e) => setTestEmailRecipient(e.target.value)}
+                  placeholder="Enter recipient email address..."
+                  className="w-full sm:flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={isSendingTestEmail}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-sky-700 active:bg-sky-800 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSendingTestEmail ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  <span>{isSendingTestEmail ? 'Testing Delivery...' : 'Send Test Email'}</span>
+                </button>
+              </div>
+
+              {testEmailResult && (
+                <div
+                  className={`rounded-lg p-3 text-xs border ${
+                    testEmailResult.success
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                      : 'border-rose-200 bg-rose-50 text-rose-900'
+                  }`}
+                >
+                  <p className="font-semibold">{testEmailResult.message}</p>
+                  {testEmailResult.details && (
+                    <pre className="mt-1.5 p-2 bg-black/5 rounded text-[10px] overflow-x-auto font-mono">
+                      {testEmailResult.details}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Step-by-Step Setup Guide */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Key className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Choose ONE of These 3 Setup Options</span>
+                </h4>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  Add to AI Studio Settings &gt; Secrets
+                </span>
+              </div>
+
+              {/* Option 1: Resend (Recommended) */}
+              <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4 space-y-2.5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600 text-[11px] font-bold text-white">
+                      1
+                    </span>
+                    <h5 className="text-xs font-bold text-slate-900">
+                      Option A: Resend (Fastest &amp; Recommended — Takes 2 Mins)
+                    </h5>
+                  </div>
+                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">
+                    Free 3,000 emails/mo
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Sign up free at <strong className="text-slate-800">resend.com</strong>, click <em>API Keys</em> &gt; <em>Create API Key</em>, and paste only these 2 variables into your Settings:
+                </p>
+                <div className="rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 space-y-1 relative">
+                  <p><span className="text-amber-400">RESEND_API_KEY</span>=re_your_api_key_here</p>
+                  <p><span className="text-amber-400">EMAIL_FROM</span>=Muthoni Ahago Advocates &lt;onboarding@resend.dev&gt;</p>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard('RESEND_API_KEY=re_your_key\nEMAIL_FROM=Muthoni Ahago Advocates <onboarding@resend.dev>', 'resend')}
+                    className="absolute top-2.5 right-2.5 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1"
+                  >
+                    {copiedPreset === 'resend' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedPreset === 'resend' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Tip: <code className="text-slate-700 font-semibold">onboarding@resend.dev</code> works instantly with zero domain setup for testing! Once ready, you can add your custom domain in Resend.
+                </p>
+              </div>
+
+              {/* Option 2: Gmail / Google Workspace SMTP */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2.5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-white">
+                      2
+                    </span>
+                    <h5 className="text-xs font-bold text-slate-900">
+                      Option B: Gmail or Google Workspace (SMTP)
+                    </h5>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                    Uses Google App Password
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Uses your chambers Gmail or Google Workspace address. Go to <strong>myaccount.google.com/apppasswords</strong>, create a 16-letter App Password, and paste these into Settings:
+                </p>
+                <div className="rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 space-y-1 relative">
+                  <p><span className="text-amber-400">SMTP_HOST</span>=smtp.gmail.com</p>
+                  <p><span className="text-amber-400">SMTP_PORT</span>=587</p>
+                  <p><span className="text-amber-400">SMTP_SECURE</span>=false</p>
+                  <p><span className="text-amber-400">SMTP_USER</span>=your_email@gmail.com</p>
+                  <p><span className="text-amber-400">SMTP_PASSWORD</span>=your_16_char_app_password</p>
+                  <p><span className="text-amber-400">EMAIL_FROM</span>=Muthoni Ahago Advocates &lt;your_email@gmail.com&gt;</p>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard('SMTP_HOST=smtp.gmail.com\nSMTP_PORT=587\nSMTP_SECURE=false\nSMTP_USER=your_email@gmail.com\nSMTP_PASSWORD=your_16_char_app_password\nEMAIL_FROM=Muthoni Ahago Advocates <your_email@gmail.com>', 'gmail')}
+                    className="absolute top-2.5 right-2.5 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1"
+                  >
+                    {copiedPreset === 'gmail' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedPreset === 'gmail' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 3: Chambers Webmail / cPanel */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2.5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-white">
+                      3
+                    </span>
+                    <h5 className="text-xs font-bold text-slate-900">
+                      Option C: Law Firm Webmail / cPanel / Microsoft 365
+                    </h5>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                    Custom Domain
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  If your firm uses custom webmail (e.g. cPanel, Plesk, or Outlook 365), use your mail server credentials:
+                </p>
+                <div className="rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 space-y-1 relative">
+                  <p><span className="text-amber-400">SMTP_HOST</span>=mail.muthoniahago.co.ke</p>
+                  <p><span className="text-amber-400">SMTP_PORT</span>=465</p>
+                  <p><span className="text-amber-400">SMTP_SECURE</span>=true</p>
+                  <p><span className="text-amber-400">SMTP_USER</span>=notifications@muthoniahago.co.ke</p>
+                  <p><span className="text-amber-400">SMTP_PASSWORD</span>=your_webmail_password</p>
+                  <p><span className="text-amber-400">EMAIL_FROM</span>=Muthoni Ahago Advocates &lt;notifications@muthoniahago.co.ke&gt;</p>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard('SMTP_HOST=mail.muthoniahago.co.ke\nSMTP_PORT=465\nSMTP_SECURE=true\nSMTP_USER=notifications@muthoniahago.co.ke\nSMTP_PASSWORD=your_password\nEMAIL_FROM=Muthoni Ahago Advocates <notifications@muthoniahago.co.ke>', 'webmail')}
+                    className="absolute top-2.5 right-2.5 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1"
+                  >
+                    {copiedPreset === 'webmail' ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedPreset === 'webmail' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal Action Footer */}
         <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
@@ -778,6 +1130,10 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             <span>
               {activeTab === 'backup'
                 ? 'Ready to generate timestamped JSON archive'
+                : activeTab === 'email'
+                ? emailStatus?.configured
+                  ? `Active gateway: ${emailStatus.provider.toUpperCase()} (${emailStatus.defaultFrom})`
+                  : 'Transactional email provider unconfigured'
                 : isMigratedFlag
                 ? 'Local migration execution flag active (migrated_to_supabase)'
                 : 'PostgreSQL schema files ready in supabase/migrations/'}
@@ -805,6 +1161,20 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                 <span>
                   {isExporting ? 'Generating Backup...' : exportedFilename ? 'Export Again' : 'Export Data Backup'}
                 </span>
+              </button>
+            ) : activeTab === 'email' ? (
+              <button
+                type="button"
+                onClick={handleSendTestEmail}
+                disabled={isSendingTestEmail}
+                className="flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-sky-700 active:bg-sky-800 transition cursor-pointer disabled:opacity-50"
+              >
+                {isSendingTestEmail ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                <span>{isSendingTestEmail ? 'Sending Test...' : 'Send Test Email'}</span>
               </button>
             ) : (
               <div className="flex items-center gap-2">

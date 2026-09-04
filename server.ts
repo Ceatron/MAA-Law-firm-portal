@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -8,6 +11,13 @@ import {
   getDefaultFromAddress,
   buildFirmBrandedHtml,
 } from "./server/emailService";
+import {
+  getDatabaseStatus,
+  getAllData,
+  upsertRecord,
+  deleteRecord,
+  syncCollections,
+} from "./server/chambersDatabase";
 
 async function startServer() {
   const app = express();
@@ -202,14 +212,14 @@ Always format output clearly using Markdown:
       configured: isConfigured,
       provider,
       defaultFrom: getDefaultFromAddress(),
-      supportedProviders: ["resend", "sendgrid", "smtp"],
+      supportedProviders: ["resend", "smtp"],
       description: isConfigured
         ? `Real email delivery active via ${provider.toUpperCase()}`
-        : "No transactional email provider configured on server. Set RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials.",
+        : "No transactional email provider configured on server. Set RESEND_API_KEY in your environment variables.",
     });
   });
 
-  // Automated Email Notification Dispatcher (Real Delivery via Resend / SendGrid / SMTP)
+  // Automated Email Notification Dispatcher (Real Delivery via Resend / SMTP)
   app.post("/api/send-email", async (req, res) => {
     try {
       const {
@@ -318,7 +328,7 @@ Always format output clearly using Markdown:
           status: "unconfigured",
           provider: "none",
           error:
-            "Cannot send test email: No transactional email provider is configured. Please configure RESEND_API_KEY, SENDGRID_API_KEY, or SMTP credentials in your environment.",
+            "Cannot send test email: No transactional email provider is configured. Please configure RESEND_API_KEY (or SMTP credentials) in your environment.",
         });
       }
 
@@ -374,6 +384,62 @@ Always format output clearly using Markdown:
         success: false,
         error: err?.message || "Failed to execute email gateway diagnostic test.",
       });
+    }
+  });
+
+  // ==========================================
+  // CENTRAL CHAMBERS DATABASE ENDPOINTS
+  // ==========================================
+  app.get("/api/db/status", (req, res) => {
+    try {
+      const status = getDatabaseStatus();
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to get database status." });
+    }
+  });
+
+  app.get("/api/db/all", async (req, res) => {
+    try {
+      const all = await getAllData();
+      res.json(all);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to retrieve database collections." });
+    }
+  });
+
+  app.post("/api/db/save-record", async (req, res) => {
+    try {
+      const { collection, record } = req.body;
+      if (!collection || !record || !record.id) {
+        return res.status(400).json({ error: "Missing required 'collection' or 'record.id'." });
+      }
+      const saved = await upsertRecord(collection, record);
+      res.json({ success: true, record: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to save record to database." });
+    }
+  });
+
+  app.post("/api/db/delete-record", async (req, res) => {
+    try {
+      const { collection, id } = req.body;
+      if (!collection || !id) {
+        return res.status(400).json({ error: "Missing required 'collection' or 'id'." });
+      }
+      const success = await deleteRecord(collection, id);
+      res.json({ success });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to delete record from database." });
+    }
+  });
+
+  app.post("/api/db/sync", async (req, res) => {
+    try {
+      const synced = await syncCollections(req.body || {});
+      res.json({ success: true, data: synced });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to sync collections with database." });
     }
   });
 

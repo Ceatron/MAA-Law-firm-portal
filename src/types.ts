@@ -105,6 +105,8 @@ export interface LegalMatter {
   archivedAt?: string;
   archivedBy?: string;
   archiveReason?: string;
+  createdByAdvocateId?: string;
+  createdByName?: string;
 }
 
 export type DeadlineCategory = 'Court Filing' | 'Client Meeting' | 'Court Hearing' | 'Document Review' | 'Hearing' | 'Mention' | 'Ruling' | 'Judgment' | 'Filing' | 'Case Conference';
@@ -395,7 +397,10 @@ export interface TaskItem {
   matterRef: string;
   clientName: string;
   assignedTo: string;
+  assignedToId?: string;
+  assignedToEmail?: string;
   createdBy: string;
+  createdById?: string;
   priority: 'Critical' | 'High' | 'Medium' | 'Low';
   status: 'Not Started' | 'In Progress' | 'Waiting' | 'Completed' | 'Overdue';
   startDate: string;

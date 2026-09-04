@@ -33,6 +33,7 @@ import {
 } from '../../utils/taskNotificationHelper';
 import { TaskEmailNotificationModal } from '../TaskEmailNotificationModal';
 import { TaskPerformanceCard } from '../TaskPerformanceCard';
+import { isTaskVisibleToUser, canUserViewAll, namesMatch } from '../../utils/visibilityRules';
 
 // Priority Level Definition (High, Medium, Low)
 export type TaskPriorityLevel = 'High' | 'Medium' | 'Low';
@@ -239,7 +240,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
       matterRef: selectedMatter?.referenceNumber || 'General Chambers Task',
       clientName: selectedMatter?.clientName || 'General Administration',
       assignedTo: newAssignedTo,
+      assignedToId: staffList.find((a) => namesMatch(a.name, newAssignedTo))?.id,
+      assignedToEmail: getAdvocateEmailByName(newAssignedTo, staffList).email,
       createdBy: `${currentAdvocate?.name || 'Advocate'} (${currentAdvocate?.title || 'Chambers'})`,
+      createdById: currentAdvocate?.id,
       priority: newPriority as any,
       status: mappedStatus as any,
       startDate: new Date().toISOString().split('T')[0],
@@ -277,16 +281,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
     );
   };
 
-  // Scoped tasks based on role
-  const scopedTasks = isManagingAdvocate
+  // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
+  const scopedTasks = effectiveCanViewAll
     ? tasks
-    : tasks.filter((t) =>
-        currentAdvocate?.name
-          ? t.assignedTo
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase())
-          : true
-      );
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters));
 
   // Filter and Sort logic
   const filteredAndSortedTasks = useMemo(() => {
@@ -308,9 +308,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
         selectedPriority === 'all' || normPrio.toLowerCase() === selectedPriority.toLowerCase();
 
       const matchesAssignee =
-        !isManagingAdvocate ||
+        !effectiveCanViewAll ||
         selectedAssignee === 'all' ||
-        t.assignedTo === selectedAssignee;
+        namesMatch(t.assignedTo, selectedAssignee);
 
       const matchesMatter =
         selectedMatterFilter === 'all' ||

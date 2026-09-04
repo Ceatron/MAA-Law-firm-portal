@@ -20,6 +20,7 @@ interface NewMatterModalProps {
   matters?: LegalMatter[];
   advocates?: Advocate[];
   onAddClient?: (newClient: Client) => void;
+  currentAdvocate?: Advocate;
 }
 
 export const NewMatterModal: React.FC<NewMatterModalProps> = ({
@@ -29,6 +30,7 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
   clients = [],
   advocates = [],
   onAddClient,
+  currentAdvocate,
 }) => {
   const staffList = (advocates.length > 0 ? advocates : loadVisibleStaffRoster()).filter(
     (a) => !isSysAdminUser(a)
@@ -59,7 +61,12 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
   const [practiceArea, setPracticeArea] = useState<PracticeArea>('Civil Litigation');
   const [courtRegistry, setCourtRegistry] = useState('');
   const [courtCaseNumber, setCourtCaseNumber] = useState('');
-  const [advocateId, setAdvocateId] = useState(staffList[0]?.id || 'staff-ma-1');
+  const [advocateId, setAdvocateId] = useState(() => {
+    if (currentAdvocate?.id && staffList.some((a) => a.id === currentAdvocate.id)) {
+      return currentAdvocate.id;
+    }
+    return staffList[0]?.id || 'adv-1';
+  });
   const [lodgedDate, setLodgedDate] = useState<string>(getTodayISO());
   const [activeDateBtn, setActiveDateBtn] = useState<'today' | 'yesterday' | 'custom'>('today');
 
@@ -221,6 +228,8 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
       priority,
       documentsCount: 0,
       tags: tags.length > 0 ? tags : ['General'],
+      createdByAdvocateId: currentAdvocate?.id || 'adv-1',
+      createdByName: currentAdvocate?.name || 'Adv. Costa Kimathi',
     };
 
     onAddMatter(newMatter);

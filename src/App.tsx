@@ -63,7 +63,12 @@ import {
   saveStoredActivities,
   loadSavedNotifications,
   saveStoredNotifications,
+  initChambersDatabaseSync,
 } from './utils/chambersDataStorage';
+import { isMatterVisibleToUser, isTaskVisibleToUser, canUserViewAll } from './utils/visibilityRules';
+import { getSupabaseClient, isSupabaseConfigured } from './utils/supabaseClient';
+import { ChambersCloudService } from './services/chambersCloudService';
+import SupabaseMigrationService from './services/SupabaseMigrationService';
 
 export default function App() {
   // Authentication State: Read from persistent session if previously signed in
@@ -121,6 +126,7 @@ export default function App() {
 
   const isManagingAdvocate =
     isSystemAdmin ||
+    canUserViewAll(currentAdvocate) ||
     userRole === 'Managing Advocate' ||
     currentAdvocate.id === 'adv-1' ||
     currentAdvocate.title.toLowerCase().includes('managing');
@@ -219,6 +225,135 @@ export default function App() {
     saveStoredNotifications(notifications);
   }, [notifications]);
 
+  // Central Chambers Direct Cloud Data Initialization with Role-Scoping
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadCloudData = async () => {
+      // Auto-migrate local storage data on first boot if not already migrated
+      SupabaseMigrationService.autoMigrateOnFirstBoot().catch((err) =>
+        console.warn('[App] First boot migration check notice:', err)
+      );
+
+      if (!isSupabaseConfigured()) return;
+
+      try {
+        const [cloudMatters, cloudClients, cloudDeadlines, cloudActivities] = await Promise.all([
+          ChambersCloudService.fetchMatters(currentAdvocate),
+          ChambersCloudService.fetchClients(),
+          ChambersCloudService.fetchDeadlines(currentAdvocate),
+          ChambersCloudService.fetchActivities(),
+        ]);
+
+        if (isCancelled) return;
+
+        if (cloudMatters && cloudMatters.length > 0) {
+          setMatters(cloudMatters);
+        }
+        if (cloudClients && cloudClients.length > 0) {
+          setClients(cloudClients);
+        }
+        if (cloudDeadlines && cloudDeadlines.length > 0) {
+          setDeadlines(cloudDeadlines);
+        }
+        if (cloudActivities && cloudActivities.length > 0) {
+          setActivities(cloudActivities);
+        }
+
+        // Fetch scoped tasks using the retrieved matters
+        const cloudTasks = await ChambersCloudService.fetchTasks(currentAdvocate, cloudMatters || undefined);
+        if (!isCancelled && cloudTasks && cloudTasks.length > 0) {
+          setTasks(cloudTasks);
+        }
+      } catch (err) {
+        console.warn('[App] Direct cloud data fetch error, maintaining cached store:', err);
+      }
+    };
+
+    loadCloudData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentAdvocate.id, currentAdvocate.role]);
+
+  // Active Supabase Realtime Subscriptions
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return;
+
+    const channel = supabase
+      .channel('chambers-realtime-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matters' },
+        async () => {
+          const fresh = await ChambersCloudService.fetchMatters(currentAdvocate);
+          if (fresh) setMatters(fresh);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        async () => {
+          const fresh = await ChambersCloudService.fetchTasks(currentAdvocate);
+          if (fresh) setTasks(fresh);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clients' },
+        async () => {
+          const fresh = await ChambersCloudService.fetchClients();
+          if (fresh) setClients(fresh);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deadlines' },
+        async () => {
+          const fresh = await ChambersCloudService.fetchDeadlines(currentAdvocate);
+          if (fresh) setDeadlines(fresh);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentAdvocate.id, currentAdvocate.role]);
+
+  // Central Chambers Database Live Synchronization
+  useEffect(() => {
+    const cleanup = initChambersDatabaseSync();
+
+    const handleRemoteMatters = (e: any) => {
+      if (Array.isArray(e.detail)) setMatters(e.detail);
+    };
+    const handleRemoteTasks = (e: any) => {
+      if (Array.isArray(e.detail)) setTasks(e.detail);
+    };
+    const handleRemoteClients = (e: any) => {
+      if (Array.isArray(e.detail)) setClients(e.detail);
+    };
+    const handleRemoteDeadlines = (e: any) => {
+      if (Array.isArray(e.detail)) setDeadlines(e.detail);
+    };
+
+    window.addEventListener('chambers-matters-updated', handleRemoteMatters);
+    window.addEventListener('chambers-tasks-updated', handleRemoteTasks);
+    window.addEventListener('chambers-clients-updated', handleRemoteClients);
+    window.addEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
+
+    return () => {
+      cleanup();
+      window.removeEventListener('chambers-matters-updated', handleRemoteMatters);
+      window.removeEventListener('chambers-tasks-updated', handleRemoteTasks);
+      window.removeEventListener('chambers-clients-updated', handleRemoteClients);
+      window.removeEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
+    };
+  }, []);
+
   // Dialog & Drawer Controls
   const [selectedMatter, setSelectedMatter] = useState<LegalMatter | null>(null);
   const [isNewMatterOpen, setIsNewMatterOpen] = useState<boolean>(false);
@@ -282,17 +417,13 @@ export default function App() {
   const scopedActiveMatters = isManagingAdvocate
     ? matters.filter((m) => m.status !== 'Archived')
     : matters.filter(
-        (m) =>
-          m.status !== 'Archived' &&
-          (m.responsibleAdvocateId === currentAdvocate.id ||
-            m.responsibleAdvocateName
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase()))
+        (m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate, tasks)
       );
 
-  // Handlers
+  // Handlers with Direct Cloud Persistence
   const handleAddMatter = (newMatter: LegalMatter) => {
     setMatters([newMatter, ...matters]);
+    ChambersCloudService.upsertMatter(newMatter);
 
     // Automated Email Dispatch to assigned advocate
     try {
@@ -314,20 +445,19 @@ export default function App() {
       console.warn('Failed to dispatch matter assignment email:', err);
     }
 
-    // Log Activity
-    setActivities([
-      {
-        id: `act-${Date.now()}`,
-        type: 'Court Event',
-        title: 'New Matter Registered in Firm Workspace',
-        description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
-        timestamp: 'Just now',
-        user: currentAdvocate.name,
-        matterId: newMatter.id,
-        matterRef: newMatter.referenceNumber,
-      },
-      ...activities,
-    ]);
+    // Log Activity locally and directly to Supabase cloud
+    const newActivity = {
+      id: `act-${Date.now()}`,
+      type: 'Court Event' as const,
+      title: 'New Matter Registered in Firm Workspace',
+      description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
+      timestamp: 'Just now',
+      user: currentAdvocate.name,
+      matterId: newMatter.id,
+      matterRef: newMatter.referenceNumber,
+    };
+    setActivities([newActivity, ...activities]);
+    ChambersCloudService.recordActivity(newActivity);
   };
 
   const handleUpdateMatter = (updatedMatter: LegalMatter) => {
@@ -362,29 +492,32 @@ export default function App() {
     setMatters((prev) =>
       prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m))
     );
+    ChambersCloudService.upsertMatter(updatedMatter);
+
     if (selectedMatter && selectedMatter.id === updatedMatter.id) {
       setSelectedMatter(updatedMatter);
     }
-    // Log Activity
-    setActivities((prev) => [
-      {
-        id: `act-${Date.now()}`,
-        type: 'Status Change',
-        title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
-        description: isReassigned
-          ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
-          : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
-        timestamp: 'Just now',
-        user: currentAdvocate.name,
-        matterId: updatedMatter.id,
-        matterRef: updatedMatter.referenceNumber,
-      },
-      ...prev,
-    ]);
+
+    // Log Activity locally and to Cloud
+    const updateActivity = {
+      id: `act-${Date.now()}`,
+      type: 'Status Change' as const,
+      title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
+      description: isReassigned
+        ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
+        : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
+      timestamp: 'Just now',
+      user: currentAdvocate.name,
+      matterId: updatedMatter.id,
+      matterRef: updatedMatter.referenceNumber,
+    };
+    setActivities((prev) => [updateActivity, ...prev]);
+    ChambersCloudService.recordActivity(updateActivity);
   };
 
   const handleAddTask = (newTask: TaskItem) => {
     setTasks((prev) => [newTask, ...prev]);
+    ChambersCloudService.upsertTask(newTask);
 
     // Automated Email Dispatch to assigned advocate
     try {
@@ -410,35 +543,73 @@ export default function App() {
     }
   };
 
+  const handleUpdateTasks = (updater: TaskItem[] | ((prev: TaskItem[]) => TaskItem[])) => {
+    setTasks((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      next.forEach((t) => ChambersCloudService.upsertTask(t));
+      return next;
+    });
+  };
+
+  const handleAddClient = (newClient: Client) => {
+    setClients((prev) => [newClient, ...prev]);
+    ChambersCloudService.upsertClient(newClient);
+  };
+
+  const handleUpdateClients = (updater: Client[] | ((prev: Client[]) => Client[])) => {
+    setClients((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      next.forEach((c) => ChambersCloudService.upsertClient(c));
+      return next;
+    });
+  };
+
   const handleUpdateMatterStatus = (id: string, newStatus: MatterStatus) => {
-    setMatters((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, status: newStatus } : m))
-    );
+    setMatters((prev) => {
+      const next = prev.map((m) => (m.id === id ? { ...m, status: newStatus } : m));
+      const target = next.find((m) => m.id === id);
+      if (target) ChambersCloudService.upsertMatter(target);
+      return next;
+    });
     if (selectedMatter && selectedMatter.id === id) {
       setSelectedMatter({ ...selectedMatter, status: newStatus });
     }
   };
 
   const handleUpdateMatterTags = (id: string, newTags: string[]) => {
-    setMatters((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, tags: newTags } : m))
-    );
+    setMatters((prev) => {
+      const next = prev.map((m) => (m.id === id ? { ...m, tags: newTags } : m));
+      const target = next.find((m) => m.id === id);
+      if (target) ChambersCloudService.upsertMatter(target);
+      return next;
+    });
     if (selectedMatter && selectedMatter.id === id) {
       setSelectedMatter({ ...selectedMatter, tags: newTags });
     }
   };
 
   const handleToggleDeadline = (id: string) => {
-    setDeadlines((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, completed: !d.completed } : d))
-    );
+    setDeadlines((prev) => {
+      const next = prev.map((d) => (d.id === id ? { ...d, completed: !d.completed } : d));
+      const target = next.find((d) => d.id === id);
+      if (target) ChambersCloudService.upsertDeadline(target);
+      return next;
+    });
+  };
+
+  const handleAddDeadline = (newDl: DeadlineItem) => {
+    setDeadlines((prev) => [newDl, ...prev]);
+    ChambersCloudService.upsertDeadline(newDl);
   };
 
   const handleMarkNotificationsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
-  const pendingTasksCount = tasks.filter((t) => t.status !== 'Completed').length;
+  const scopedTasksForCount = isManagingAdvocate
+    ? tasks
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters));
+  const pendingTasksCount = scopedTasksForCount.filter((t) => t.status !== 'Completed').length;
   const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
   if (!isAuthenticated) {
@@ -521,7 +692,7 @@ export default function App() {
           {activeTab === 'Clients' && (
             <ClientsView
               clients={clients}
-              onUpdateClients={setClients}
+              onUpdateClients={handleUpdateClients}
               matters={matters}
               onOpenNewMatter={() => setIsNewMatterOpen(true)}
             />
@@ -534,7 +705,7 @@ export default function App() {
               advocates={advocates}
               clients={clients}
               matters={matters}
-              onAddClient={(newClient) => setClients((prev) => [newClient, ...prev])}
+              onAddClient={handleAddClient}
               onAddMatter={handleAddMatter}
               onAddTask={handleAddTask}
             />
@@ -545,7 +716,7 @@ export default function App() {
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
               tasks={tasks}
-              onUpdateTasks={setTasks}
+              onUpdateTasks={handleUpdateTasks}
               matters={matters}
               onOpenNewMatter={() => setIsNewMatterOpen(true)}
               onSelectMatter={(m) => setSelectedMatter(m)}
@@ -560,7 +731,7 @@ export default function App() {
               deadlines={deadlines}
               matters={matters}
               currentAdvocate={currentAdvocate}
-              onAddDeadline={(newDl) => setDeadlines((prev) => [newDl, ...prev])}
+              onAddDeadline={handleAddDeadline}
             />
           )}
 
@@ -568,7 +739,7 @@ export default function App() {
             <BillingView
               clients={clients}
               matters={matters}
-              onAddClient={(newClient) => setClients((prev) => [newClient, ...prev])}
+              onAddClient={handleAddClient}
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
               canAccessFinancialInsights={canAccessFinancialInsights}
@@ -614,6 +785,8 @@ export default function App() {
         clients={clients}
         matters={matters}
         onAddClient={(newClient) => setClients((prev) => [newClient, ...prev])}
+        currentAdvocate={currentAdvocate}
+        advocates={advocates}
       />
 
       <MatterDetailDrawer
