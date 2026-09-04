@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { MetricCards } from './components/MetricCards';
 import { OverviewDashboard } from './components/OverviewDashboard';
-import { MattersTable } from './components/MattersTable';
-import { UpcomingDeadlines } from './components/UpcomingDeadlines';
-import { WorkloadChart } from './components/WorkloadChart';
-import { CaseLifecycleChart } from './components/CaseLifecycleChart';
-import { ActivityFeed } from './components/ActivityFeed';
 import { NewMatterModal } from './components/NewMatterModal';
 import { MatterDetailDrawer } from './components/MatterDetailDrawer';
 import { SearchModal } from './components/SearchModal';
 import { NotificationsPopover } from './components/NotificationsPopover';
 import { TaskEmailNotificationModal } from './components/TaskEmailNotificationModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
-import { Briefcase, ShieldAlert, RotateCcw, Mail, Check, CheckCircle2, X as CloseIcon } from 'lucide-react';
+import { Mail, CheckCircle2, X as CloseIcon } from 'lucide-react';
 import {
   AssignmentEmailPayload,
   generateMatterAssignmentEmail,
@@ -22,7 +16,6 @@ import {
   dispatchAssignmentEmail,
   createMatterAssignmentNotification,
   createTaskAssignmentNotification,
-  resolveStaffEmail,
 } from './utils/assignmentNotificationService';
 
 import { MattersView } from './components/views/MattersView';
@@ -38,16 +31,9 @@ import { SettingsView } from './components/views/SettingsView';
 import { AIAssistantView } from './components/views/AIAssistantView';
 import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { ClientServicesView } from './components/views/ClientServicesView';
-import { Sparkles } from 'lucide-react';
 
 import {
-  mockMatters,
-  mockDeadlines,
-  mockActivities,
   mockAdvocates,
-  mockNotifications,
-  mockClients,
-  mockTasks,
 } from './data/mockData';
 import {
   LegalMatter,
@@ -102,14 +88,16 @@ export default function App() {
     const session = getStoredAuthSession();
     if (session?.advocate) {
       const roster = loadStaffRoster();
-      const fresh = roster.find((a) => a.id === session.advocate.id || a.email.toLowerCase() === session.advocate.email?.toLowerCase());
+      const fresh = roster.find(
+        (a) => a.id === session.advocate.id || a.email.toLowerCase() === session.advocate.email?.toLowerCase()
+      );
       if (fresh) return fresh;
       return session.advocate;
     }
     const list = loadStaffRoster();
     return list[0] || mockAdvocates[0];
   });
-  
+
   const userRole =
     currentAdvocate.role ||
     (currentAdvocate.isSystemAdmin || currentAdvocate.isDeveloper
@@ -147,12 +135,6 @@ export default function App() {
     isManagingAdvocate ||
     hasExplicitBillingRight;
 
-  const canManageStaff =
-    isSystemAdmin ||
-    isManagingAdvocate ||
-    userRole === 'Office Manager' ||
-    Boolean(currentAdvocate.permissions?.canManageStaff);
-
   const canAccessInvoicing = canAccessBilling;
 
   // Executive revenue insights view
@@ -174,7 +156,9 @@ export default function App() {
       if (e.detail && Array.isArray(e.detail)) {
         setAdvocates(e.detail);
         setCurrentAdvocate((prev) => {
-          const matched = e.detail.find((a) => a.id === prev.id || a.email.toLowerCase() === prev.email?.toLowerCase());
+          const matched = e.detail.find(
+            (a) => a.id === prev.id || a.email.toLowerCase() === prev.email?.toLowerCase()
+          );
           return matched || prev;
         });
       }
@@ -255,7 +239,7 @@ export default function App() {
 
   // Listen for automated email dispatch events across all components
   useEffect(() => {
-    const handleEmailDispatched = (e: any) => {
+    const handleEmailDispatched = (e: CustomEvent<{ payload: AssignmentEmailPayload }>) => {
       if (e?.detail?.payload) {
         const payload: AssignmentEmailPayload = e.detail.payload;
         const msg =
@@ -294,23 +278,12 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [backupSuccessToast]);
 
-  // Scoped active & archived matters for counts & badges
+  // Scoped active matters for counts & badges
   const scopedActiveMatters = isManagingAdvocate
     ? matters.filter((m) => m.status !== 'Archived')
     : matters.filter(
         (m) =>
           m.status !== 'Archived' &&
-          (m.responsibleAdvocateId === currentAdvocate.id ||
-            m.responsibleAdvocateName
-              .toLowerCase()
-              .includes(currentAdvocate.name.toLowerCase()))
-      );
-
-  const scopedArchivedMatters = isManagingAdvocate
-    ? matters.filter((m) => m.status === 'Archived')
-    : matters.filter(
-        (m) =>
-          m.status === 'Archived' &&
           (m.responsibleAdvocateId === currentAdvocate.id ||
             m.responsibleAdvocateName
               .toLowerCase()
@@ -688,7 +661,7 @@ export default function App() {
         <aside
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 right-5 z-70 flex max-w-md items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
+          className="fixed bottom-5 right-5 z-50 flex max-w-md items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300">
             <Mail className="h-5 w-5" />
@@ -696,7 +669,7 @@ export default function App() {
           <div className="flex-1 space-y-1 text-xs">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-slate-100">Automated Email Dispatched</span>
-              <span className="rounded-full bg-emerald-500/20 px-2 py-0.2 font-mono text-[10px] text-emerald-300 border border-emerald-500/30">
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] text-emerald-300 border border-emerald-500/30">
                 Delivered
               </span>
             </div>
@@ -753,7 +726,7 @@ export default function App() {
         <aside
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 left-5 z-70 flex max-w-md items-center gap-3 rounded-2xl border border-emerald-500/40 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
+          className="fixed bottom-5 left-5 z-50 flex max-w-md items-center gap-3 rounded-2xl border border-emerald-500/40 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
             <CheckCircle2 className="h-5 w-5" />
