@@ -32,6 +32,28 @@ import {
 } from '../types';
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Sanitizes input values for Supabase date fields.
+ * Prevents "invalid input syntax for type date: 'None Scheduled'" errors.
+ */
+function sanitizeDate(dateStr: any): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (
+    trimmed === '' ||
+    trimmed.toLowerCase() === 'none scheduled' ||
+    trimmed.toLowerCase() === 'n/a' ||
+    trimmed.toLowerCase() === 'none'
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+// ============================================================================
 // DATA MAPPERS (CamelCase Frontend <-> Snake_Case Supabase)
 // ============================================================================
 
@@ -89,9 +111,9 @@ export function mapClientMatterToSupabase(matter: LegalMatter): any {
     responsible_advocate_id: matter.responsibleAdvocateId ? String(matter.responsibleAdvocateId) : null,
     responsible_advocate_name: String(matter.responsibleAdvocateName || ''),
     status: String(matter.status || 'Active - In Court'),
-    next_deadline_date: matter.nextDeadlineDate || null,
+    next_deadline_date: sanitizeDate(matter.nextDeadlineDate),
     next_deadline_description: matter.nextDeadlineDescription || null,
-    next_court_date: matter.nextCourtDate || matter.nextDeadlineDate || null,
+    next_court_date: sanitizeDate(matter.nextCourtDate) || sanitizeDate(matter.nextDeadlineDate),
     court_date_purpose: matter.courtDatePurpose || null,
     estimated_fee_kes: Number(matter.estimatedFeeKES || 0),
     fee_to_be_discussed_later: Boolean(matter.feeToBeDiscussedLater),
@@ -99,7 +121,7 @@ export function mapClientMatterToSupabase(matter: LegalMatter): any {
     billed_kes: Number(matter.billedKES || 0),
     paid_kes: Number(matter.paidKES || 0),
     created_date: String(matter.createdDate || new Date().toISOString()),
-    lodged_date: matter.lodgedDate || null,
+    lodged_date: sanitizeDate(matter.lodgedDate),
     description: String(matter.description || ''),
     priority: String(matter.priority || 'Medium'),
     documents_count: Number(matter.documentsCount || 0),
@@ -153,8 +175,8 @@ export function mapClientTaskToSupabase(task: TaskItem): any {
     assigned_to_email: task.assignedToEmail || null,
     created_by: String(task.createdBy || ''),
     created_by_id: task.createdById ? String(task.createdById) : null,
-    due_date: task.dueDate || new Date().toISOString().split('T')[0],
-    start_date: task.startDate || null,
+    due_date: sanitizeDate(task.dueDate) || new Date().toISOString().split('T')[0],
+    start_date: sanitizeDate(task.startDate),
     priority: task.priority || 'Medium',
     status: task.status || 'Not Started',
     estimated_hours: Number(task.estimatedHours || 0),
@@ -227,7 +249,7 @@ export function mapClientDeadlineToSupabase(dl: DeadlineItem): any {
     matter_ref: dl.matterRef || null,
     matter_title: dl.matterTitle || 'General',
     court_location: dl.courtLocation || null,
-    due_date: dl.dueDate || new Date().toISOString().split('T')[0],
+    due_date: sanitizeDate(dl.dueDate) || new Date().toISOString().split('T')[0],
     time: dl.time || '09:00 AM',
     advocate_name: String(dl.advocateName || ''),
     presiding_judge: dl.presidingJudge || null,
@@ -383,7 +405,8 @@ export class ChambersCloudService {
         );
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      // Order by created_date to align with existing table schema
+      const { data, error } = await query.order('created_date', { ascending: false });
 
       if (error) {
         console.warn('[ChambersCloudService] fetchMatters query error:', error.message);
@@ -463,7 +486,7 @@ export class ChambersCloudService {
         query = query.or(filterStr);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const { data, error } = await query.order('due_date', { ascending: true });
 
       if (error) {
         console.warn('[ChambersCloudService] fetchTasks query error:', error.message);
@@ -649,7 +672,7 @@ export class ChambersCloudService {
       const { data, error } = await supabase
         .from('activities')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('timestamp', { ascending: false })
         .limit(50);
 
       if (error) {
