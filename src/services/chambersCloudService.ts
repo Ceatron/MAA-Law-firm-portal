@@ -42,12 +42,8 @@ import {
 function sanitizeDate(dateStr: any): string | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
-  if (
-    trimmed === '' ||
-    trimmed.toLowerCase() === 'none scheduled' ||
-    trimmed.toLowerCase() === 'n/a' ||
-    trimmed.toLowerCase() === 'none'
-  ) {
+  const invalidValues = ['none scheduled', 'n/a', 'none', 'null', 'undefined', ''];
+  if (invalidValues.includes(trimmed.toLowerCase())) {
     return null;
   }
   return trimmed;
@@ -59,7 +55,7 @@ function sanitizeDate(dateStr: any): string | null {
 
 export function mapSupabaseMatterToClient(row: any): LegalMatter {
   return {
-    id: row.id,
+    id: String(row.id),
     referenceNumber: row.reference_number || row.id,
     title: row.title || 'Untitled Matter',
     clientName: row.client_name || '',
@@ -140,7 +136,7 @@ export function mapClientMatterToSupabase(matter: LegalMatter): any {
 
 export function mapSupabaseTaskToClient(row: any): TaskItem {
   return {
-    id: row.id,
+    id: String(row.id),
     title: row.title || 'Untitled Task',
     description: row.description || '',
     matterId: row.matter_id || '',
@@ -166,19 +162,19 @@ export function mapClientTaskToSupabase(task: TaskItem): any {
   return {
     id: String(task.id),
     title: String(task.title || 'Untitled Task'),
-    description: String(task.description || ''),
+    description: task.description ? String(task.description) : null,
     matter_id: task.matterId ? String(task.matterId) : null,
-    matter_ref: task.matterRef || null,
-    client_name: task.clientName || null,
+    matter_ref: task.matterRef ? String(task.matterRef) : null,
+    client_name: task.clientName ? String(task.clientName) : null,
     assigned_to: String(task.assignedTo || ''),
     assigned_to_id: task.assignedToId ? String(task.assignedToId) : null,
-    assigned_to_email: task.assignedToEmail || null,
+    assigned_to_email: task.assignedToEmail ? String(task.assignedToEmail) : null,
     created_by: String(task.createdBy || ''),
     created_by_id: task.createdById ? String(task.createdById) : null,
     due_date: sanitizeDate(task.dueDate) || new Date().toISOString().split('T')[0],
     start_date: sanitizeDate(task.startDate),
-    priority: task.priority || 'Medium',
-    status: task.status || 'Not Started',
+    priority: String(task.priority || 'Medium'),
+    status: String(task.status || 'Not Started'),
     estimated_hours: Number(task.estimatedHours || 0),
     actual_hours: Number(task.actualHours || 0),
     subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
@@ -189,7 +185,7 @@ export function mapClientTaskToSupabase(task: TaskItem): any {
 
 export function mapSupabaseClientToClient(row: any): Client {
   return {
-    id: row.id,
+    id: String(row.id),
     name: row.name || 'Unnamed Client',
     type: row.type || 'Corporate',
     industry: row.industry || '',
@@ -224,7 +220,7 @@ export function mapClientClientToSupabase(cli: Client): any {
 
 export function mapSupabaseDeadlineToClient(row: any): DeadlineItem {
   return {
-    id: row.id,
+    id: String(row.id),
     title: row.title || '',
     category: row.category || 'Hearing',
     matterId: row.matter_id || '',
@@ -245,7 +241,7 @@ export function mapClientDeadlineToSupabase(dl: DeadlineItem): any {
     id: String(dl.id),
     title: String(dl.title || ''),
     category: dl.category || 'Hearing',
-    matter_id: dl.matterId ? String(dl.matterId) : 'general-matter',
+    matter_id: dl.matterId ? String(dl.matterId) : null,
     matter_ref: dl.matterRef || null,
     matter_title: dl.matterTitle || 'General',
     court_location: dl.courtLocation || null,
@@ -261,7 +257,7 @@ export function mapClientDeadlineToSupabase(dl: DeadlineItem): any {
 
 export function mapSupabaseActivityToClient(row: any): ActivityLog {
   return {
-    id: row.id,
+    id: String(row.id),
     type: (row.type as any) || 'Court Event',
     title: row.title || '',
     description: row.description || '',
@@ -280,7 +276,7 @@ export function mapClientActivityToSupabase(act: ActivityLog): any {
     description: act.description || null,
     timestamp: act.timestamp || new Date().toISOString(),
     user_name: String(act.user || 'Advocate'),
-    matter_id: act.matterId || null,
+    matter_id: act.matterId ? String(act.matterId) : null,
     matter_ref: act.matterRef || null,
   };
 }
@@ -405,7 +401,6 @@ export class ChambersCloudService {
         );
       }
 
-      // Order by created_date to align with existing table schema
       const { data, error } = await query.order('created_date', { ascending: false });
 
       if (error) {
