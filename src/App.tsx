@@ -69,7 +69,7 @@ import { ChambersCloudService } from './services/chambersCloudService';
 import SupabaseMigrationService from './services/SupabaseMigrationService';
 
 export default function App() {
-  // Authentication State
+  // Authentication State: Read from persistent session if previously signed in
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const session = getStoredAuthSession();
     return Boolean(session?.isAuthenticated);
@@ -133,6 +133,7 @@ export default function App() {
     Boolean(currentAdvocate.permissions?.canEditBilling) ||
     Boolean(currentAdvocate.permissions?.canViewFinancialInsights);
 
+  // Billing is visible only to SYS admin, Managing advocate, or any other person granted billing rights
   const canAccessBilling =
     isSystemAdmin ||
     isManagingAdvocate ||
@@ -140,17 +141,20 @@ export default function App() {
 
   const canAccessInvoicing = canAccessBilling;
 
+  // Executive revenue insights view
   const canAccessFinancialInsights =
     isSystemAdmin ||
     isManagingAdvocate ||
     Boolean(currentAdvocate.permissions?.canViewFinancialInsights);
 
+  // Fallback if current active tab is Billing but user doesn't have billing rights
   useEffect(() => {
     if (activeTab === 'Billing' && !canAccessBilling) {
       setActiveTab('Overview');
     }
   }, [activeTab, canAccessBilling]);
 
+  // Sync staff roster state across application when updated
   useEffect(() => {
     const handleStaffUpdated = (e: CustomEvent<Advocate[]>) => {
       if (e.detail && Array.isArray(e.detail)) {
@@ -186,7 +190,7 @@ export default function App() {
     saveAuthSession(advocate, true);
   };
 
-  // Core Datasets State
+  // Core Datasets State loaded from persistent storage
   const [matters, setMatters] = useState<LegalMatter[]>(() => loadSavedMatters());
   const [clients, setClients] = useState<Client[]>(() => loadSavedClients());
   const [tasks, setTasks] = useState<TaskItem[]>(() => loadSavedTasks());
@@ -194,19 +198,37 @@ export default function App() {
   const [activities, setActivities] = useState(() => loadSavedActivities());
   const [notifications, setNotifications] = useState(() => loadSavedNotifications());
 
-  // Cache Sync to LocalStorage
-  useEffect(() => { saveStoredMatters(matters); }, [matters]);
-  useEffect(() => { saveStoredClients(clients); }, [clients]);
-  useEffect(() => { saveStoredTasks(tasks); }, [tasks]);
-  useEffect(() => { saveStoredDeadlines(deadlines); }, [deadlines]);
-  useEffect(() => { saveStoredActivities(activities); }, [activities]);
-  useEffect(() => { saveStoredNotifications(notifications); }, [notifications]);
+  // Automatically sync datasets to persistent local storage whenever changed
+  useEffect(() => {
+    saveStoredMatters(matters);
+  }, [matters]);
 
-  // Central Chambers Direct Cloud Data Initialization
+  useEffect(() => {
+    saveStoredClients(clients);
+  }, [clients]);
+
+  useEffect(() => {
+    saveStoredTasks(tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    saveStoredDeadlines(deadlines);
+  }, [deadlines]);
+
+  useEffect(() => {
+    saveStoredActivities(activities);
+  }, [activities]);
+
+  useEffect(() => {
+    saveStoredNotifications(notifications);
+  }, [notifications]);
+
+  // Central Chambers Direct Cloud Data Initialization with Role-Scoping
   useEffect(() => {
     let isCancelled = false;
 
     const loadCloudData = async () => {
+      // Auto-migrate local storage data on first boot if not already migrated
       SupabaseMigrationService.autoMigrateOnFirstBoot().catch((err) =>
         console.warn('[App] First boot migration check notice:', err)
       );
@@ -223,13 +245,24 @@ export default function App() {
 
         if (isCancelled) return;
 
-        if (cloudMatters && cloudMatters.length > 0) setMatters(cloudMatters);
-        if (cloudClients && cloudClients.length > 0) setClients(cloudClients);
-        if (cloudDeadlines && cloudDeadlines.length > 0) setDeadlines(cloudDeadlines);
-        if (cloudActivities && cloudActivities.length > 0) setActivities(cloudActivities);
+        if (cloudMatters && cloudMatters.length > 0) {
+          setMatters(cloudMatters);
+        }
+        if (cloudClients && cloudClients.length > 0) {
+          setClients(cloudClients);
+        }
+        if (cloudDeadlines && cloudDeadlines.length > 0) {
+          setDeadlines(cloudDeadlines);
+        }
+        if (cloudActivities && cloudActivities.length > 0) {
+          setActivities(cloudActivities);
+        }
 
+        // Fetch scoped tasks using the retrieved matters
         const cloudTasks = await ChambersCloudService.fetchTasks(currentAdvocate, cloudMatters || undefined);
-        if (!isCancelled && cloudTasks && cloudTasks.length > 0) setTasks(cloudTasks);
+        if (!isCancelled && cloudTasks && cloudTasks.length > 0) {
+          setTasks(cloudTasks);
+        }
       } catch (err) {
         console.warn('[App] Direct cloud data fetch error, maintaining cached store:', err);
       }
@@ -242,43 +275,30 @@ export default function App() {
     };
   }, [currentAdvocate.id, currentAdvocate.role]);
 
-  // Realtime Subscriptions
+  // Active Supabase Realtime Subscriptions via ChambersCloudService
   useEffect(() => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return;
-
-    const channel = supabase
-      .channel('chambers-realtime-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matters' }, async () => {
-        const fresh = await ChambersCloudService.fetchMatters(currentAdvocate);
-        if (fresh) setMatters(fresh);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => {
-        const fresh = await ChambersCloudService.fetchTasks(currentAdvocate);
-        if (fresh) setTasks(fresh);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, async () => {
-        const fresh = await ChambersCloudService.fetchClients();
-        if (fresh) setClients(fresh);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deadlines' }, async () => {
-        const fresh = await ChambersCloudService.fetchDeadlines(currentAdvocate);
-        if (fresh) setDeadlines(fresh);
-      })
-      .subscribe();
-
+    const unsubscribe = ChambersCloudService.subscribeToRealtimeChanges();
     return () => {
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
-  }, [currentAdvocate.id, currentAdvocate.role]);
+  }, []);
 
+  // Central Chambers Database Live Synchronization
   useEffect(() => {
     const cleanup = initChambersDatabaseSync();
 
-    const handleRemoteMatters = (e: any) => { if (Array.isArray(e.detail)) setMatters(e.detail); };
-    const handleRemoteTasks = (e: any) => { if (Array.isArray(e.detail)) setTasks(e.detail); };
-    const handleRemoteClients = (e: any) => { if (Array.isArray(e.detail)) setClients(e.detail); };
-    const handleRemoteDeadlines = (e: any) => { if (Array.isArray(e.detail)) setDeadlines(e.detail); };
+    const handleRemoteMatters = (e: any) => {
+      if (Array.isArray(e.detail)) setMatters(e.detail);
+    };
+    const handleRemoteTasks = (e: any) => {
+      if (Array.isArray(e.detail)) setTasks(e.detail);
+    };
+    const handleRemoteClients = (e: any) => {
+      if (Array.isArray(e.detail)) setClients(e.detail);
+    };
+    const handleRemoteDeadlines = (e: any) => {
+      if (Array.isArray(e.detail)) setDeadlines(e.detail);
+    };
 
     window.addEventListener('chambers-matters-updated', handleRemoteMatters);
     window.addEventListener('chambers-tasks-updated', handleRemoteTasks);
@@ -294,7 +314,7 @@ export default function App() {
     };
   }, []);
 
-  // Dialog Controls
+  // Dialog & Drawer Controls
   const [selectedMatter, setSelectedMatter] = useState<LegalMatter | null>(null);
   const [isNewMatterOpen, setIsNewMatterOpen] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
@@ -303,10 +323,16 @@ export default function App() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [backupSuccessToast, setBackupSuccessToast] = useState<string | null>(null);
 
+  // Automated Email Notification Preview Modal & Live Toast
   const [selectedEmailPayload, setSelectedEmailPayload] = useState<AssignmentEmailPayload | null>(null);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState<boolean>(false);
-  const [emailToast, setEmailToast] = useState<{ id: string; message: string; payload: AssignmentEmailPayload } | null>(null);
+  const [emailToast, setEmailToast] = useState<{
+    id: string;
+    message: string;
+    payload: AssignmentEmailPayload;
+  } | null>(null);
 
+  // Listen for automated email dispatch events across all components
   useEffect(() => {
     const handleEmailDispatched = (e: CustomEvent<{ payload: AssignmentEmailPayload }>) => {
       if (e?.detail?.payload) {
@@ -329,141 +355,176 @@ export default function App() {
     };
   }, []);
 
+  // Auto-dismiss email toast after 8 seconds
   useEffect(() => {
     if (!emailToast) return;
-    const timer = setTimeout(() => setEmailToast(null), 8000);
+    const timer = setTimeout(() => {
+      setEmailToast(null);
+    }, 8000);
     return () => clearTimeout(timer);
   }, [emailToast]);
 
+  // Auto-dismiss backup success toast after 8 seconds
   useEffect(() => {
     if (!backupSuccessToast) return;
-    const timer = setTimeout(() => setBackupSuccessToast(null), 8000);
+    const timer = setTimeout(() => {
+      setBackupSuccessToast(null);
+    }, 8000);
     return () => clearTimeout(timer);
   }, [backupSuccessToast]);
 
+  // Scoped active matters for counts & badges
   const scopedActiveMatters = isManagingAdvocate
     ? matters.filter((m) => m.status !== 'Archived')
-    : matters.filter((m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate, tasks));
+    : matters.filter(
+        (m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate, tasks)
+      );
 
-  // Async Handlers with Cloud Persistence
-  const handleAddMatter = async (newMatter: LegalMatter) => {
+  // Handlers with Direct Cloud Persistence
+  const handleAddMatter = (newMatter: LegalMatter) => {
+    setMatters([newMatter, ...matters]);
+    ChambersCloudService.upsertMatter(newMatter);
+
+    // Automated Email Dispatch to assigned advocate
     try {
-      setMatters((prev) => [newMatter, ...prev]);
-      await ChambersCloudService.upsertMatter(newMatter);
-
-      try {
-        const emailPayload = generateMatterAssignmentEmail(newMatter, currentAdvocate.name, advocates, false);
-        dispatchAssignmentEmail(emailPayload);
-        const inAppNotif = createMatterAssignmentNotification(newMatter, currentAdvocate.name, advocates, false);
-        setNotifications((prev) => [inAppNotif, ...prev]);
-      } catch (err) {
-        console.warn('Failed to dispatch matter assignment email:', err);
-      }
-
-      const newActivity = {
-        id: `act-${Date.now()}`,
-        type: 'Court Event' as const,
-        title: 'New Matter Registered in Firm Workspace',
-        description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
-        timestamp: new Date().toISOString(),
-        user: currentAdvocate.name,
-        matterId: newMatter.id,
-        matterRef: newMatter.referenceNumber,
-      };
-      setActivities((prev) => [newActivity, ...prev]);
-      await ChambersCloudService.recordActivity(newActivity);
-    } catch (err: any) {
-      console.error('[App] Matter creation error:', err);
-      alert(`Database Insert Warning: ${err.message || err}`);
+      const emailPayload = generateMatterAssignmentEmail(
+        newMatter,
+        currentAdvocate.name,
+        advocates,
+        false
+      );
+      dispatchAssignmentEmail(emailPayload);
+      const inAppNotif = createMatterAssignmentNotification(
+        newMatter,
+        currentAdvocate.name,
+        advocates,
+        false
+      );
+      setNotifications((prev) => [inAppNotif, ...prev]);
+    } catch (err) {
+      console.warn('Failed to dispatch matter assignment email:', err);
     }
+
+    // Log Activity locally and directly to Supabase cloud
+    const newActivity = {
+      id: `act-${Date.now()}`,
+      type: 'Court Event' as const,
+      title: 'New Matter Registered in Firm Workspace',
+      description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
+      timestamp: 'Just now',
+      user: currentAdvocate.name,
+      matterId: newMatter.id,
+      matterRef: newMatter.referenceNumber,
+    };
+    setActivities([newActivity, ...activities]);
+    ChambersCloudService.recordActivity(newActivity);
   };
 
-  const handleUpdateMatter = async (updatedMatter: LegalMatter) => {
-    try {
-      const prevMatter = matters.find((m) => m.id === updatedMatter.id);
-      const isReassigned =
-        prevMatter &&
-        (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
-          prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
+  const handleUpdateMatter = (updatedMatter: LegalMatter) => {
+    const prevMatter = matters.find((m) => m.id === updatedMatter.id);
+    const isReassigned =
+      prevMatter &&
+      (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
+        prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
 
-      if (isReassigned) {
-        try {
-          const emailPayload = generateMatterAssignmentEmail(updatedMatter, currentAdvocate.name, advocates, true);
-          dispatchAssignmentEmail(emailPayload);
-          const inAppNotif = createMatterAssignmentNotification(updatedMatter, currentAdvocate.name, advocates, true);
-          setNotifications((prev) => [inAppNotif, ...prev]);
-        } catch (err) {
-          console.warn('Failed to dispatch matter reassignment email:', err);
-        }
-      }
-
-      setMatters((prev) => prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m)));
-      await ChambersCloudService.upsertMatter(updatedMatter);
-
-      if (selectedMatter && selectedMatter.id === updatedMatter.id) {
-        setSelectedMatter(updatedMatter);
-      }
-
-      const updateActivity = {
-        id: `act-${Date.now()}`,
-        type: 'Status Change' as const,
-        title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
-        description: isReassigned
-          ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
-          : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
-        timestamp: new Date().toISOString(),
-        user: currentAdvocate.name,
-        matterId: updatedMatter.id,
-        matterRef: updatedMatter.referenceNumber,
-      };
-      setActivities((prev) => [updateActivity, ...prev]);
-      await ChambersCloudService.recordActivity(updateActivity);
-    } catch (err: any) {
-      console.error('[App] Matter update error:', err);
-    }
-  };
-
-  const handleAddTask = async (newTask: TaskItem) => {
-    try {
-      setTasks((prev) => [newTask, ...prev]);
-      await ChambersCloudService.upsertTask(newTask);
-
+    // If assigned advocate changed, dispatch automated reassignment email
+    if (isReassigned) {
       try {
-        const targetMatter = matters.find((m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef);
-        const emailPayload = generateTaskAssignmentEmail(newTask, advocates, targetMatter, currentAdvocate.name);
+        const emailPayload = generateMatterAssignmentEmail(
+          updatedMatter,
+          currentAdvocate.name,
+          advocates,
+          true
+        );
         dispatchAssignmentEmail(emailPayload);
-        const inAppNotif = createTaskAssignmentNotification(newTask, advocates, targetMatter, currentAdvocate.name);
+        const inAppNotif = createMatterAssignmentNotification(
+          updatedMatter,
+          currentAdvocate.name,
+          advocates,
+          true
+        );
         setNotifications((prev) => [inAppNotif, ...prev]);
       } catch (err) {
-        console.warn('Failed to dispatch task assignment email:', err);
+        console.warn('Failed to dispatch matter reassignment email:', err);
       }
-    } catch (err: any) {
-      console.error('[App] Task creation error:', err);
+    }
+
+    setMatters((prev) =>
+      prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m))
+    );
+    ChambersCloudService.upsertMatter(updatedMatter);
+
+    if (selectedMatter && selectedMatter.id === updatedMatter.id) {
+      setSelectedMatter(updatedMatter);
+    }
+
+    // Log Activity locally and to Cloud
+    const updateActivity = {
+      id: `act-${Date.now()}`,
+      type: 'Status Change' as const,
+      title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
+      description: isReassigned
+        ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
+        : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
+      timestamp: 'Just now',
+      user: currentAdvocate.name,
+      matterId: updatedMatter.id,
+      matterRef: updatedMatter.referenceNumber,
+    };
+    setActivities((prev) => [updateActivity, ...prev]);
+    ChambersCloudService.recordActivity(updateActivity);
+  };
+
+  const handleAddTask = (newTask: TaskItem) => {
+    setTasks((prev) => [newTask, ...prev]);
+    ChambersCloudService.upsertTask(newTask);
+
+    // Automated Email Dispatch to assigned advocate
+    try {
+      const targetMatter = matters.find(
+        (m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef
+      );
+      const emailPayload = generateTaskAssignmentEmail(
+        newTask,
+        advocates,
+        targetMatter,
+        currentAdvocate.name
+      );
+      dispatchAssignmentEmail(emailPayload);
+      const inAppNotif = createTaskAssignmentNotification(
+        newTask,
+        advocates,
+        targetMatter,
+        currentAdvocate.name
+      );
+      setNotifications((prev) => [inAppNotif, ...prev]);
+    } catch (err) {
+      console.warn('Failed to dispatch task assignment email:', err);
     }
   };
 
   const handleUpdateTasks = (updater: TaskItem[] | ((prev: TaskItem[]) => TaskItem[])) => {
     setTasks((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      next.forEach(async (t) => await ChambersCloudService.upsertTask(t));
+      next.forEach((t) => ChambersCloudService.upsertTask(t));
       return next;
     });
   };
 
-  const handleAddClient = async (newClient: Client) => {
+  const handleAddClient = (newClient: Client) => {
     setClients((prev) => [newClient, ...prev]);
-    await ChambersCloudService.upsertClient(newClient);
+    ChambersCloudService.upsertClient(newClient);
   };
 
   const handleUpdateClients = (updater: Client[] | ((prev: Client[]) => Client[])) => {
     setClients((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      next.forEach(async (c) => await ChambersCloudService.upsertClient(c));
+      next.forEach((c) => ChambersCloudService.upsertClient(c));
       return next;
     });
   };
 
-  const handleUpdateMatterStatus = async (id: string, newStatus: MatterStatus) => {
+  const handleUpdateMatterStatus = (id: string, newStatus: MatterStatus) => {
     setMatters((prev) => {
       const next = prev.map((m) => (m.id === id ? { ...m, status: newStatus } : m));
       const target = next.find((m) => m.id === id);
@@ -475,7 +536,7 @@ export default function App() {
     }
   };
 
-  const handleUpdateMatterTags = async (id: string, newTags: string[]) => {
+  const handleUpdateMatterTags = (id: string, newTags: string[]) => {
     setMatters((prev) => {
       const next = prev.map((m) => (m.id === id ? { ...m, tags: newTags } : m));
       const target = next.find((m) => m.id === id);
@@ -487,7 +548,7 @@ export default function App() {
     }
   };
 
-  const handleToggleDeadline = async (id: string) => {
+  const handleToggleDeadline = (id: string) => {
     setDeadlines((prev) => {
       const next = prev.map((d) => (d.id === id ? { ...d, completed: !d.completed } : d));
       const target = next.find((d) => d.id === id);
@@ -496,9 +557,9 @@ export default function App() {
     });
   };
 
-  const handleAddDeadline = async (newDl: DeadlineItem) => {
+  const handleAddDeadline = (newDl: DeadlineItem) => {
     setDeadlines((prev) => [newDl, ...prev]);
-    await ChambersCloudService.upsertDeadline(newDl);
+    ChambersCloudService.upsertDeadline(newDl);
   };
 
   const handleMarkNotificationsRead = () => {
@@ -517,6 +578,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#f4f6f8] text-[#1c2d3d] font-sans overflow-hidden">
+      {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -532,7 +594,9 @@ export default function App() {
         canAccessBilling={canAccessBilling}
       />
 
+      {/* Main Workspace Area */}
       <div className="flex flex-1 flex-col overflow-y-auto">
+        {/* Top Header with Role Switcher */}
         <Header
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenNotifications={() => setIsNotificationsOpen(true)}
@@ -545,6 +609,7 @@ export default function App() {
           onOpenBackupModal={() => setIsBackupModalOpen(true)}
         />
 
+        {/* Dynamic Page Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
           {activeTab === 'Overview' && (
             <OverviewDashboard
@@ -672,6 +737,7 @@ export default function App() {
         </main>
       </div>
 
+      {/* Slide-over Modals & Drawers */}
       <NewMatterModal
         isOpen={isNewMatterOpen}
         onClose={() => setIsNewMatterOpen(false)}
@@ -713,6 +779,7 @@ export default function App() {
         }}
       />
 
+      {/* Automated Email Preview Modal (Matters & Tasks) */}
       <TaskEmailNotificationModal
         isOpen={isEmailModalOpen}
         onClose={() => {
@@ -722,6 +789,7 @@ export default function App() {
         emailPayload={selectedEmailPayload}
       />
 
+      {/* Floating Automated Email Dispatched Toast Banner */}
       {emailToast && (
         <aside
           role="status"
@@ -766,6 +834,7 @@ export default function App() {
         </aside>
       )}
 
+      {/* Wakili AI Floating Side Drawer */}
       <AIAssistantDrawer
         isOpen={isAIAssistantDrawerOpen}
         onClose={() => setIsAIAssistantDrawerOpen(false)}
@@ -777,11 +846,11 @@ export default function App() {
         }}
       />
 
+      {/* Admin-Only Data Backup Modal */}
       <AdminBackupModal
         isOpen={isBackupModalOpen}
         onClose={() => setIsBackupModalOpen(false)}
         currentAdvocate={currentAdvocate}
-        onBackupComplete={(msg) => setBackupSuccessToast(msg)}
       />
     </div>
   );
