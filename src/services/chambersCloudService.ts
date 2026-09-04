@@ -7,10 +7,21 @@
  *    - Managing Advocate and System Admin query all records across the firm.
  *    - Regular advocates query records they are responsible for, created, or are assigned to.
  * 3. Graceful fallback when cloud client is unconfigured or temporarily unavailable.
+ * 4. Provides Supabase Realtime channel subscriptions to broadcast live database changes across users.
  */
 
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { canUserViewAll } from '../utils/visibilityRules';
+import {
+  loadSavedMatters,
+  saveStoredMatters,
+  loadSavedTasks,
+  saveStoredTasks,
+  loadSavedClients,
+  saveStoredClients,
+  loadSavedDeadlines,
+  saveStoredDeadlines,
+} from '../utils/chambersDataStorage';
 import {
   Advocate,
   LegalMatter,
@@ -258,6 +269,105 @@ export function mapClientActivityToSupabase(act: ActivityLog): any {
 
 export class ChambersCloudService {
   /**
+   * Subscribe to live database changes via Supabase Realtime channel.
+   * Updates regional application storage and emits custom events upon mutations.
+   */
+  static subscribeToRealtimeChanges(): () => void {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return () => {};
+    }
+
+    const channel = supabase
+      .channel('chambers-realtime-channel')
+      
+      // Matters Realtime Listener
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matters' },
+        (payload) => {
+          const currentMatters = loadSavedMatters();
+          if (payload.eventType === 'INSERT') {
+            const newItem = mapSupabaseMatterToClient(payload.new);
+            if (!currentMatters.some((m) => m.id === newItem.id)) {
+              saveStoredMatters([newItem, ...currentMatters]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = mapSupabaseMatterToClient(payload.new);
+            saveStoredMatters(currentMatters.map((m) => (m.id === updatedItem.id ? updatedItem : m)));
+          } else if (payload.eventType === 'DELETE') {
+            saveStoredMatters(currentMatters.filter((m) => m.id !== payload.old.id));
+          }
+        }
+      )
+
+      // Tasks Realtime Listener
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        (payload) => {
+          const currentTasks = loadSavedTasks();
+          if (payload.eventType === 'INSERT') {
+            const newItem = mapSupabaseTaskToClient(payload.new);
+            if (!currentTasks.some((t) => t.id === newItem.id)) {
+              saveStoredTasks([newItem, ...currentTasks]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = mapSupabaseTaskToClient(payload.new);
+            saveStoredTasks(currentTasks.map((t) => (t.id === updatedItem.id ? updatedItem : t)));
+          } else if (payload.eventType === 'DELETE') {
+            saveStoredTasks(currentTasks.filter((t) => t.id !== payload.old.id));
+          }
+        }
+      )
+
+      // Clients Realtime Listener
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clients' },
+        (payload) => {
+          const currentClients = loadSavedClients();
+          if (payload.eventType === 'INSERT') {
+            const newItem = mapSupabaseClientToClient(payload.new);
+            if (!currentClients.some((c) => c.id === newItem.id)) {
+              saveStoredClients([newItem, ...currentClients]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = mapSupabaseClientToClient(payload.new);
+            saveStoredClients(currentClients.map((c) => (c.id === updatedItem.id ? updatedItem : c)));
+          } else if (payload.eventType === 'DELETE') {
+            saveStoredClients(currentClients.filter((c) => c.id !== payload.old.id));
+          }
+        }
+      )
+
+      // Deadlines Realtime Listener
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deadlines' },
+        (payload) => {
+          const currentDeadlines = loadSavedDeadlines();
+          if (payload.eventType === 'INSERT') {
+            const newItem = mapSupabaseDeadlineToClient(payload.new);
+            if (!currentDeadlines.some((d) => d.id === newItem.id)) {
+              saveStoredDeadlines([newItem, ...currentDeadlines]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = mapSupabaseDeadlineToClient(payload.new);
+            saveStoredDeadlines(currentDeadlines.map((d) => (d.id === updatedItem.id ? updatedItem : d)));
+          } else if (payload.eventType === 'DELETE') {
+            saveStoredDeadlines(currentDeadlines.filter((d) => d.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }
+
+  /**
    * Fetch Matters directly from Supabase with Multi-User Role Scoping
    */
   static async fetchMatters(user: Advocate): Promise<LegalMatter[] | null> {
@@ -267,8 +377,6 @@ export class ChambersCloudService {
     try {
       let query = supabase.from('matters').select('*');
 
-      // Managing Advocate & System Admin query all firm rows
-      // Regular Advocates only query matters they lead, created, or are named on
       if (!canUserViewAll(user)) {
         query = query.or(
           `responsible_advocate_id.eq.${user.id},created_by_advocate_id.eq.${user.id},responsible_advocate_name.ilike.%${user.name}%`
@@ -342,10 +450,8 @@ export class ChambersCloudService {
       let query = supabase.from('tasks').select('*');
 
       if (!canUserViewAll(user)) {
-        // Build role filter: assigned to advocate OR created by advocate OR named
         let filterStr = `assigned_to_id.eq.${user.id},created_by_id.eq.${user.id},assigned_to.ilike.%${user.name}%`;
         
-        // Also include tasks for matters this advocate leads
         if (userMatters && userMatters.length > 0) {
           const matterIds = userMatters.map((m) => m.id).filter(Boolean);
           if (matterIds.length > 0) {
