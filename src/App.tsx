@@ -64,6 +64,17 @@ import { getSupabaseClient, isSupabaseConfigured } from './utils/supabaseClient'
 import { ChambersCloudService } from './services/chambersCloudService';
 import SupabaseMigrationService from './services/SupabaseMigrationService';
 
+// One-time auto-wipe of stale browser cache across client devices
+try {
+  if (!localStorage.getItem('v2_supabase_cache_cleared')) {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('v2_supabase_cache_cleared', 'true');
+  }
+} catch (e) {
+  console.warn('[Cache Reset] Local storage check bypassed:', e);
+}
+
 export default function App() {
   // Authentication State: Read from persistent session if previously signed in
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -232,24 +243,12 @@ export default function App() {
 
         if (isCancelled) return;
 
-        if (snapshot.matters && snapshot.matters.length > 0) {
-          setMatters(snapshot.matters);
-        }
-        if (snapshot.clients && snapshot.clients.length > 0) {
-          setClients(snapshot.clients);
-        }
-        if (snapshot.tasks && snapshot.tasks.length > 0) {
-          setTasks(snapshot.tasks);
-        }
-        if (snapshot.deadlines && snapshot.deadlines.length > 0) {
-          setDeadlines(snapshot.deadlines);
-        }
-        if (snapshot.activities && snapshot.activities.length > 0) {
-          setActivities(snapshot.activities);
-        }
-        if (snapshot.notifications && snapshot.notifications.length > 0) {
-          setNotifications(snapshot.notifications);
-        }
+        setMatters(snapshot.matters || []);
+        setClients(snapshot.clients || []);
+        setTasks(snapshot.tasks || []);
+        setDeadlines(snapshot.deadlines || []);
+        setActivities(snapshot.activities || []);
+        setNotifications(snapshot.notifications || []);
       } catch (err) {
         console.warn('[App] Direct cloud data fetch error, maintaining cached store:', err);
       }
