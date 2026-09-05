@@ -46,7 +46,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     status: 'Active',
     joinedDate: '2020-03-01',
     password: 'password123',
-    isSystemAdmin: true,
+    isSystemAdmin: false,
     permissions: {
       canViewAllMatters: true,
       canManageStaff: true,
@@ -200,6 +200,15 @@ export const loadStaffRoster = (): Advocate[] => {
               title: 'Sys Admin & Technical Lead',
               isSystemAdmin: true,
               isDeveloper: true,
+              password: m.password || 'password123',
+            };
+          }
+          if (m.id === 'adv-1') {
+            return {
+              ...m,
+              isSystemAdmin: false,
+              role: 'Managing Advocate',
+              email: EMAIL_CANONICAL_MAP[m.id],
               password: m.password || 'password123',
             };
           }

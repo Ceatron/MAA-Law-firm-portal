@@ -21,6 +21,7 @@ interface MattersViewProps {
   currentAdvocate?: Advocate;
   isManagingAdvocate?: boolean;
   allAdvocates?: Advocate[];
+  onDeleteMatter?: (matterId: string) => void;
 }
 
 export const MattersView: React.FC<MattersViewProps> = ({
@@ -33,6 +34,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
   currentAdvocate,
   isManagingAdvocate = true,
   allAdvocates = loadVisibleStaffRoster(),
+  onDeleteMatter,
 }) => {
   const [mattersSubView, setMattersSubView] = useState<'all' | 'archived' | 'analytics'>('all');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -127,6 +129,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
           isManagingAdvocate={isManagingAdvocate}
           allAdvocates={allAdvocates}
           onTriggerExport={() => setIsExportModalOpen(true)}
+          onDeleteMatter={onDeleteMatter}
         />
       )}
 
@@ -143,6 +146,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
             allAdvocates={allAdvocates}
             isArchivedView
             onTriggerExport={() => setIsExportModalOpen(true)}
+            onDeleteMatter={onDeleteMatter}
           />
         </div>
       )}
@@ -161,6 +165,7 @@ export const MattersView: React.FC<MattersViewProps> = ({
             isManagingAdvocate={isManagingAdvocate}
             allAdvocates={allAdvocates}
             onTriggerExport={() => setIsExportModalOpen(true)}
+            onDeleteMatter={onDeleteMatter}
           />
         </div>
       )}
@@ -185,6 +190,8 @@ export const MattersView: React.FC<MattersViewProps> = ({
         }}
         clients={clients}
         advocates={allAdvocates}
+        currentAdvocate={currentAdvocate}
+        isManagingAdvocate={isManagingAdvocate}
       />
     </div>
   );

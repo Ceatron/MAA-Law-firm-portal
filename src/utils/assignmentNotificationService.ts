@@ -310,7 +310,7 @@ The Triple Two Address, 1st Floor, Ruiru • Milimani Law Courts
 
 export interface DispatchEmailResult {
   success: boolean;
-  status: 'submitted' | 'failed' | 'unconfigured';
+  status: 'submitted' | 'failed' | 'unconfigured' | 'disabled';
   messageId: string;
   providerMessageId?: string;
   provider?: string;
@@ -320,11 +320,31 @@ export interface DispatchEmailResult {
 }
 
 /**
+ * Outbound email delivery switch.
+ * Set to false per administrator directive to disable all email sending services.
+ */
+export const IS_EMAIL_SERVICE_ENABLED = false;
+
+/**
  * Dispatches an automated assignment email to the server endpoint and records in the chambers outbound log.
  */
 export async function dispatchAssignmentEmail(
   payload: AssignmentEmailPayload
 ): Promise<DispatchEmailResult> {
+  // If email sending services are disabled, abort immediately without network calls
+  if (!IS_EMAIL_SERVICE_ENABLED) {
+    const timestamp = new Date().toISOString();
+    return {
+      success: false,
+      status: 'disabled',
+      messageId: `disabled-${Date.now()}`,
+      provider: 'none',
+      recipient: payload.toEmail,
+      timestamp,
+      error: 'Email sending services are disabled.',
+    };
+  }
+
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
@@ -459,6 +479,18 @@ export async function dispatchPasswordResetEmail(
   tempPassword?: string,
   customText?: string
 ): Promise<DispatchEmailResult> {
+  if (!IS_EMAIL_SERVICE_ENABLED) {
+    return {
+      success: false,
+      status: 'disabled',
+      messageId: `disabled-${Date.now()}`,
+      provider: 'none',
+      recipient: toEmail,
+      timestamp: new Date().toISOString(),
+      error: 'Email sending services are disabled.',
+    };
+  }
+
   const subject = 'Password Reset - Muthoni Ahago Advocates Portal Credentials';
   const textBody =
     customText ||

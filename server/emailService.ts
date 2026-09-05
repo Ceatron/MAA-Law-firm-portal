@@ -51,10 +51,19 @@ function cleanupRecentDispatches() {
   }
 }
 
+export function isEmailSendingEnabled(): boolean {
+  const explicit = (process.env.ENABLE_EMAIL_SERVICE || '').toLowerCase().trim();
+  return explicit === 'true';
+}
+
 /**
  * Resolves the active email provider based on environment variables
  */
 export function getActiveEmailProvider(): 'resend' | 'smtp' | 'none' {
+  if (!isEmailSendingEnabled()) {
+    return 'none';
+  }
+
   const explicit = (process.env.EMAIL_PROVIDER || '').toLowerCase().trim();
   if (explicit === 'resend') return 'resend';
   if (explicit === 'smtp') return 'smtp';
@@ -377,6 +386,20 @@ export async function sendEmail(options: EmailOptions): Promise<EmailSendResult>
   if (existing && Date.now() - existing.timestamp < 60000) { // 1 minute duplicate suppression
     console.warn(`[EmailService] Duplicate send suppressed for ${options.to} (${options.subject}) within 60s window.`);
     return existing.result;
+  }
+
+  // Check if outbound email services are disabled
+  if (!isEmailSendingEnabled()) {
+    console.info(`[EmailService] Outbound email services are disabled. Message to ${options.to} suppressed.`);
+    return {
+      success: false,
+      status: 'unconfigured',
+      provider: 'none',
+      recipient: options.to,
+      subject: options.subject,
+      timestamp,
+      error: 'Email sending services are currently disabled.',
+    };
   }
 
   // Check if provider is configured

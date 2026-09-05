@@ -237,7 +237,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
         </div>
       </div>
 
-      {/* Client Cards Grid */}
+      {/* Client List / Table Display */}
       {filteredClients.length === 0 ? (
         <div className="rounded-xl border border-dashed border-stone-300 bg-white p-12 text-center shadow-2xs">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#ebf5fc] text-[#0070ba] mb-3">
@@ -281,89 +281,142 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredClients.map((client) => {
-            const isIndividual = client.type === 'Individual';
+        <div className="rounded-xl border border-[#e2dfd5] bg-white shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#e2dfd5] bg-[#f8f6f0] text-[11px] font-bold text-stone-600 uppercase tracking-wider">
+                  <th className="py-3 px-4">Client / Organization</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Contact Person</th>
+                  <th className="py-3 px-4">KRA PIN</th>
+                  <th className="py-3 px-4">Location / Contact</th>
+                  <th className="py-3 px-4 text-center">Active Matters</th>
+                  <th className="py-3 px-4">Retainer Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-200 text-xs">
+                {filteredClients.map((client) => {
+                  const isIndividual = client.type === 'Individual';
+                  const clientMatters = matters.filter(
+                    (m) => m.clientId === client.id || m.clientName.toLowerCase() === client.name.toLowerCase()
+                  );
+                  const activeCasesCount = clientMatters.length > 0 ? clientMatters.length : client.activeMattersCount;
 
-            return (
-              <div
-                key={client.id}
-                className={`rounded-xl border bg-white p-5 shadow-2xs transition-all hover:shadow-md flex flex-col justify-between ${
-                  isIndividual ? 'border-amber-200/80 hover:border-amber-400' : 'border-[#e2dfd5] hover:border-[#0B63E5]/50'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-lg font-bold text-sm border ${
-                          isIndividual
-                            ? 'bg-amber-100 text-amber-900 border-amber-300'
-                            : 'bg-[#EFF6FF] text-[#0B63E5] border-[#0B63E5]/20'
-                        }`}
-                      >
-                        {isIndividual ? <User className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-1.5">
-                          <h3 className="font-serif-title font-bold text-stone-900 text-sm">
-                            {client.name}
-                          </h3>
+                  return (
+                    <tr
+                      key={client.id}
+                      className="hover:bg-amber-50/40 transition-colors group"
+                    >
+                      {/* Client Name */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg font-bold text-xs border shrink-0 ${
+                              isIndividual
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-[#EFF6FF] text-[#0B63E5] border-[#0B63E5]/20'
+                            }`}
+                          >
+                            {isIndividual ? <User className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-stone-900 text-[13px] group-hover:text-[#0B63E5] transition-colors">
+                              {client.name}
+                            </p>
+                            <p className="text-[11px] text-stone-500 font-normal">
+                              {client.industry || (isIndividual ? 'Private Individual' : 'Corporate Client')}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2 mt-0.5">
-                          <span className="text-[10px] font-mono text-stone-500 font-semibold">
-                            KRA PIN: {client.kraPin}
-                          </span>
-                          <span className={`text-[9px] font-extrabold  px-1.5 py-0.2 rounded border ${
-                            isIndividual ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'
-                          }`}>
-                            {client.type}
-                          </span>
+                      </td>
+
+                      {/* Category Badge */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            isIndividual
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                          }`}
+                        >
+                          {client.type}
+                        </span>
+                      </td>
+
+                      {/* Contact Person */}
+                      <td className="py-3.5 px-4 text-stone-700 whitespace-nowrap">
+                        <span className="font-medium">{client.contactPerson || client.name}</span>
+                      </td>
+
+                      {/* KRA PIN */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="font-mono text-[11px] bg-stone-100 px-2 py-0.5 rounded border border-stone-200 text-stone-700 font-medium">
+                          {client.kraPin || 'N/A'}
+                        </span>
+                      </td>
+
+                      {/* Location / Email / Phone */}
+                      <td className="py-3.5 px-4 text-stone-600">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-[11px] text-stone-700">
+                            <MapPin className="h-3 w-3 text-stone-400 shrink-0" />
+                            <span>{client.city}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] text-stone-500">
+                            <Mail className="h-3 w-3 text-stone-400 shrink-0" />
+                            <span className="truncate max-w-[150px]">{client.email}</span>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </td>
 
-                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200">
-                      {client.retainerStatus}
-                    </span>
-                  </div>
+                      {/* Active Matters */}
+                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        <span className="inline-flex items-center justify-center font-mono font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-800 text-[11px]">
+                          {activeCasesCount} {activeCasesCount === 1 ? 'matter' : 'matters'}
+                        </span>
+                      </td>
 
-                  <div className="mt-4 space-y-2 text-xs text-stone-600 border-t border-stone-100 pt-3">
-                    <div className="flex items-center space-x-2">
-                      <Briefcase className="h-3.5 w-3.5 text-stone-400 shrink-0" />
-                      <span className="truncate font-semibold text-stone-800">{client.industry}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <MapPin className="h-3.5 w-3.5 text-stone-400 shrink-0" />
-                      <span className="truncate">{client.city}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Mail className="h-3.5 w-3.5 text-stone-400 shrink-0" />
-                      <span className="truncate font-mono">{client.email}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Phone className="h-3.5 w-3.5 text-stone-400 shrink-0" />
-                      <span>{client.phone}</span>
-                    </div>
-                  </div>
-                </div>
+                      {/* Retainer Status */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                            client.retainerStatus === 'Active Retainer'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                              : client.retainerStatus === 'Pending Deposit'
+                              ? 'bg-amber-50 text-amber-800 border-amber-300'
+                              : 'bg-stone-100 text-stone-700 border-stone-200'
+                          }`}
+                        >
+                          {client.retainerStatus || 'Per-Matter'}
+                        </span>
+                      </td>
 
-                <div className="mt-4 border-t border-stone-100 pt-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-stone-400 font-semibold">Active Matters</span>
-                    <p className="font-bold text-stone-900">{client.activeMattersCount} cases</p>
-                  </div>
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        {onOpenNewMatter && (
+                          <button
+                            type="button"
+                            onClick={onOpenNewMatter}
+                            className="inline-flex items-center gap-1 rounded bg-[#0B63E5] px-2.5 py-1 text-[11px] font-semibold text-white shadow-2xs hover:bg-[#0256D0] transition-colors cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>New Matter</span>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] text-stone-400 font-semibold">Total Fee Billed</span>
-                    <p className="font-bold text-[#0B63E5] font-mono">
-                      KES {(client.totalBilledKES / 1000000).toFixed(1)}M
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          <div className="px-4 py-3 bg-[#faf8f4] border-t border-[#e2dfd5] flex items-center justify-between text-xs text-stone-500">
+            <span>Showing <strong>{filteredClients.length}</strong> registered {filteredClients.length === 1 ? 'client' : 'clients'}</span>
+            <span className="text-[11px]">Sorted alphabetically by firm instruction records</span>
+          </div>
         </div>
       )}
 

@@ -23,11 +23,10 @@ import { ChangePasswordModal } from './ChangePasswordModal';
 interface HeaderProps {
   onOpenSearch: () => void;
   onOpenNotifications: () => void;
-  onOpenAIAssistant?: () => void;
   setMobileOpen: (open: boolean) => void;
   unreadCount: number;
   currentAdvocate: Advocate;
-  onSelectAdvocate: (advocate: Advocate) => void;
+  onSelectAdvocate?: (advocate: Advocate) => void;
   onLogout?: () => void;
   advocates?: Advocate[];
   onOpenBackupModal?: () => void;
@@ -36,13 +35,11 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   onOpenNotifications,
-  onOpenAIAssistant,
   setMobileOpen,
   unreadCount,
   currentAdvocate,
   onSelectAdvocate,
   onLogout,
-  advocates = loadVisibleStaffRoster(),
   onOpenBackupModal,
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -126,12 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const currentRoleInfo = getRoleBadgeInfo(currentAdvocate);
 
-  const isDevAdmin =
-    Boolean(currentAdvocate.isDeveloper) ||
-    Boolean(currentAdvocate.isSystemAdmin) ||
-    currentAdvocate.id === 'dev-admin' ||
-    currentAdvocate.role === 'System Admin' ||
-    isSysAdminUser(currentAdvocate);
+  const isSysAdmin = isSysAdminUser(currentAdvocate);
 
   const formattedDate = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
@@ -164,7 +156,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Header Actions: Search, AI Co-Pilot, Notifications, Advocate Switcher */}
+      {/* Header Actions: Search, Notifications, Sys Admin Backup */}
       <div className="flex items-center gap-2.5 sm:gap-3">
         {/* Global Search Button */}
         <button
@@ -181,27 +173,14 @@ export const Header: React.FC<HeaderProps> = ({
           </kbd>
         </button>
 
-        {/* Legal Assistant Quick Trigger */}
-        {onOpenAIAssistant && (
-          <button
-            type="button"
-            onClick={onOpenAIAssistant}
-            className="flex items-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 shadow-xs cursor-pointer"
-            title="Open Wakili AI Assistant"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-            <span className="hidden md:inline">Ask Wakili AI</span>
-          </button>
-        )}
-
-        {/* Admin-Only: Export Data Backup Trigger */}
-        {isDevAdmin && onOpenBackupModal && (
+        {/* System Admin Only: Export Data Backup Trigger */}
+        {isSysAdmin && onOpenBackupModal && (
           <button
             type="button"
             id="btn-header-export-backup"
             onClick={onOpenBackupModal}
             className="flex items-center gap-1.5 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-100 hover:border-amber-400 shadow-2xs cursor-pointer"
-            title="Admin Only: Non-destructive local storage backup export"
+            title="System Admin Only: Non-destructive local storage backup export"
             aria-label="Export Data Backup"
           >
             <Database className="h-3.5 w-3.5 text-amber-700" />
@@ -268,111 +247,53 @@ export const Header: React.FC<HeaderProps> = ({
                       {currentRoleInfo.label}
                     </span>
                   </div>
-                  <p className="text-[11px] text-amber-700 font-medium mt-0.5">
-                    {currentAdvocate.title}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-slate-500 font-mono">
+                  <p className="mt-1 text-[10px] text-slate-500 font-mono">
                     ID / Roll: {currentAdvocate.lskRollNo} • Active
                   </p>
                 </div>
 
-                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 tracking-wider flex items-center justify-between">
-                  <span>Switch Counsel / Role</span>
-                  <span className="text-[9px] text-slate-500 lowercase font-normal">all firm roles</span>
-                </div>
-
-                <div className="max-h-56 overflow-y-auto px-1 space-y-0.5">
-                  {advocates.filter((adv) => !isSysAdminUser(adv)).map((adv) => {
-                    const advRoleInfo = getRoleBadgeInfo(adv);
-                    return (
-                      <button
-                        key={adv.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectAdvocate(adv);
-                          setProfileDropdownOpen(false);
-                        }}
-                        className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs transition-colors cursor-pointer ${
-                          adv.id === currentAdvocate.id
-                            ? 'bg-amber-50/80 font-medium text-amber-900'
-                            : 'text-slate-800 hover:bg-slate-50'
-                        }`}
-                      >
-                        <img
-                          src={adv.avatar}
-                          alt={adv.name}
-                          className="h-6 w-6 rounded-md object-cover"
-                        />
-                        <div className="truncate flex-1">
-                          <div className="flex items-center justify-between">
-                            <p className="truncate font-medium">{adv.name}</p>
-                            <span
-                              className={`ml-1 text-[9px] px-1.5 py-0.2 rounded-full font-bold border ${advRoleInfo.badgeClass}`}
-                            >
-                              {advRoleInfo.label}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {adv.title}
-                          </p>
-                        </div>
-                        {adv.id === currentAdvocate.id && (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-1 border-t border-slate-100 pt-1">
-                  <div className="px-4 py-2 text-[11px] text-slate-500 bg-slate-50/80">
-                    <span className="font-semibold text-slate-800">Role Scope:</span>{' '}
-                    {currentRoleInfo.ruleDesc}
-                  </div>
-
-                  <div className="p-1 border-t border-slate-100 space-y-0.5">
-                    {isDevAdmin && onOpenBackupModal && (
-                      <button
-                        type="button"
-                        id="btn-dropdown-export-backup"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          onOpenBackupModal();
-                        }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition-colors cursor-pointer"
-                      >
-                        <Database className="h-3.5 w-3.5 text-amber-700" />
-                        <span>Export Data Backup (JSON)</span>
-                      </button>
-                    )}
-
+                <div className="p-1 space-y-0.5">
+                  {isSysAdmin && onOpenBackupModal && (
                     <button
                       type="button"
-                      id="btn-header-change-password"
+                      id="btn-dropdown-export-backup"
                       onClick={() => {
                         setProfileDropdownOpen(false);
-                        setIsChangePasswordOpen(true);
+                        onOpenBackupModal();
                       }}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition-colors cursor-pointer"
                     >
-                      <KeyRound className="h-3.5 w-3.5 text-amber-600" />
-                      <span>Change Account Password</span>
+                      <Database className="h-3.5 w-3.5 text-amber-700" />
+                      <span>Export Data Backup (JSON)</span>
                     </button>
+                  )}
 
-                    {onLogout && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          onLogout();
-                        }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-                      >
-                        <LogOut className="h-3.5 w-3.5 text-rose-600" />
-                        <span>Sign Out of Portal</span>
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    id="btn-header-change-password"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setIsChangePasswordOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <KeyRound className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Change Account Password</span>
+                  </button>
+
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        onLogout();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                      <span>Sign Out of Portal</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </>

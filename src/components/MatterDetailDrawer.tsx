@@ -44,7 +44,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { LegalMatter, TaskItem, Advocate, Client } from '../types';
-import { loadVisibleStaffRoster } from '../utils/staffStorage';
+import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
 import { MatterTimeline } from './MatterTimeline';
 import { CaseReportModal } from './CaseReportModal';
 import { VoiceDictationModal } from './VoiceDictationModal';
@@ -68,6 +68,8 @@ interface MatterDetailDrawerProps {
   tasks?: TaskItem[];
   onUpdateTasks?: (tasks: TaskItem[]) => void;
   currentAdvocate?: Advocate;
+  isManagingAdvocate?: boolean;
+  onDeleteMatter?: (matterId: string) => void;
 }
 
 export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
@@ -81,8 +83,20 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
   tasks = [],
   onUpdateTasks,
   currentAdvocate,
+  isManagingAdvocate = true,
+  onDeleteMatter,
 }) => {
   if (!matter) return null;
+
+  const isSysAdmin = isSysAdminUser(currentAdvocate);
+  const isManagingUser =
+    isSysAdmin ||
+    Boolean(isManagingAdvocate) ||
+    currentAdvocate?.role === 'Managing Advocate' ||
+    currentAdvocate?.id === 'adv-1' ||
+    Boolean(currentAdvocate?.title?.toLowerCase().includes('managing'));
+  const canAssignTasks = isSysAdmin || isManagingUser;
+  const canDeleteMatter = isSysAdmin || isManagingUser;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'timeline' | 'documents' | 'billing' | 'reminders' | 'notes'>('overview');
   const [loggedHours, setLoggedHours] = useState('');
@@ -93,6 +107,7 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [archiveReasonInput, setArchiveReasonInput] = useState('');
   const [archiveToast, setArchiveToast] = useState<string | null>(null);
   const [editToast, setEditToast] = useState<string | null>(null);
@@ -162,25 +177,12 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
       onUpdateTasks([newTask, ...(tasks || [])]);
     }
 
-    // Automated Email Notification Dispatch
-    try {
-      const emailPayload = generateTaskAssignmentEmail(
-        newTask,
-        advocates,
-        matter,
-        currentAdvocate?.name || 'Firm Workspace Advocate'
-      );
-      dispatchAssignmentEmail(emailPayload);
-    } catch (err) {
-      console.warn('Failed to dispatch task assignment email:', err);
-    }
-
     const recipient = resolveStaffEmail(taskAssignedTo, advocates);
     setIsAssignTaskModalOpen(false);
     setTaskTitle('');
     setTaskDescription('');
     setTaskSubtasks([]);
-    setTaskToast(`Task assigned & automated email dispatched to ${recipient.name} (${recipient.email})!`);
+    setTaskToast(`Task assigned to ${recipient.name}!`);
     setTimeout(() => setTaskToast(null), 5000);
   };
 
@@ -631,19 +633,33 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
               <span>Edit Matter</span>
             </button>
 
-            <button
-              onClick={() => {
-                setTaskAssignedTo(
-                  matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
-                );
-                setIsAssignTaskModalOpen(true);
-              }}
-              className="flex items-center space-x-1.5 rounded border border-[#0B63E5] bg-[#0B63E5] px-3 py-1 font-bold text-white shadow-2xs hover:bg-[#0256D0] transition-colors cursor-pointer"
-              title="Assign a new task / workload directly to an advocate on this matter"
-            >
-              <CheckSquare className="h-3.5 w-3.5" />
-              <span>+ Assign Task</span>
-            </button>
+            {canDeleteMatter && onDeleteMatter && (
+              <button
+                id="drawer-delete-matter-button"
+                onClick={() => setShowDeleteConfirmModal(true)}
+                className="flex items-center space-x-1.5 rounded border border-rose-300 bg-rose-50 px-3 py-1 font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-400 transition-colors cursor-pointer shadow-2xs"
+                title="Delete this matter (System Admin & Managing Advocate only)"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                <span>Delete Matter</span>
+              </button>
+            )}
+
+            {canAssignTasks && (
+              <button
+                onClick={() => {
+                  setTaskAssignedTo(
+                    matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
+                  );
+                  setIsAssignTaskModalOpen(true);
+                }}
+                className="flex items-center space-x-1.5 rounded border border-[#0B63E5] bg-[#0B63E5] px-3 py-1 font-bold text-white shadow-2xs hover:bg-[#0256D0] transition-colors cursor-pointer"
+                title="Assign a new task / workload directly to an advocate on this matter"
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                <span>+ Assign Task</span>
+              </button>
+            )}
 
             <button
               onClick={() => setShowDictationModal(true)}
@@ -1180,19 +1196,21 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     <p className="text-[11px] text-stone-500 max-w-sm mx-auto">
                       Assign research tasks, affidavit drafting, client follow-ups, or court appearance preparations directly to team advocates.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTaskAssignedTo(
-                          matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
-                        );
-                        setIsAssignTaskModalOpen(true);
-                      }}
-                      className="inline-flex items-center space-x-1 rounded bg-[#0B63E5] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#0256D0] cursor-pointer"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Assign First Task to Matter</span>
-                    </button>
+                    {canAssignTasks && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTaskAssignedTo(
+                            matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
+                          );
+                          setIsAssignTaskModalOpen(true);
+                        }}
+                        className="inline-flex items-center space-x-1 rounded bg-[#0B63E5] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#0256D0] cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Assign First Task to Matter</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1378,19 +1396,21 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTaskAssignedTo(
-                        matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
-                      );
-                      setIsAssignTaskModalOpen(true);
-                    }}
-                    className="flex items-center space-x-1.5 rounded-lg bg-[#0B63E5] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#0256D0] transition-colors cursor-pointer self-start sm:self-auto"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>+ Assign New Task</span>
-                  </button>
+                  {canAssignTasks && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaskAssignedTo(
+                          matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate'
+                        );
+                        setIsAssignTaskModalOpen(true);
+                      }}
+                      className="flex items-center space-x-1.5 rounded-lg bg-[#0B63E5] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#0256D0] transition-colors cursor-pointer self-start sm:self-auto"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>+ Assign New Task</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Status Badges Row */}
@@ -2622,7 +2642,68 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
         }}
         clients={clients}
         advocates={advocates}
+        currentAdvocate={currentAdvocate}
+        isManagingAdvocate={isManagingUser}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-700">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100">
+                <Trash2 className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-serif-title font-bold text-slate-900 text-base">
+                  Delete Legal Matter
+                </h3>
+                <p className="text-xs text-rose-600 font-semibold">
+                  Action restricted to System Admin & Managing Advocate
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3.5 text-xs text-slate-700 space-y-1.5">
+              <p className="font-semibold text-slate-900">
+                Are you sure you want to permanently delete this matter?
+              </p>
+              <p className="font-mono text-slate-600">
+                {matter.referenceNumber} — {matter.title}
+              </p>
+              <p className="text-[11px] text-rose-800">
+                Client: {matter.clientName}
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              This action will permanently delete the matter record from the firm workspace and cloud storage. This cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirmModal(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-delete-matter"
+                onClick={() => {
+                  setShowDeleteConfirmModal(false);
+                  onDeleteMatter?.(matter.id);
+                  onClose();
+                }}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer"
+              >
+                Yes, Delete Matter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

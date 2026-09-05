@@ -52,14 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
-  const isDevAdmin =
-    Boolean(isSystemAdmin) ||
-    (currentAdvocate &&
-      (Boolean(currentAdvocate.isDeveloper) ||
-        Boolean(currentAdvocate.isSystemAdmin) ||
-        currentAdvocate.id === 'dev-admin' ||
-        currentAdvocate.role === 'System Admin' ||
-        isSysAdminUser(currentAdvocate)));
+  const isDevAdmin = isSysAdminUser(currentAdvocate);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

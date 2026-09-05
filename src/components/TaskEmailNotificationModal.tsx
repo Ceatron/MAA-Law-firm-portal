@@ -112,16 +112,16 @@ ${emailPayload.description || ''}
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-heading font-bold text-sm text-white">
-                  {isMatter ? 'Automated Matter Assignment Email' : 'Automated Task Assignment Email'}
+                  {isMatter ? 'Matter Assignment Notification' : 'Task Assignment Notification'}
                 </h3>
-                <span className="rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-[10px] font-mono px-2 py-0.2">
-                  Transactional Gateway
+                <span className="rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-mono px-2 py-0.2">
+                  Email Sending Disabled
                 </span>
               </div>
               <p className="text-[11px] text-slate-300">
                 {isMatter
-                  ? 'Official case assignment notification dispatched to counsel inbox'
-                  : 'Automated legal workload notification sent to assigned advocate'}
+                  ? 'Internal case assignment record (outbound email delivery is disabled)'
+                  : 'Internal task assignment record (outbound email delivery is disabled)'}
               </p>
             </div>
           </div>
@@ -394,39 +394,21 @@ ${emailPayload.description || ''}
 
             <button
               type="button"
-              onClick={handleResend}
-              disabled={isResending}
-              className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs disabled:opacity-60"
+              disabled={true}
+              title="Email sending services are currently disabled by administrator policy."
+              className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed shadow-2xs opacity-75"
             >
-              <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isResending ? 'animate-spin' : ''}`} />
-              <span>
-                {isResending
-                  ? 'Submitting to Provider...'
-                  : resendStatus.status === 'submitted'
-                  ? 'Submitted to Provider!'
-                  : resendStatus.status === 'unconfigured'
-                  ? 'Unconfigured (.env)'
-                  : resendStatus.status === 'failed'
-                  ? 'Failed to Send'
-                  : 'Resend Email'}
-              </span>
+              <Mail className="h-3.5 w-3.5 text-slate-400" />
+              <span>Email Sending Disabled</span>
             </button>
           </div>
 
-          {resendStatus.message && (
-            <span
-              className={`text-[11px] font-medium truncate max-w-[240px] ${
-                resendStatus.status === 'submitted'
-                  ? 'text-emerald-600'
-                  : resendStatus.status === 'unconfigured'
-                  ? 'text-amber-600'
-                  : 'text-rose-600'
-              }`}
-              title={resendStatus.message}
-            >
-              {resendStatus.message}
-            </span>
-          )}
+          <span
+            className="text-[11px] font-medium text-amber-700 truncate max-w-[260px]"
+            title="Email sending services are disabled on this system."
+          >
+            Outbound email service is disabled
+          </span>
 
           <button
             type="button"

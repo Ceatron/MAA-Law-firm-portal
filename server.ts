@@ -10,6 +10,7 @@ import {
   getActiveEmailProvider,
   getDefaultFromAddress,
   buildFirmBrandedHtml,
+  isEmailSendingEnabled,
 } from "./server/emailService";
 import {
   getDatabaseStatus,
@@ -206,20 +207,24 @@ Always format output clearly using Markdown:
 
   // Status check for transactional email configuration
   app.get("/api/email-status", (req, res) => {
-    const provider = getActiveEmailProvider();
-    const isConfigured = provider !== "none";
+    const isEnabled = isEmailSendingEnabled();
+    const provider = isEnabled ? getActiveEmailProvider() : "none";
+    const isConfigured = isEnabled && provider !== "none";
     return res.json({
+      enabled: isEnabled,
       configured: isConfigured,
-      provider,
+      provider: isEnabled ? provider : "none",
       defaultFrom: getDefaultFromAddress(),
       supportedProviders: ["resend", "smtp"],
-      description: isConfigured
-        ? `Real email delivery active via ${provider.toUpperCase()}`
-        : "No transactional email provider configured on server. Set RESEND_API_KEY in your environment variables.",
+      description: isEnabled
+        ? isConfigured
+          ? `Real email delivery active via ${provider.toUpperCase()}`
+          : "No transactional email provider configured on server. Set RESEND_API_KEY in your environment variables."
+        : "Email sending services are disabled by administrator policy. Outbound email dispatch is inactive.",
     });
   });
 
-  // Automated Email Notification Dispatcher (Real Delivery via Resend / SMTP)
+  // Automated Email Notification Dispatcher (Disabled by policy)
   app.post("/api/send-email", async (req, res) => {
     try {
       const {
@@ -234,6 +239,25 @@ Always format output clearly using Markdown:
         metadata = {},
         idempotencyKey,
       } = req.body;
+
+      if (!isEmailSendingEnabled()) {
+        console.info(
+          `[Chambers Email Gateway] Outbound email services are disabled. Suppressed dispatch to ${to}.`
+        );
+        return res.json({
+          success: false,
+          status: "disabled",
+          provider: "none",
+          messageId: `disabled-${Date.now()}`,
+          recipient: to || "",
+          recipientName: toName || to || "",
+          subject: subject || "",
+          type,
+          timestamp: new Date().toISOString(),
+          deliveryMethod: "Service Disabled",
+          error: "Email sending services are disabled on this system.",
+        });
+      }
 
       if (!to || !subject) {
         return res.status(400).json({
@@ -312,6 +336,15 @@ Always format output clearly using Markdown:
   // Admin Diagnostic Test Email Endpoint
   app.post("/api/send-test-email", async (req, res) => {
     try {
+      if (!isEmailSendingEnabled()) {
+        return res.status(403).json({
+          success: false,
+          status: "disabled",
+          provider: "none",
+          error: "Email sending services are disabled by administrator policy. Test emails cannot be dispatched.",
+        });
+      }
+
       const { testEmail, recipientName = "Chambers Administrator" } = req.body;
 
       if (!testEmail || !testEmail.includes("@")) {

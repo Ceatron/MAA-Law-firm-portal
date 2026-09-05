@@ -6,7 +6,10 @@ import {
   Building2,
   Calendar,
   Receipt,
-  Tag,
+  User,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
   Plus,
 } from 'lucide-react';
 import { PracticeArea, LegalMatter, Client, Advocate } from '../types';
@@ -36,6 +39,14 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
     (a) => !isSysAdminUser(a)
   );
 
+  const isSysAdmin = isSysAdminUser(currentAdvocate);
+  const isManagingAdvocate =
+    isSysAdmin ||
+    currentAdvocate?.role === 'Managing Advocate' ||
+    currentAdvocate?.id === 'adv-1' ||
+    Boolean(currentAdvocate?.title?.toLowerCase().includes('managing'));
+  const canAssignMatters = isSysAdmin || isManagingAdvocate;
+
   // Helper for today and yesterday ISO dates
   const getTodayISO = () => {
     const d = new Date();
@@ -56,7 +67,9 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
 
   // Form Fields
   const [title, setTitle] = useState('');
-  const [clientInput, setClientInput] = useState(clients[0]?.name || '');
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [customClientName, setCustomClientName] = useState<string>('');
+  const [isCustomClient, setIsCustomClient] = useState<boolean>(false);
   const [opposingParty, setOpposingParty] = useState('');
   const [practiceArea, setPracticeArea] = useState<PracticeArea>('Civil Litigation');
   const [courtRegistry, setCourtRegistry] = useState('');
@@ -76,26 +89,16 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
   const [estimatedFeeKES, setEstimatedFeeKES] = useState('');
   const [feeToBeDiscussedLater, setFeeToBeDiscussedLater] = useState(false);
 
+  // Registry priority with distinct color states
   const [priority, setPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
-  const [tags, setTags] = useState<string[]>([]);
-  const [customTagInput, setCustomTagInput] = useState('');
   const [description, setDescription] = useState('');
 
-  const presetTags = [
-    'Urgent',
-    'Pro bono',
-    'Court of appeal',
-    'Supreme court',
-    'High value',
-    'Public interest',
-  ];
-
-  // Sync client input if empty and clients available
+  // Initialize selected client
   useEffect(() => {
-    if (!clientInput && clients.length > 0) {
-      setClientInput(clients[0].name);
+    if (clients.length > 0 && !selectedClientId && !isCustomClient) {
+      setSelectedClientId(clients[0].id);
     }
-  }, [clients]);
+  }, [clients, selectedClientId, isCustomClient]);
 
   // Automatically parse opposing party if title contains ' v. ' or ' vs '
   useEffect(() => {
@@ -122,55 +125,62 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
     setLodgedDate(getYesterdayISO());
   };
 
-  const toggleTag = (tagToToggle: string) => {
-    if (tags.includes(tagToToggle)) {
-      setTags(tags.filter((t) => t !== tagToToggle));
-    } else {
-      setTags([...tags, tagToToggle]);
-    }
-  };
-
-  const handleAddCustomTag = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = customTagInput.trim();
-    if (trimmed && !tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
-      setTags([...tags, trimmed]);
-      setCustomTagInput('');
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    const matchedClient = clients.find(
-      (c) => c.name.toLowerCase() === clientInput.trim().toLowerCase()
-    );
-    const resolvedClientName = clientInput.trim() || matchedClient?.name || 'Instructing Client';
-    const resolvedClientId = matchedClient?.id || `cli-${Date.now()}`;
+    let matchedClient = clients.find((c) => c.id === selectedClientId);
+    let resolvedClientName = '';
+    let resolvedClientId = '';
+
+    if (isCustomClient) {
+      resolvedClientName = customClientName.trim() || 'New Instructing Client';
+      const existingByName = clients.find(
+        (c) => c.name.toLowerCase() === resolvedClientName.toLowerCase()
+      );
+      if (existingByName) {
+        matchedClient = existingByName;
+        resolvedClientId = existingByName.id;
+      } else {
+        resolvedClientId = `cli-${Date.now()}`;
+        // Automatically create and register new client into the directory
+        if (onAddClient) {
+          const autoCreatedClient: Client = {
+            id: resolvedClientId,
+            name: resolvedClientName,
+            type: resolvedClientName.toLowerCase().includes('ltd') ||
+                  resolvedClientName.toLowerCase().includes('plc') ||
+                  resolvedClientName.toLowerCase().includes('inc') ||
+                  resolvedClientName.toLowerCase().includes('bank') ||
+                  resolvedClientName.toLowerCase().includes('corp')
+              ? 'Corporate'
+              : 'Individual',
+            industry: practiceArea,
+            kraPin: `P05${Math.floor(10000000 + Math.random() * 90000000)}X`,
+            contactPerson: resolvedClientName,
+            email: `contact@${resolvedClientName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}.co.ke`,
+            phone: '+254 700 000 000',
+            city: 'Nairobi',
+            activeMattersCount: 1,
+            totalBilledKES: 0,
+            retainerStatus: 'Per-Matter',
+          };
+          onAddClient(autoCreatedClient);
+        }
+      }
+    } else if (matchedClient) {
+      resolvedClientName = matchedClient.name;
+      resolvedClientId = matchedClient.id;
+    } else {
+      resolvedClientName = clients[0]?.name || 'Instructing Client';
+      resolvedClientId = clients[0]?.id || `cli-${Date.now()}`;
+    }
+
     const selectedAdv = staffList.find((a) => a.id === advocateId) || staffList[0];
 
     const cleanFee = estimatedFeeKES.replace(/,/g, '').trim();
     const parsedFee = (!feeToBeDiscussedLater && cleanFee) ? parseFloat(cleanFee) || 0 : 0;
     const isFeeTBD = feeToBeDiscussedLater || !cleanFee || parsedFee === 0;
-
-    // If client wasn't existing, add to client directory
-    if (!matchedClient && onAddClient && resolvedClientName !== 'Instructing Client') {
-      onAddClient({
-        id: resolvedClientId,
-        name: resolvedClientName,
-        type: 'Corporate',
-        industry: practiceArea,
-        kraPin: `P05${Math.floor(10000000 + Math.random() * 90000000)}X`,
-        contactPerson: resolvedClientName,
-        email: `contact@${resolvedClientName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}.co.ke`,
-        phone: '+254 700 000 000',
-        city: 'Nairobi',
-        activeMattersCount: 1,
-        totalBilledKES: 0,
-        retainerStatus: 'Per-Matter',
-      });
-    }
 
     const formatDisplayDate = (dStr: string) => {
       try {
@@ -227,7 +237,7 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
         description.trim() || 'New matter registered in firm workspace registry.',
       priority,
       documentsCount: 0,
-      tags: tags.length > 0 ? tags : ['General'],
+      tags: [],
       createdByAdvocateId: currentAdvocate?.id || 'adv-1',
       createdByName: currentAdvocate?.name || 'Adv. Costa Kimathi',
     };
@@ -239,24 +249,24 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
   return (
     <div
       id="new-matter-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 bg-black/55 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto"
     >
       <div
         id="register-new-legal-matter-modal"
-        className="w-full max-w-[620px] bg-white rounded-[14px] border border-[#E1DFD6] overflow-hidden shadow-2xl my-auto text-[#1E1D1A]"
+        className="w-full max-w-4xl bg-white rounded-xl border border-[#E1DFD6] overflow-hidden shadow-2xl my-auto text-[#1E1D1A]"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-[18px] border-b border-[#E1DFD6] bg-white">
+        <div className="flex items-center justify-between px-7 py-4 border-b border-[#E1DFD6] bg-[#fbfaf6]">
           <div className="flex items-center gap-3">
-            <div className="w-[34px] h-[34px] rounded-[9px] bg-[#E6F1FB] flex items-center justify-center text-[#0C447C] shrink-0">
-              <Gavel className="h-[18px] w-[18px]" />
+            <div className="w-9 h-9 rounded-lg bg-[#E6F1FB] flex items-center justify-center text-[#0C447C] shrink-0 border border-blue-200">
+              <Gavel className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[15px] font-semibold text-[#1E1D1A] leading-tight">
-                Register new legal matter
+              <p className="text-base font-bold text-stone-900 leading-tight font-serif">
+                Register New Legal Matter
               </p>
-              <p className="text-[12.5px] text-[#9A9890] mt-[2px] leading-tight">
-                Create new case file in firm workspace registry
+              <p className="text-xs text-stone-500 mt-0.5">
+                Create and index a new case file in the firm workspace registry
               </p>
             </div>
           </div>
@@ -265,19 +275,19 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
             id="new-matter-modal-close-btn"
             onClick={onClose}
             aria-label="Close"
-            className="p-1 text-[#9A9890] hover:text-[#1E1D1A] hover:bg-[#F6F5F0] rounded-[6px] transition-colors cursor-pointer"
+            className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
           >
-            <X className="h-[19px] w-[19px]" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit}>
-          <div className="max-h-[64vh] overflow-y-auto px-6 pt-6 pb-2 space-y-[22px]">
-            {/* Matter title and full description */}
+          <div className="max-h-[72vh] overflow-y-auto px-7 py-6 space-y-6">
+            {/* Matter title */}
             <div>
-              <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                Matter title and full description *
+              <label className="block text-xs text-stone-700 mb-1.5 font-bold uppercase tracking-wider">
+                Matter Title & Full Caption *
               </label>
               <input
                 id="new-matter-title-input"
@@ -285,133 +295,174 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Kenya Commercial Bank PLC v. National Land Commission"
-                className="w-full h-[46px] px-3 text-[15px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB] font-medium"
+                placeholder="Enter matter title"
+                className="w-full h-11 px-3.5 text-sm text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 font-medium"
               />
             </div>
 
-            {/* Section Divider: Parties */}
-            <div>
-              <div className="flex items-center gap-2 mb-[14px]">
-                <Users className="h-[15px] w-[15px] text-[#9A9890]" />
-                <span className="text-[12.5px] text-[#63615A] font-medium whitespace-nowrap">
-                  Parties
+            {/* Section: Parties */}
+            <div className="rounded-lg border border-[#e2dfd5] bg-stone-50/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+                <Users className="h-4 w-4 text-[#0B63E5]" />
+                <span className="text-xs text-stone-800 font-bold uppercase tracking-wider">
+                  Instruction & Parties
                 </span>
-                <div className="flex-1 h-px bg-[#E1DFD6]" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Represented Client Selector */}
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Represented client / instructing party *
-                  </label>
-                  <input
-                    id="new-matter-client-input"
-                    type="text"
-                    required
-                    list="registered-clients-list"
-                    value={clientInput}
-                    onChange={(e) => setClientInput(e.target.value)}
-                    placeholder="Kenya Commercial Bank PLC"
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
-                  />
-                  <datalist id="registered-clients-list">
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        {c.name} ({c.type})
-                      </option>
-                    ))}
-                  </datalist>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs text-stone-700 font-bold">
+                      Represented Client / Instructing Party *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomClient(!isCustomClient);
+                        if (!isCustomClient) {
+                          setCustomClientName('');
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-[#0B63E5] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      {isCustomClient ? 'Choose Existing Client' : '+ Add New Client'}
+                    </button>
+                  </div>
+
+                  {isCustomClient ? (
+                    <div className="space-y-1">
+                      <input
+                        id="new-matter-custom-client-input"
+                        type="text"
+                        required
+                        value={customClientName}
+                        onChange={(e) => setCustomClientName(e.target.value)}
+                        placeholder="Enter new client or organization name"
+                        className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#0B63E5] rounded-lg outline-none transition-all focus:ring-2 focus:ring-blue-100"
+                        autoFocus
+                      />
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        Will be automatically added to the firm client directory upon registration.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <select
+                        id="new-matter-client-select"
+                        value={selectedClientId}
+                        onChange={(e) => {
+                          if (e.target.value === '__add_new__') {
+                            setIsCustomClient(true);
+                            setCustomClientName('');
+                          } else {
+                            setSelectedClientId(e.target.value);
+                          }
+                        }}
+                        className="w-full h-10 px-3 pr-8 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                      >
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.type} • {c.industry || 'Client'})
+                          </option>
+                        ))}
+                        <option value="__add_new__">+ Register New Client...</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
+                {/* Opposing Party */}
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Opposing / adverse party
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Opposing / Adverse Party
                   </label>
                   <input
                     id="new-matter-opposing-input"
                     type="text"
                     value={opposingParty}
                     onChange={(e) => setOpposingParty(e.target.value)}
-                    placeholder="Leave blank if non-contentious"
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
+                    placeholder="Enter opposing party name if applicable"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Section Divider: Court and registry */}
-            <div>
-              <div className="flex items-center gap-2 mb-[14px]">
-                <Building2 className="h-[15px] w-[15px] text-[#9A9890]" />
-                <span className="text-[12.5px] text-[#63615A] font-medium whitespace-nowrap">
-                  Court and registry
+            {/* Section: Forum, Registry & Counsel */}
+            <div className="rounded-lg border border-[#e2dfd5] bg-stone-50/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+                <Building2 className="h-4 w-4 text-[#0B63E5]" />
+                <span className="text-xs text-stone-800 font-bold uppercase tracking-wider">
+                  Court Forum, Practice Area & Assigned Counsel
                 </span>
-                <div className="flex-1 h-px bg-[#E1DFD6]" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px] mb-[14px]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Practice area
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Practice Area
                   </label>
                   <select
                     id="new-matter-practice-area-select"
                     value={practiceArea}
                     onChange={(e) => setPracticeArea(e.target.value as PracticeArea)}
-                    className="w-full h-[40px] px-3 pr-8 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB] cursor-pointer"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 cursor-pointer"
                   >
-                    <option value="Civil Litigation">Civil litigation</option>
-                    <option value="Commercial Law">Commercial and tax</option>
-                    <option value="Conveyancing Law">Conveyancing</option>
-                    <option value="Family Law">Family law</option>
-                    <option value="Succession Law">Succession law</option>
-                    <option value="Bank Securities">Bank securities</option>
-                    <option value="Constitutional & Tax">Constitutional & judicial review</option>
-                    <option value="Employment & Labour">Employment and labour</option>
-                    <option value="Intellectual Property">Intellectual property</option>
+                    <option value="Civil Litigation">Civil Litigation</option>
+                    <option value="Commercial Law">Commercial & Tax</option>
+                    <option value="Conveyancing Law">Conveyancing & Land</option>
+                    <option value="Family Law">Family Law</option>
+                    <option value="Succession Law">Succession & Probate</option>
+                    <option value="Bank Securities">Bank Securities & Perfection</option>
+                    <option value="Constitutional & Tax">Constitutional & Judicial Review</option>
+                    <option value="Employment & Labour">Employment & Labour (ELRC)</option>
+                    <option value="Intellectual Property">Intellectual Property</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Court registry / forum
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Court Registry / Forum
                   </label>
                   <input
                     id="new-matter-court-registry-input"
                     type="text"
                     value={courtRegistry}
                     onChange={(e) => setCourtRegistry(e.target.value)}
-                    placeholder="High Court Commercial Division, Milimani"
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
+                    placeholder="Enter court registry or forum"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Court suit / petition number
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Court Suit / Petition Number
                   </label>
                   <input
                     id="new-matter-suit-no-input"
                     type="text"
                     value={courtCaseNumber}
                     onChange={(e) => setCourtCaseNumber(e.target.value)}
-                    placeholder="Suit No. E142 of 2026"
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
+                    placeholder="Enter case number"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 font-mono"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Responsible advocate
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Responsible Advocate
                   </label>
                   <select
                     id="new-matter-advocate-select"
                     value={advocateId}
                     onChange={(e) => setAdvocateId(e.target.value)}
-                    className="w-full h-[40px] px-3 pr-8 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB] cursor-pointer"
+                    disabled={!canAssignMatters}
+                    className={`w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 ${
+                      !canAssignMatters ? 'bg-stone-100 cursor-not-allowed opacity-80' : 'cursor-pointer'
+                    }`}
                   >
                     {staffList.map((adv) => (
                       <option key={adv.id} value={adv.id}>
@@ -420,23 +471,10 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                     ))}
                   </select>
                 </div>
-              </div>
-            </div>
 
-            {/* Section Divider: Key dates */}
-            <div>
-              <div className="flex items-center gap-2 mb-[14px]">
-                <Calendar className="h-[15px] w-[15px] text-[#9A9890]" />
-                <span className="text-[12.5px] text-[#63615A] font-medium whitespace-nowrap">
-                  Key dates
-                </span>
-                <div className="flex-1 h-px bg-[#E1DFD6]" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Date lodged
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Date Lodged
                   </label>
                   <input
                     id="date-lodged"
@@ -447,17 +485,17 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                       setLodgedDate(e.target.value);
                       setActiveDateBtn('custom');
                     }}
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100"
                   />
-                  <div className="flex gap-[6px] mt-2">
+                  <div className="flex gap-1.5 mt-1.5">
                     <button
                       type="button"
                       id="btn-today"
                       onClick={handleSelectToday}
-                      className={`flex-1 h-[27px] text-[11px] rounded-[6px] border transition-all cursor-pointer font-medium ${
+                      className={`flex-1 h-6 text-[10px] rounded border transition-all cursor-pointer font-medium ${
                         activeDateBtn === 'today'
-                          ? 'bg-[#E6F1FB] text-[#0C447C] border-transparent font-semibold'
-                          : 'bg-transparent text-[#1E1D1A] border-[#C9C7BC] hover:bg-[#F6F5F0]'
+                          ? 'bg-blue-50 text-[#0B63E5] border-blue-200 font-bold'
+                          : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
                       }`}
                     >
                       Today
@@ -466,10 +504,10 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                       type="button"
                       id="btn-yesterday"
                       onClick={handleSelectYesterday}
-                      className={`flex-1 h-[27px] text-[11px] rounded-[6px] border transition-all cursor-pointer font-medium ${
+                      className={`flex-1 h-6 text-[10px] rounded border transition-all cursor-pointer font-medium ${
                         activeDateBtn === 'yesterday'
-                          ? 'bg-[#E6F1FB] text-[#0C447C] border-transparent font-semibold'
-                          : 'bg-transparent text-[#1E1D1A] border-[#C9C7BC] hover:bg-[#F6F5F0]'
+                          ? 'bg-blue-50 text-[#0B63E5] border-blue-200 font-bold'
+                          : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
                       }`}
                     >
                       Yesterday
@@ -478,36 +516,35 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Next court date
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Next Court Date
                   </label>
                   <input
                     type="date"
                     value={nextCourtDate}
                     onChange={(e) => setNextCourtDate(e.target.value)}
-                    className="w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB]"
+                    className="w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100"
                   />
-                  <p className="text-[11.5px] text-[#9A9890] mt-[6px]">
-                    Leave blank for advisory or non-court work.
+                  <p className="text-[11px] text-stone-400 mt-1">
+                    Leave blank for non-court or advisory work.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Section Divider: Fee and priority */}
-            <div>
-              <div className="flex items-center gap-2 mb-[14px]">
-                <Receipt className="h-[15px] w-[15px] text-[#9A9890]" />
-                <span className="text-[12.5px] text-[#63615A] font-medium whitespace-nowrap">
-                  Fee and priority
+            {/* Section: Fee & Distinctly Colored Priority Options */}
+            <div className="rounded-lg border border-[#e2dfd5] bg-stone-50/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+                <Receipt className="h-4 w-4 text-[#0B63E5]" />
+                <span className="text-xs text-stone-800 font-bold uppercase tracking-wider">
+                  Fee Arrangement & Registry Priority
                 </span>
-                <div className="flex-1 h-px bg-[#E1DFD6]" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Agreed or estimated fee, KES
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Agreed or Estimated Fee (KES)
                   </label>
                   <input
                     type="text"
@@ -515,12 +552,12 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                     disabled={feeToBeDiscussedLater}
                     value={feeToBeDiscussedLater ? '' : estimatedFeeKES}
                     onChange={(e) => setEstimatedFeeKES(e.target.value)}
-                    placeholder="150,000"
-                    className={`w-full h-[40px] px-3 text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB] ${
-                      feeToBeDiscussedLater ? 'opacity-50 cursor-not-allowed bg-stone-50' : ''
+                    placeholder="Enter fee amount in KES"
+                    className={`w-full h-10 px-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 ${
+                      feeToBeDiscussedLater ? 'opacity-50 cursor-not-allowed bg-stone-100' : ''
                     }`}
                   />
-                  <label className="flex items-center gap-[7px] mt-[9px] text-[12.5px] text-[#63615A] cursor-pointer select-none">
+                  <label className="flex items-center gap-2 mt-2 text-xs text-stone-600 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       id="fee-later"
@@ -530,170 +567,114 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
                         setFeeToBeDiscussedLater(checked);
                         if (checked) setEstimatedFeeKES('');
                       }}
-                      className="w-[14px] h-[14px] accent-[#185FA5] cursor-pointer"
+                      className="w-4 h-4 accent-[#0B63E5] cursor-pointer"
                     />
-                    <span>To be discussed later</span>
+                    <span>Fee to be discussed later with client</span>
                   </label>
                 </div>
 
+                {/* Priority with Distinct Colors */}
                 <div>
-                  <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                    Registry priority
+                  <label className="block text-xs text-stone-700 mb-1.5 font-bold">
+                    Registry Priority Level
                   </label>
-                  <div className="flex border border-[#C9C7BC] rounded-[8px] overflow-hidden h-[40px]">
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Low Priority: Emerald */}
                     <button
                       type="button"
                       onClick={() => setPriority('Low')}
-                      className={`flex-1 border-r border-[#C9C7BC] bg-transparent text-[12.5px] cursor-pointer transition-colors ${
+                      className={`flex flex-col items-center justify-center py-2 px-2.5 rounded-lg border text-xs transition-all cursor-pointer ${
                         priority === 'Low'
-                          ? 'bg-[#EAF3DE] text-[#27500A] font-semibold'
-                          : 'text-[#1E1D1A] hover:bg-[#F6F5F0]'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold ring-2 ring-emerald-300'
+                          : 'bg-emerald-50/70 text-emerald-800 border-emerald-300 hover:bg-emerald-100 font-semibold'
                       }`}
                     >
-                      Low
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className={`h-3.5 w-3.5 ${priority === 'Low' ? 'text-white' : 'text-emerald-600'}`} />
+                        <span>Low</span>
+                      </div>
+                      <span className={`text-[10px] mt-0.5 ${priority === 'Low' ? 'text-emerald-100' : 'text-emerald-700 font-normal'}`}>
+                        Standard
+                      </span>
                     </button>
+
+                    {/* Medium Priority: Amber */}
                     <button
                       type="button"
                       onClick={() => setPriority('Medium')}
-                      className={`flex-1 border-r border-[#C9C7BC] bg-transparent text-[12.5px] cursor-pointer transition-colors ${
+                      className={`flex flex-col items-center justify-center py-2 px-2.5 rounded-lg border text-xs transition-all cursor-pointer ${
                         priority === 'Medium'
-                          ? 'bg-[#FAEEDA] text-[#633806] font-semibold'
-                          : 'text-[#1E1D1A] hover:bg-[#F6F5F0]'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs font-bold ring-2 ring-amber-300'
+                          : 'bg-amber-50/70 text-amber-800 border-amber-300 hover:bg-amber-100 font-semibold'
                       }`}
                     >
-                      Medium
+                      <div className="flex items-center gap-1.5">
+                        <Clock className={`h-3.5 w-3.5 ${priority === 'Medium' ? 'text-white' : 'text-amber-600'}`} />
+                        <span>Medium</span>
+                      </div>
+                      <span className={`text-[10px] mt-0.5 ${priority === 'Medium' ? 'text-amber-100' : 'text-amber-700 font-normal'}`}>
+                        Normal Track
+                      </span>
                     </button>
+
+                    {/* High Priority: Rose/Red */}
                     <button
                       type="button"
                       onClick={() => setPriority('High')}
-                      className={`flex-1 bg-transparent text-[12.5px] cursor-pointer transition-colors ${
+                      className={`flex flex-col items-center justify-center py-2 px-2.5 rounded-lg border text-xs transition-all cursor-pointer ${
                         priority === 'High'
-                          ? 'bg-[#FCEBEB] text-[#791F1F] font-semibold'
-                          : 'text-[#1E1D1A] hover:bg-[#F6F5F0]'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs font-bold ring-2 ring-rose-300'
+                          : 'bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100 font-semibold'
                       }`}
                     >
-                      High
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle className={`h-3.5 w-3.5 ${priority === 'High' ? 'text-white' : 'text-rose-600'}`} />
+                        <span>High</span>
+                      </div>
+                      <span className={`text-[10px] mt-0.5 ${priority === 'High' ? 'text-rose-100' : 'text-rose-700 font-normal'}`}>
+                        Urgent / Court
+                      </span>
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Section Divider: Classification and tags */}
+            {/* Case Summary & Instruction Notes */}
             <div>
-              <div className="flex items-center gap-2 mb-[14px]">
-                <Tag className="h-[15px] w-[15px] text-[#9A9890]" />
-                <span className="text-[12.5px] text-[#63615A] font-medium whitespace-nowrap">
-                  Classification and tags
-                </span>
-                <div className="flex-1 h-px bg-[#E1DFD6]" />
-              </div>
-
-              {/* Tag Pills */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {presetTags.map((pTag) => {
-                  const isSelected = tags.includes(pTag);
-                  return (
-                    <button
-                      key={pTag}
-                      type="button"
-                      onClick={() => toggleTag(pTag)}
-                      className={`h-[29px] px-[13px] text-[12px] rounded-full border transition-all cursor-pointer font-medium ${
-                        isSelected
-                          ? 'bg-[#E6F1FB] text-[#0C447C] border-transparent font-semibold shadow-2xs'
-                          : 'bg-transparent text-[#63615A] border-[#C9C7BC] hover:border-[#185FA5]'
-                      }`}
-                    >
-                      {pTag}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Custom Tag Input */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customTagInput}
-                  onChange={(e) => setCustomTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCustomTag();
-                    }
-                  }}
-                  placeholder="Add a custom tag, e.g. tax exemption"
-                  className="flex-1 h-[34px] px-3 text-[12.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-2 focus:ring-[#E6F1FB]"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleAddCustomTag()}
-                  className="h-[34px] px-[15px] text-[12.5px] rounded-[8px] border border-dashed border-[#C9C7BC] bg-transparent text-[#63615A] hover:border-[#185FA5] hover:text-[#0C447C] cursor-pointer flex items-center gap-1 font-medium transition-colors"
-                >
-                  <Plus className="h-[13px] w-[13px]" />
-                  <span>Add tag</span>
-                </button>
-              </div>
-
-              {/* Custom tags rendered if any outside presets */}
-              {tags.filter((t) => !presetTags.includes(t)).length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {tags
-                    .filter((t) => !presetTags.includes(t))
-                    .map((ct) => (
-                      <span
-                        key={ct}
-                        className="inline-flex items-center gap-1 h-[26px] px-2.5 rounded-full bg-[#E6F1FB] text-[#0C447C] text-[11.5px] font-medium"
-                      >
-                        <span>{ct}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleTag(ct)}
-                          className="hover:text-red-600 cursor-pointer"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            {/* Case summary and instruction notes */}
-            <div>
-              <label className="block text-[12.5px] text-[#63615A] mb-[7px] font-medium">
-                Case summary and instruction notes
+              <label className="block text-xs text-stone-700 mb-1.5 font-bold uppercase tracking-wider">
+                Case Summary & Instruction Notes
               </label>
               <textarea
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Brief summary of client instructions, key issues, relief sought"
-                className="w-full min-h-[76px] p-[10px_12px] text-[13.5px] text-[#1E1D1A] bg-white border border-[#C9C7BC] rounded-[8px] outline-none transition-all placeholder:text-[#9A9890] focus:border-[#185FA5] focus:ring-3 focus:ring-[#E6F1FB] resize-y"
+                className="w-full min-h-[80px] p-3 text-xs text-stone-900 bg-white border border-[#C9C7BC] rounded-lg outline-none transition-all placeholder:text-stone-400 focus:border-[#0B63E5] focus:ring-2 focus:ring-blue-100 resize-y"
               />
             </div>
           </div>
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-[#E1DFD6] bg-[#F6F5F0]">
-            <span className="text-[11px] text-[#9A9890] font-medium">
-              LSK firm workspace registration
+          <div className="flex items-center justify-between px-7 py-4 border-t border-[#E1DFD6] bg-[#fbfaf6]">
+            <span className="text-xs text-stone-500 font-medium">
+              Chambers Registry System
             </span>
-            <div className="flex items-center gap-[10px]">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 id="new-matter-cancel-btn"
                 onClick={onClose}
-                className="h-[38px] px-[18px] text-[13px] rounded-[8px] border border-[#C9C7BC] text-[#1E1D1A] bg-transparent hover:bg-white font-medium cursor-pointer transition-colors"
+                className="h-9 px-4 text-xs rounded-lg border border-stone-300 text-stone-700 bg-white hover:bg-stone-100 font-semibold cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 id="new-matter-submit-btn"
-                className="h-[38px] px-[18px] text-[13px] rounded-[8px] bg-[#1E1D1A] text-white font-medium hover:opacity-90 cursor-pointer transition-opacity"
+                className="h-9 px-5 text-xs rounded-lg bg-[#0B63E5] text-white font-bold hover:bg-[#0256D0] shadow-xs cursor-pointer transition-colors"
               >
-                Save legal matter
+                Register Matter
               </button>
             </div>
           </div>

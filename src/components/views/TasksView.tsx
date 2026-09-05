@@ -23,7 +23,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { TaskItem, Advocate, LegalMatter, NotificationItem } from '../../types';
-import { loadVisibleStaffRoster } from '../../utils/staffStorage';
+import { loadVisibleStaffRoster, isSysAdminUser } from '../../utils/staffStorage';
 import {
   generateTaskEmailPayload,
   createTaskAssignmentNotification,
@@ -90,6 +90,14 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onAddNotification,
 }) => {
   const staffList = loadVisibleStaffRoster();
+  const isSysAdmin = isSysAdminUser(currentAdvocate);
+  const isManagingUser =
+    isSysAdmin ||
+    Boolean(isManagingAdvocate) ||
+    currentAdvocate?.role === 'Managing Advocate' ||
+    currentAdvocate?.id === 'adv-1' ||
+    Boolean(currentAdvocate?.title?.toLowerCase().includes('managing'));
+  const canAssignTasks = isSysAdmin || isManagingUser;
   const [internalTasks, setInternalTasks] = useState<TaskItem[]>([]);
   const tasks = propTasks !== undefined ? propTasks : internalTasks;
 
@@ -260,11 +268,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
     updateTasksList([newTask, ...tasks]);
 
-    // Dispatch automated Email Notification & In-App notification
-    const emailPayload = generateTaskEmailPayload(newTask, staffList, selectedMatter);
-    dispatchAssignmentEmail(emailPayload);
+    // Record in-app notification
     const inAppNotif = createTaskAssignmentNotification(newTask, staffList);
-    
     if (onAddNotification) {
       onAddNotification(inAppNotif);
     }
@@ -273,12 +278,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setNewTitle('');
     setNewDescription('');
 
-    const assigneeEmail = getAdvocateEmailByName(newAssignedTo, staffList).email;
-    triggerToast(
-      `Task assigned to ${newAssignedTo}. Automated notification email dispatched to ${assigneeEmail}`,
-      'View Dispatched Email',
-      emailPayload
-    );
+    triggerToast(`Task assigned to ${newAssignedTo}.`);
   };
 
   // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
@@ -400,21 +400,23 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <span>Task Performance</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (matters.length > 0 && !newMatterId) {
-                setNewMatterId(matters[0].id);
-                if (matters[0].responsibleAdvocateName) {
-                  setNewAssignedTo(matters[0].responsibleAdvocateName);
+          {canAssignTasks && (
+            <button
+              type="button"
+              onClick={() => {
+                if (matters.length > 0 && !newMatterId) {
+                  setNewMatterId(matters[0].id);
+                  if (matters[0].responsibleAdvocateName) {
+                    setNewAssignedTo(matters[0].responsibleAdvocateName);
+                  }
                 }
-              }
-              setIsAssignModalOpen(true);
-            }}
-            className="rounded-lg bg-[#121c2b] px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
-          >
-            Assign task
-          </button>
+                setIsAssignModalOpen(true);
+              }}
+              className="rounded-lg bg-[#121c2b] px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
+            >
+              Assign task
+            </button>
+          )}
         </div>
       </div>
 

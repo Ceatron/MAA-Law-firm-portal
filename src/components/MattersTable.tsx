@@ -5,7 +5,6 @@ import {
   Building2,
   Calendar,
   AlertTriangle,
-  Tag,
   Clock,
   CheckCircle2,
   Folder,
@@ -15,11 +14,12 @@ import {
   X,
   Plus,
   Edit,
+  Trash2,
 } from 'lucide-react';
 import { LegalMatter, MatterStatus, Advocate, MatterPriority } from '../types';
 import { mockAdvocates } from '../data/mockData';
-import { MatterTagModal, getTagColorClass } from './MatterTagModal';
 import { isMatterVisibleToUser, canUserViewAll } from '../utils/visibilityRules';
+import { isSysAdminUser } from '../utils/staffStorage';
 
 interface MattersTableProps {
   matters: LegalMatter[];
@@ -32,6 +32,7 @@ interface MattersTableProps {
   allAdvocates?: Advocate[];
   isArchivedView?: boolean;
   onTriggerExport?: () => void;
+  onDeleteMatter?: (matterId: string) => void;
 }
 
 export const MattersTable: React.FC<MattersTableProps> = ({
@@ -44,19 +45,28 @@ export const MattersTable: React.FC<MattersTableProps> = ({
   isManagingAdvocate = true,
   allAdvocates = mockAdvocates,
   isArchivedView = false,
+  onDeleteMatter,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPracticeArea, setSelectedPracticeArea] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedPriority, setSelectedPriority] = useState<string>('All');
   const [selectedPurpose, setSelectedPurpose] = useState<string>('All');
-  const [selectedTag, setSelectedTag] = useState<string>('All');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('All');
   
   // Toggle states
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [showMorePracticeAreas, setShowMorePracticeAreas] = useState(false);
-  const [taggingMatter, setTaggingMatter] = useState<LegalMatter | null>(null);
+  const [matterToDelete, setMatterToDelete] = useState<LegalMatter | null>(null);
+
+  const isSysAdmin = isSysAdminUser(currentAdvocate);
+  const isManagingUser =
+    isSysAdmin ||
+    Boolean(isManagingAdvocate) ||
+    currentAdvocate?.role === 'Managing Advocate' ||
+    currentAdvocate?.id === 'adv-1' ||
+    Boolean(currentAdvocate?.title?.toLowerCase().includes('managing'));
+  const canDeleteMatter = isSysAdmin || isManagingUser;
 
   // Top 4 practice areas as shown in screenshot + remaining areas
   const primaryPracticeAreas = [
@@ -81,17 +91,11 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     ? matters
     : matters.filter((m) => isMatterVisibleToUser(m, currentAdvocate));
 
-  // Extract unique tags across scoped matters
-  const availableTags = Array.from(
-    new Set(scopedMatters.flatMap((m) => m.tags || []))
-  );
-
   // Filter count for badge
   const activeDropdownFiltersCount = [
     selectedStatus !== 'All',
     selectedPriority !== 'All',
     selectedPurpose !== 'All',
-    selectedTag !== 'All',
     effectiveCanViewAll && selectedStaffFilter !== 'All',
   ].filter(Boolean).length;
 
@@ -105,8 +109,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
       (m.courtDatePurpose && m.courtDatePurpose.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (m.nextDeadlineDescription && m.nextDeadlineDescription.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (m.nextDeadlineDate && m.nextDeadlineDate.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (m.nextCourtDate && m.nextCourtDate.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (m.tags && m.tags.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase())));
+      (m.nextCourtDate && m.nextCourtDate.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesArea =
       selectedPracticeArea === 'All' ||
@@ -124,16 +127,13 @@ export const MattersTable: React.FC<MattersTableProps> = ({
       (m.courtDatePurpose && m.courtDatePurpose.toLowerCase() === selectedPurpose.toLowerCase()) ||
       (m.nextDeadlineDescription && m.nextDeadlineDescription.toLowerCase().includes(selectedPurpose.toLowerCase()));
 
-    const matchesTag =
-      selectedTag === 'All' || (m.tags && m.tags.includes(selectedTag));
-
     const matchesStaff =
       !isManagingAdvocate ||
       selectedStaffFilter === 'All' ||
       m.responsibleAdvocateId === selectedStaffFilter ||
       m.responsibleAdvocateName.toLowerCase().includes(selectedStaffFilter.toLowerCase());
 
-    return matchesSearch && matchesArea && matchesStatus && matchesPriority && matchesPurpose && matchesTag && matchesStaff;
+    return matchesSearch && matchesArea && matchesStatus && matchesPriority && matchesPurpose && matchesStaff;
   });
 
   const getStatusBadgeStyle = (status: MatterStatus) => {
@@ -174,10 +174,10 @@ export const MattersTable: React.FC<MattersTableProps> = ({
       case 'Low':
       default:
         return {
-          badge: 'bg-slate-100 text-slate-600 border-slate-200 font-medium',
-          dot: 'bg-slate-400',
+          badge: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
+          dot: 'bg-emerald-500',
           icon: CheckCircle2,
-          label: 'Routine',
+          label: 'Low',
         };
     }
   };
@@ -239,18 +239,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     setSelectedStatus('All');
     setSelectedPriority('All');
     setSelectedPurpose('All');
-    setSelectedTag('All');
     setSelectedStaffFilter('All');
-  };
-
-  const handleUpdateTagsInternal = (matterId: string, newTags: string[]) => {
-    if (onUpdateMatterTags) {
-      onUpdateMatterTags(matterId, newTags);
-    }
-    // Update local state if taggingMatter is open
-    if (taggingMatter && taggingMatter.id === matterId) {
-      setTaggingMatter({ ...taggingMatter, tags: newTags });
-    }
   };
 
   return (
@@ -269,7 +258,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
           <p className="mt-0.5 text-xs text-slate-500">
             {isArchivedView
               ? 'Archived and closed case files preserved for statutory compliance.'
-              : 'Search, filter, categorize with custom keyword tags, or register a new file below.'}
+              : 'Search, filter, or register a new file below.'}
           </p>
         </div>
 
@@ -326,7 +315,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
             <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by title, ref no., client, advocate, or tag (e.g. Urgent, ArdhiSasa, High Value)"
+              placeholder="Search by title, ref no., client, or advocate"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-white pl-9.5 pr-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-slate-400 focus:outline-none transition shadow-2xs"
@@ -369,7 +358,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
         {/* Collapsible Dropdown Filters Panel */}
         {isFiltersOpen && (
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 animate-in fade-in slide-in-from-top-2 duration-150">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               {/* Managing Advocate Staff Filter */}
               {isManagingAdvocate ? (
                 <div>
@@ -437,25 +426,6 @@ export const MattersTable: React.FC<MattersTableProps> = ({
                 </select>
               </div>
 
-              {/* Tags Filter */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">
-                  Tag / Keyword
-                </label>
-                <select
-                  value={selectedTag}
-                  onChange={(e) => setSelectedTag(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none cursor-pointer shadow-2xs"
-                >
-                  <option value="All">All Tags ({availableTags.length})</option>
-                  {availableTags.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* Status Filter */}
               <div>
                 <label className="block text-[11px] font-medium text-slate-500 mb-1">
@@ -476,39 +446,6 @@ export const MattersTable: React.FC<MattersTableProps> = ({
                 </select>
               </div>
             </div>
-
-            {/* Quick Tag Pills in Filter Bar */}
-            {availableTags.length > 0 && (
-              <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-1.5 text-xs">
-                <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1 mr-1">
-                  <Tag className="h-3 w-3 text-slate-400" />
-                  Quick tags:
-                </span>
-                {availableTags.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setSelectedTag(selectedTag === t ? 'All' : t)}
-                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition cursor-pointer border ${
-                      selectedTag === t
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs font-semibold'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-                {selectedTag !== 'All' && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTag('All')}
-                    className="text-[10px] text-amber-800 font-semibold hover:underline ml-1 cursor-pointer"
-                  >
-                    Clear tag filter
-                  </button>
-                )}
-              </div>
-            )}
 
             {(activeDropdownFiltersCount > 0 || searchTerm || selectedPracticeArea !== 'All') && (
               <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
@@ -615,60 +552,6 @@ export const MattersTable: React.FC<MattersTableProps> = ({
                       <div className="mt-1 font-semibold text-slate-900 group-hover:text-amber-800 transition truncate" title={matter.title}>
                         {matter.title}
                       </div>
-
-                      {/* Pill-shaped Labels for Quick Identification (Max 2 displayed inline to keep rows clean & uncluttered) */}
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        {matter.tags && matter.tags.length > 0 && (
-                          <>
-                            {matter.tags.slice(0, 2).map((tag) => (
-                              <button
-                                key={tag}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTag(selectedTag === tag ? 'All' : tag);
-                                  if (selectedTag !== tag) setIsFiltersOpen(true);
-                                }}
-                                title={`Filter by tag: ${tag}`}
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border shadow-2xs transition-all cursor-pointer ${getTagColorClass(
-                                  tag,
-                                  selectedTag === tag
-                                )}`}
-                              >
-                                <Tag className="h-2.5 w-2.5 opacity-60 shrink-0" />
-                                <span className="whitespace-nowrap">{tag}</span>
-                              </button>
-                            ))}
-                            {matter.tags.length > 2 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTaggingMatter(matter);
-                                }}
-                                title={`View all ${matter.tags.length} tags`}
-                                className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500 hover:bg-slate-200 border border-slate-200 cursor-pointer"
-                              >
-                                +{matter.tags.length - 2}
-                              </button>
-                            )}
-                          </>
-                        )}
-
-                        {/* Add/Manage Custom Tags inline button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTaggingMatter(matter);
-                          }}
-                          title="Add or edit custom tags for this matter"
-                          className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-slate-300 bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-slate-400 hover:border-slate-400 hover:text-slate-700 transition cursor-pointer"
-                        >
-                          <Plus className="h-2.5 w-2.5" />
-                          <span>Tag</span>
-                        </button>
-                      </div>
                     </td>
 
                     {/* Priority */}
@@ -757,6 +640,21 @@ export const MattersTable: React.FC<MattersTableProps> = ({
                             <span>Edit</span>
                           </button>
                         )}
+                        {canDeleteMatter && onDeleteMatter && (
+                          <button
+                            id={`matter-table-delete-${matter.id}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMatterToDelete(matter);
+                            }}
+                            title="Delete matter (System Admin & Managing Advocate only)"
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/70 px-2 py-1 text-rose-700 hover:bg-rose-100 font-semibold transition cursor-pointer shadow-2xs text-[11px]"
+                          >
+                            <Trash2 className="h-3 w-3 text-rose-600" />
+                            <span>Delete</span>
+                          </button>
+                        )}
                         <button
                           id={`matter-table-open-${matter.id}`}
                           type="button"
@@ -793,13 +691,65 @@ export const MattersTable: React.FC<MattersTableProps> = ({
         </div>
       )}
 
-      {/* Tagging Modal for Quick Custom Keywords */}
-      <MatterTagModal
-        isOpen={Boolean(taggingMatter)}
-        onClose={() => setTaggingMatter(null)}
-        matter={taggingMatter}
-        onUpdateTags={handleUpdateTagsInternal}
-      />
+      {/* Delete Matter Confirmation Modal */}
+      {matterToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-700">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100">
+                <Trash2 className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-serif-title font-bold text-slate-900 text-base">
+                  Delete Legal Matter
+                </h3>
+                <p className="text-xs text-rose-600 font-semibold">
+                  Action restricted to System Admin & Managing Advocate
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3.5 text-xs text-slate-700 space-y-1.5">
+              <p className="font-semibold text-slate-900">
+                Are you sure you want to delete this matter?
+              </p>
+              <p className="font-mono text-slate-600">
+                {matterToDelete.referenceNumber} — {matterToDelete.title}
+              </p>
+              <p className="text-[11px] text-rose-800">
+                Client: {matterToDelete.clientName}
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              This action will permanently delete the matter record from the firm workspace and cloud storage. This cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setMatterToDelete(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-table-delete-matter"
+                onClick={() => {
+                  if (onDeleteMatter && matterToDelete) {
+                    onDeleteMatter(matterToDelete.id);
+                  }
+                  setMatterToDelete(null);
+                }}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer"
+              >
+                Yes, Delete Matter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

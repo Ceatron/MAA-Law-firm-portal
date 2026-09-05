@@ -11,9 +11,6 @@ import { AdminBackupModal } from './components/AdminBackupModal';
 import { Mail, CheckCircle2, X as CloseIcon } from 'lucide-react';
 import {
   AssignmentEmailPayload,
-  generateMatterAssignmentEmail,
-  generateTaskAssignmentEmail,
-  dispatchAssignmentEmail,
   createMatterAssignmentNotification,
   createTaskAssignmentNotification,
 } from './utils/assignmentNotificationService';
@@ -28,8 +25,6 @@ import { BillingView } from './components/views/BillingView';
 import { DocumentsView } from './components/views/DocumentsView';
 import { TeamView } from './components/views/TeamView';
 import { SettingsView } from './components/views/SettingsView';
-import { AIAssistantView } from './components/views/AIAssistantView';
-import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { ClientServicesView } from './components/views/ClientServicesView';
 
 import { mockAdvocates } from './data/mockData';
@@ -42,7 +37,7 @@ import {
   TaskItem,
 } from './types';
 import { LandingPage } from './components/LandingPage';
-import { loadStaffRoster } from './utils/staffStorage';
+import { loadStaffRoster, isSysAdminUser } from './utils/staffStorage';
 import {
   getStoredAuthSession,
   saveAuthSession,
@@ -116,18 +111,14 @@ export default function App() {
       ? 'Legal Support Clerk'
       : 'Advocate');
 
-  const isSystemAdmin =
-    userRole === 'System Admin' ||
-    Boolean(currentAdvocate.isSystemAdmin) ||
-    Boolean(currentAdvocate.isDeveloper) ||
-    currentAdvocate.id === 'dev-admin';
+  const isSystemAdmin = isSysAdminUser(currentAdvocate);
 
   const isManagingAdvocate =
     isSystemAdmin ||
-    canUserViewAll(currentAdvocate) ||
-    userRole === 'Managing Advocate' ||
+    currentAdvocate.role === 'Managing Advocate' ||
     currentAdvocate.id === 'adv-1' ||
-    currentAdvocate.title.toLowerCase().includes('managing');
+    Boolean(currentAdvocate.title?.toLowerCase().includes('managing')) ||
+    canUserViewAll(currentAdvocate);
 
   const hasExplicitBillingRight =
     Boolean(currentAdvocate.permissions?.canEditBilling) ||
@@ -319,7 +310,6 @@ export default function App() {
   const [isNewMatterOpen, setIsNewMatterOpen] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
-  const [isAIAssistantDrawerOpen, setIsAIAssistantDrawerOpen] = useState<boolean>(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [backupSuccessToast, setBackupSuccessToast] = useState<string | null>(null);
 
@@ -385,15 +375,8 @@ export default function App() {
     setMatters([newMatter, ...matters]);
     ChambersCloudService.upsertMatter(newMatter);
 
-    // Automated Email Dispatch to assigned advocate
+    // In-App Notification to assigned advocate
     try {
-      const emailPayload = generateMatterAssignmentEmail(
-        newMatter,
-        currentAdvocate.name,
-        advocates,
-        false
-      );
-      dispatchAssignmentEmail(emailPayload);
       const inAppNotif = createMatterAssignmentNotification(
         newMatter,
         currentAdvocate.name,
@@ -402,7 +385,7 @@ export default function App() {
       );
       setNotifications((prev) => [inAppNotif, ...prev]);
     } catch (err) {
-      console.warn('Failed to dispatch matter assignment email:', err);
+      console.warn('Failed to record matter assignment notification:', err);
     }
 
     // Log Activity locally and directly to Supabase cloud
@@ -427,16 +410,9 @@ export default function App() {
       (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
         prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
 
-    // If assigned advocate changed, dispatch automated reassignment email
+    // If assigned advocate changed, dispatch in-app reassignment notification
     if (isReassigned) {
       try {
-        const emailPayload = generateMatterAssignmentEmail(
-          updatedMatter,
-          currentAdvocate.name,
-          advocates,
-          true
-        );
-        dispatchAssignmentEmail(emailPayload);
         const inAppNotif = createMatterAssignmentNotification(
           updatedMatter,
           currentAdvocate.name,
@@ -445,7 +421,7 @@ export default function App() {
         );
         setNotifications((prev) => [inAppNotif, ...prev]);
       } catch (err) {
-        console.warn('Failed to dispatch matter reassignment email:', err);
+        console.warn('Failed to record matter reassignment notification:', err);
       }
     }
 
@@ -475,22 +451,52 @@ export default function App() {
     ChambersCloudService.recordActivity(updateActivity);
   };
 
+  const handleDeleteMatter = (matterId: string) => {
+    const isSysAdmin = isSysAdminUser(currentAdvocate);
+    const canDelete =
+      isSysAdmin ||
+      isManagingAdvocate ||
+      currentAdvocate.role === 'Managing Advocate' ||
+      currentAdvocate.id === 'adv-1';
+
+    if (!canDelete) {
+      alert('Unauthorized: Only System Admin and Managing Advocate can delete a matter.');
+      return;
+    }
+
+    const matterToDelete = matters.find((m) => m.id === matterId);
+
+    setMatters((prev) => prev.filter((m) => m.id !== matterId));
+    ChambersCloudService.deleteMatter(matterId);
+
+    if (selectedMatter && selectedMatter.id === matterId) {
+      setSelectedMatter(null);
+    }
+
+    // Log Activity
+    const deleteActivity = {
+      id: `act-${Date.now()}`,
+      type: 'Status Change' as const,
+      title: 'Matter Record Deleted',
+      description: `${matterToDelete?.referenceNumber || matterId}: ${matterToDelete?.title || 'Matter'} deleted by ${currentAdvocate.name}`,
+      timestamp: 'Just now',
+      user: currentAdvocate.name,
+      matterId,
+      matterRef: matterToDelete?.referenceNumber || '',
+    };
+    setActivities((prev) => [deleteActivity, ...prev]);
+    ChambersCloudService.recordActivity(deleteActivity);
+  };
+
   const handleAddTask = (newTask: TaskItem) => {
     setTasks((prev) => [newTask, ...prev]);
     ChambersCloudService.upsertTask(newTask);
 
-    // Automated Email Dispatch to assigned advocate
+    // In-App Notification to assigned advocate
     try {
       const targetMatter = matters.find(
         (m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef
       );
-      const emailPayload = generateTaskAssignmentEmail(
-        newTask,
-        advocates,
-        targetMatter,
-        currentAdvocate.name
-      );
-      dispatchAssignmentEmail(emailPayload);
       const inAppNotif = createTaskAssignmentNotification(
         newTask,
         advocates,
@@ -499,7 +505,7 @@ export default function App() {
       );
       setNotifications((prev) => [inAppNotif, ...prev]);
     } catch (err) {
-      console.warn('Failed to dispatch task assignment email:', err);
+      console.warn('Failed to record task assignment notification:', err);
     }
   };
 
@@ -600,7 +606,6 @@ export default function App() {
         <Header
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenNotifications={() => setIsNotificationsOpen(true)}
-          onOpenAIAssistant={() => setIsAIAssistantDrawerOpen(true)}
           setMobileOpen={setMobileSidebarOpen}
           unreadCount={unreadNotifCount}
           currentAdvocate={currentAdvocate}
@@ -639,6 +644,7 @@ export default function App() {
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
               allAdvocates={advocates}
+              onDeleteMatter={handleDeleteMatter}
             />
           )}
 
@@ -726,14 +732,6 @@ export default function App() {
               onOpenBackupModal={() => setIsBackupModalOpen(true)}
             />
           )}
-
-          {activeTab === 'AIAssistant' && (
-            <AIAssistantView
-              currentAdvocate={currentAdvocate}
-              selectedMatterId={selectedMatter?.id}
-              matters={matters}
-            />
-          )}
         </main>
       </div>
 
@@ -744,7 +742,7 @@ export default function App() {
         onAddMatter={handleAddMatter}
         clients={clients}
         matters={matters}
-        onAddClient={(newClient) => setClients((prev) => [newClient, ...prev])}
+        onAddClient={handleAddClient}
         currentAdvocate={currentAdvocate}
         advocates={advocates}
       />
@@ -760,6 +758,8 @@ export default function App() {
         tasks={tasks}
         onUpdateTasks={setTasks}
         currentAdvocate={currentAdvocate}
+        isManagingAdvocate={isManagingAdvocate}
+        onDeleteMatter={handleDeleteMatter}
       />
 
       <SearchModal
@@ -833,18 +833,6 @@ export default function App() {
           </div>
         </aside>
       )}
-
-      {/* Wakili AI Floating Side Drawer */}
-      <AIAssistantDrawer
-        isOpen={isAIAssistantDrawerOpen}
-        onClose={() => setIsAIAssistantDrawerOpen(false)}
-        currentAdvocate={currentAdvocate}
-        activeMatter={selectedMatter}
-        onOpenFullView={() => {
-          setIsAIAssistantDrawerOpen(false);
-          setActiveTab('AIAssistant');
-        }}
-      />
 
       {/* Admin-Only Data Backup Modal */}
       <AdminBackupModal
