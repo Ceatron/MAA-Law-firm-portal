@@ -28,6 +28,8 @@ import {
   StoredLeaveRequest,
   StoredLeaveBalance,
 } from '../../utils/chambersDataStorage';
+import ChambersCloudService from '../../services/chambersCloudService';
+import { isSupabaseConfigured } from '../../utils/supabaseClient';
 
 interface LeaveRequest {
   id: string;
@@ -80,6 +82,43 @@ export const HRMView: React.FC = () => {
     }));
     return loadSavedLeaveBalances(defaultBalances) as LeaveBalance[];
   });
+
+  // Cloud Hydration & Realtime Synchronization
+  useEffect(() => {
+    let isCancelled = false;
+    const loadHrmCloudData = async () => {
+      if (!isSupabaseConfigured()) return;
+      try {
+        const [cloudReqs, cloudBals] = await Promise.all([
+          ChambersCloudService.fetchLeaveRequests(),
+          ChambersCloudService.fetchLeaveBalances(),
+        ]);
+        if (isCancelled) return;
+        if (cloudReqs && cloudReqs.length > 0) setLeaveRequests(cloudReqs as LeaveRequest[]);
+        if (cloudBals && cloudBals.length > 0) setLeaveBalances(cloudBals as LeaveBalance[]);
+      } catch (err) {
+        console.warn('[HRMView] Direct cloud load error:', err);
+      }
+    };
+
+    loadHrmCloudData();
+
+    const handleReqsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setLeaveRequests(e.detail as LeaveRequest[]);
+    };
+    const handleBalsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setLeaveBalances(e.detail as LeaveBalance[]);
+    };
+
+    window.addEventListener('chambers-leave-requests-updated', handleReqsUpdated);
+    window.addEventListener('chambers-leave-balances-updated', handleBalsUpdated);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('chambers-leave-requests-updated', handleReqsUpdated);
+      window.removeEventListener('chambers-leave-balances-updated', handleBalsUpdated);
+    };
+  }, []);
 
   // Sync leave requests and balances to storage
   useEffect(() => {

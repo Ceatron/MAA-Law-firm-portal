@@ -19,6 +19,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { LegalMatter } from '../types';
+import { DraggableModal } from './common/DraggableModal';
 
 interface VoiceDictationModalProps {
   matter: LegalMatter;
@@ -273,9 +274,15 @@ export const VoiceDictationModal: React.FC<VoiceDictationModalProps> = ({
         </div>
       )}
 
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-stone-300 overflow-hidden flex flex-col max-h-[92vh]">
+      <DraggableModal
+        gripLabel={`VOICE DICTATION • ${matter.referenceNumber}`}
+        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-stone-300 overflow-hidden flex flex-col max-h-[92vh]"
+      >
         {/* Modal Top Header */}
-        <div className="bg-[#16181b] px-6 py-4 text-white flex items-center justify-between border-b border-stone-800 shrink-0">
+        <div
+          data-drag-handle="true"
+          className="bg-[#16181b] px-6 py-4 text-white flex items-center justify-between border-b border-stone-800 shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/20 text-red-400">
               <Mic className="h-5 w-5" />
@@ -536,7 +543,7 @@ export const VoiceDictationModal: React.FC<VoiceDictationModalProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

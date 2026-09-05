@@ -19,6 +19,7 @@ import {
   StandardServiceItem,
 } from '../types';
 import { INITIAL_STANDARD_SERVICES } from '../data/mockFeeNoteTemplates';
+import { DraggableModal } from './common/DraggableModal';
 
 interface FeeNoteTemplateEditorModalProps {
   isOpen: boolean;
@@ -243,9 +244,15 @@ export const FeeNoteTemplateEditorModal: React.FC<
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl border border-stone-200 overflow-hidden my-auto">
+      <DraggableModal
+        gripLabel={isEditing ? `EDIT TEMPLATE • ${templateToEdit?.title}` : 'NEW FEE NOTE TEMPLATE'}
+        className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl border border-stone-200 overflow-hidden my-auto"
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 bg-[#132c3f] px-6 py-4 text-white">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between border-b border-stone-200 bg-[#132c3f] px-6 py-4 text-white cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-amber-400">
               <Receipt className="h-5 w-5" />
@@ -694,7 +701,7 @@ export const FeeNoteTemplateEditorModal: React.FC<
             </button>
           </div>
         </form>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

@@ -88,7 +88,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const [newClientName, setNewClientName] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
-  const [newClientKraPin, setNewClientKraPin] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
   const [newClientCategory, setNewClientCategory] = useState<'Corporate' | 'Individual' | 'Government'>('Corporate');
 
@@ -362,7 +361,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const handleSaveAndIssueInvoice = (status: 'Pending' | 'Paid' = 'Pending') => {
     let finalClientName = activeClient?.name || 'Walk-in Client';
     let finalClientId = selectedClientId;
-    let finalKraPin = activeClient?.kraPin || 'P051189201A';
     let finalClientAddress = activeClient?.address || 'Nairobi, Kenya';
     let finalClientEmail = activeClient?.email || 'accounts@client.co.ke';
 
@@ -374,7 +372,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       }
       finalClientName = newClientName.trim();
       finalClientId = `cli-${Date.now()}`;
-      finalKraPin = newClientKraPin.trim() || 'P05' + Math.floor(10000000 + Math.random() * 90000000) + 'X';
       finalClientAddress = newClientAddress.trim() || 'Nairobi, Kenya';
       finalClientEmail = newClientEmail.trim() || `${finalClientName.toLowerCase().replace(/[^a-z0-9]/g, '')}@client.co.ke`;
 
@@ -383,14 +380,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
         name: finalClientName,
         type: newClientCategory === 'Individual' ? 'Individual' : 'Corporate',
         industry: 'General Practice',
-        kraPin: finalKraPin,
         contactPerson: finalClientName,
         email: finalClientEmail,
         phone: newClientPhone.trim() || '+254 700 000 000',
         city: finalClientAddress || 'Nairobi',
         activeMattersCount: 1,
         totalBilledKES: totalPayableKES,
-        retainerStatus: 'Per-Matter',
       };
 
       if (onAddClient) {
@@ -409,7 +404,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       clientId: finalClientId,
       clientName: finalClientName,
       clientEmail: finalClientEmail,
-      clientKraPin: finalKraPin,
+      clientKraPin: activeClient?.kraPin || undefined,
       clientAddress: finalClientAddress,
       matterId: activeMatter?.id,
       matterRef: activeMatter?.referenceNumber,
@@ -541,7 +536,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                     >
                       {clients.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name} ({c.category} • PIN: {c.kraPin || 'N/A'})
+                          {c.name} ({c.type || c.category || 'Client'})
                         </option>
                       ))}
                     </select>
@@ -609,17 +604,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                         <option value="Individual">Individual Client</option>
                         <option value="Government">Government / Parastatal</option>
                       </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-stone-700 mb-1">KRA PIN Number</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. P051982341Z"
-                        value={newClientKraPin}
-                        onChange={(e) => setNewClientKraPin(e.target.value.toUpperCase())}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono"
-                      />
                     </div>
 
                     <div>
@@ -1101,9 +1085,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                   </p>
                   <p className="text-stone-500 text-[11px]">
                     {isCreatingNewClient ? newClientEmail : activeClient?.email}
-                  </p>
-                  <p className="font-mono text-[10px] text-stone-500 mt-1">
-                    Client KRA PIN: {isCreatingNewClient ? newClientKraPin || 'P051189201A' : activeClient?.kraPin || 'P051189201A'}
                   </p>
                 </div>
 

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { LegalMatter, Advocate } from '../types';
 import { generateMattersPdf, MattersPdfExportOptions } from '../utils/mattersPdfGenerator';
+import { DraggableModal } from './common/DraggableModal';
 
 interface MattersExportPdfModalProps {
   isOpen: boolean;
@@ -114,9 +115,15 @@ export const MattersExportPdfModal: React.FC<MattersExportPdfModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+      <DraggableModal
+        gripLabel="EXPORT MATTERS PDF REPORT"
+        className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
+      >
         {/* Header */}
-        <div className="bg-slate-950 px-6 py-4.5 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div
+          data-drag-handle="true"
+          className="bg-slate-950 px-6 py-4.5 text-white flex items-center justify-between border-b border-slate-800 shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
               <FileText className="h-5 w-5" />
@@ -354,7 +361,7 @@ export const MattersExportPdfModal: React.FC<MattersExportPdfModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

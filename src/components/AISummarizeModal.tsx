@@ -17,6 +17,7 @@ import {
   FileSearch,
 } from 'lucide-react';
 import { DocumentItem } from '../types';
+import { DraggableModal } from './common/DraggableModal';
 
 // Pre-populated full legal texts for repository documents & transcripts
 export const mockLegalTexts: Record<string, string> = {
@@ -221,9 +222,15 @@ export const AISummarizeModal: React.FC<AISummarizeModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-4xl rounded-xl border border-[#dedbc5] bg-[#fbf9f4] shadow-2xl overflow-hidden my-6 max-h-[92vh] flex flex-col">
+      <DraggableModal
+        gripLabel="LEGAL DOCUMENT AI ANALYSIS"
+        className="relative w-full max-w-4xl rounded-xl border border-[#dedbc5] bg-[#fbf9f4] shadow-2xl overflow-hidden my-6 max-h-[92vh] flex flex-col"
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-[#e2dfd5] bg-[#16181b] px-6 py-4 text-white shrink-0">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between border-b border-[#e2dfd5] bg-[#16181b] px-6 py-4 text-white shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-9 w-9 items-center justify-center rounded bg-[#0B63E5] shadow-xs">
               <FileSearch className="h-5 w-5 text-white" />
@@ -472,7 +479,7 @@ export const AISummarizeModal: React.FC<AISummarizeModalProps> = ({
             Close
           </button>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

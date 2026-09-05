@@ -65,6 +65,7 @@ export const LOCAL_STORAGE_KEYS = [
   'onboardings',
   'leave_requests',
   'leave_balances',
+  'time_entries',
   'staff_roster',
 ] as const;
 
@@ -91,6 +92,7 @@ export const MIGRATION_STORAGE_KEYS = {
   ONBOARDINGS: 'muthoni_ahago_onboardings_v1',
   LEAVE_REQUESTS: 'muthoni_ahago_leave_requests_v1',
   LEAVE_BALANCES: 'muthoni_ahago_leave_balances_v1',
+  TIME_ENTRIES: 'muthoni_ahago_time_entries_v1',
 } as const;
 
 /**
@@ -174,6 +176,11 @@ export const KEY_TABLE_MAP: Record<
     table: 'leave_balances',
     fallbackKeys: ['muthoni_ahago_leave_balances_v1'],
     label: 'HRM Leave Balances',
+  },
+  time_entries: {
+    table: 'time_entries',
+    fallbackKeys: ['muthoni_ahago_time_entries_v1'],
+    label: 'Billable Time Entries',
   },
   staff_roster: {
     table: 'staff_users',
@@ -421,6 +428,19 @@ function normalizeRecordForTable(key: LocalStorageKey, record: any, index: numbe
       normalized.sick_used = normalized.sick_used ?? normalized.sickUsed ?? 0;
       normalized.cle_total = normalized.cle_total ?? normalized.cleTotal ?? 5;
       normalized.cle_used = normalized.cle_used ?? normalized.cleUsed ?? 0;
+      break;
+
+    case 'time_entries':
+      normalized.advocate_id = normalized.advocate_id || normalized.advocateId || 'adv-1';
+      normalized.advocate_name = normalized.advocate_name || normalized.advocateName || 'Advocate';
+      normalized.date = normalized.date || new Date().toISOString().split('T')[0];
+      normalized.duration_minutes = normalized.duration_minutes ?? normalized.durationMinutes ?? 0;
+      normalized.activity_type = normalized.activity_type || normalized.activityType || 'Legal Drafting';
+      normalized.description = normalized.description || 'Legal services';
+      normalized.is_billable = normalized.is_billable ?? normalized.isBillable ?? true;
+      normalized.hourly_rate_kes = normalized.hourly_rate_kes ?? normalized.hourlyRateKES ?? 0;
+      normalized.amount_kes = normalized.amount_kes ?? normalized.amountKES ?? 0;
+      normalized.status = normalized.status || 'Unbilled';
       break;
 
     case 'staff_roster':

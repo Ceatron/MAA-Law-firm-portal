@@ -20,6 +20,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { AssignmentEmailPayload, dispatchAssignmentEmail } from '../utils/assignmentNotificationService';
+import { DraggableModal } from './common/DraggableModal';
 
 interface TaskEmailNotificationModalProps {
   isOpen: boolean;
@@ -102,9 +103,15 @@ ${emailPayload.description || ''}
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <DraggableModal
+        gripLabel={isMatter ? 'MATTER ASSIGNMENT NOTIFICATION' : 'TASK ASSIGNMENT NOTIFICATION'}
+        className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+      >
         {/* Email Client Header */}
-        <div className="flex items-center justify-between bg-[#0b1f2d] px-6 py-4 text-white">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between bg-[#0b1f2d] px-6 py-4 text-white cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300 shrink-0">
               {isMatter ? <Scale className="h-5 w-5" /> : <Mail className="h-5 w-5" />}
@@ -418,7 +425,7 @@ ${emailPayload.description || ''}
             Close Preview
           </button>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

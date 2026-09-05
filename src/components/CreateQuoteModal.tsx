@@ -69,7 +69,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
   const [newClientName, setNewClientName] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
-  const [newClientKraPin, setNewClientKraPin] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
 
   // Line items
@@ -218,7 +217,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
     let finalClientName = '';
     let finalClientEmail = '';
     let finalClientPhone = '';
-    let finalKraPin = '';
     let finalClientAddress = '';
 
     if (isCreatingNewClient) {
@@ -230,7 +228,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
       finalClientName = newClientName.trim();
       finalClientEmail = newClientEmail.trim() || 'contact@client.co.ke';
       finalClientPhone = newClientPhone.trim() || '+254 700 000 000';
-      finalKraPin = newClientKraPin.trim().toUpperCase() || 'P000000000X';
       finalClientAddress = newClientAddress.trim();
 
       const newClientObj: Client = {
@@ -238,14 +235,12 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
         name: finalClientName,
         type: 'Corporate',
         industry: 'Legal Services Client',
-        kraPin: finalKraPin,
         contactPerson: finalClientName,
         email: finalClientEmail,
         phone: finalClientPhone,
         city: finalClientAddress,
         activeMattersCount: 0,
         totalBilledKES: 0,
-        retainerStatus: 'Per-Matter',
       };
 
       if (onAddClient) {
@@ -257,7 +252,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
         finalClientName = existingClient.name;
         finalClientEmail = existingClient.email;
         finalClientPhone = existingClient.phone;
-        finalKraPin = existingClient.kraPin;
         finalClientAddress = existingClient.city;
       }
     }
@@ -276,7 +270,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
       clientEmail: finalClientEmail,
       clientPhone: finalClientPhone,
       clientAddress: finalClientAddress,
-      clientKraPin: finalKraPin,
       matterId: selectedMatterId || undefined,
       matterTitle: matters.find((m) => m.id === selectedMatterId)?.title,
       quoteDate: quoteDate,
@@ -410,7 +403,7 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
 
             {isCreatingNewClient ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-[11px] font-semibold text-stone-600 mb-1">
                     Client / Company Name *
                   </label>
@@ -420,18 +413,6 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
                     value={newClientName}
                     onChange={(e) => setNewClientName(e.target.value)}
                     className="w-full rounded border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                    KRA PIN (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. P051234567X"
-                    value={newClientKraPin}
-                    onChange={(e) => setNewClientKraPin(e.target.value)}
-                    className="w-full rounded border border-stone-300 bg-white px-2.5 py-1.5 text-xs uppercase font-mono text-stone-800"
                   />
                 </div>
                 <div>

@@ -57,6 +57,8 @@ import {
   loadSavedOnboardings,
   saveStoredOnboardings,
 } from '../../utils/chambersDataStorage';
+import ChambersCloudService from '../../services/chambersCloudService';
+import { isSupabaseConfigured } from '../../utils/supabaseClient';
 
 export const DocumentsView: React.FC = () => {
   const staffList = loadVisibleStaffRoster();
@@ -68,6 +70,57 @@ export const DocumentsView: React.FC = () => {
   const [folders, setFolders] = useState<DocumentFolder[]>(() => loadSavedDocumentFolders());
   const [drafts, setDrafts] = useState<DocumentDraft[]>(() => loadSavedDocumentDrafts());
   const [onboardings, setOnboardings] = useState<ClientOnboardingSubmission[]>(() => loadSavedOnboardings());
+
+  // Cloud Hydration & Realtime Synchronization
+  useEffect(() => {
+    let isCancelled = false;
+    const loadDocsCloudData = async () => {
+      if (!isSupabaseConfigured()) return;
+      try {
+        const [cloudDocs, cloudFolders, cloudDrafts, cloudOnboardings] = await Promise.all([
+          ChambersCloudService.fetchDocuments(),
+          ChambersCloudService.fetchFolders(),
+          ChambersCloudService.fetchDrafts(),
+          ChambersCloudService.fetchOnboardings(),
+        ]);
+        if (isCancelled) return;
+        if (cloudDocs && cloudDocs.length > 0) setDocuments(cloudDocs);
+        if (cloudFolders && cloudFolders.length > 0) setFolders(cloudFolders);
+        if (cloudDrafts && cloudDrafts.length > 0) setDrafts(cloudDrafts);
+        if (cloudOnboardings && cloudOnboardings.length > 0) setOnboardings(cloudOnboardings);
+      } catch (err) {
+        console.warn('[DocumentsView] Direct cloud load error:', err);
+      }
+    };
+
+    loadDocsCloudData();
+
+    const handleDocsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setDocuments(e.detail);
+    };
+    const handleFoldersUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setFolders(e.detail);
+    };
+    const handleDraftsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setDrafts(e.detail);
+    };
+    const handleOnboardingsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setOnboardings(e.detail);
+    };
+
+    window.addEventListener('chambers-documents-updated', handleDocsUpdated);
+    window.addEventListener('chambers-folders-updated', handleFoldersUpdated);
+    window.addEventListener('chambers-drafts-updated', handleDraftsUpdated);
+    window.addEventListener('chambers-onboardings-updated', handleOnboardingsUpdated);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('chambers-documents-updated', handleDocsUpdated);
+      window.removeEventListener('chambers-folders-updated', handleFoldersUpdated);
+      window.removeEventListener('chambers-drafts-updated', handleDraftsUpdated);
+      window.removeEventListener('chambers-onboardings-updated', handleOnboardingsUpdated);
+    };
+  }, []);
 
   // Automatically sync to storage
   useEffect(() => {

@@ -20,6 +20,7 @@ import {
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { LegalMatter, CourtAppearance, DocumentItem, DeadlineItem } from '../types';
+import { DraggableModal } from './common/DraggableModal';
 
 interface CaseReportModalProps {
   matter: LegalMatter;
@@ -217,9 +218,15 @@ Muthoni Ahago Advocates | Prudential Assurance Bldg, Nairobi
         </div>
       )}
 
-      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-stone-300 overflow-hidden flex flex-col max-h-[92vh]">
+      <DraggableModal
+        gripLabel={`CASE REPORT • ${matter.referenceNumber}`}
+        className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-stone-300 overflow-hidden flex flex-col max-h-[92vh]"
+      >
         {/* Modal Top Header */}
-        <div className="bg-[#16181b] px-6 py-4 text-white flex items-center justify-between border-b border-stone-800 shrink-0">
+        <div
+          data-drag-handle="true"
+          className="bg-[#16181b] px-6 py-4 text-white flex items-center justify-between border-b border-stone-800 shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0B63E5]/20 text-[#60A5FA]">
               <FileText className="h-5 w-5" />
@@ -684,7 +691,7 @@ Muthoni Ahago Advocates | Prudential Assurance Bldg, Nairobi
             </div>
           </div>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

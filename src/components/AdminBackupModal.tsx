@@ -45,6 +45,7 @@ import {
   LiveMigrationReport,
   SUPABASE_MIGRATION_FLAG_KEY,
 } from '../services/SupabaseMigrationService';
+import { DraggableModal } from './common/DraggableModal';
 
 interface AdminBackupModalProps {
   isOpen: boolean;
@@ -344,9 +345,15 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-150">
-      <div className="relative w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden my-8">
+      <DraggableModal
+        gripLabel="FIRM DATA ARCHIVE & SUPABASE"
+        className="relative w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden my-8"
+      >
         {/* Modal Top Accent Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 px-6 py-5 text-white">
+        <div
+          data-drag-handle="true"
+          className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 px-6 py-5 text-white cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30">
@@ -1174,7 +1181,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             )}
           </div>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

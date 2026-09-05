@@ -34,6 +34,7 @@ import {
 import { TaskEmailNotificationModal } from '../TaskEmailNotificationModal';
 import { TaskPerformanceCard } from '../TaskPerformanceCard';
 import { isTaskVisibleToUser, canUserViewAll, namesMatch } from '../../utils/visibilityRules';
+import { deleteStoredTask } from '../../utils/chambersDataStorage';
 
 // Priority Level Definition (High, Medium, Low)
 export type TaskPriorityLevel = 'High' | 'Medium' | 'Low';
@@ -209,6 +210,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   const handleDeleteTask = (taskId: string) => {
+    deleteStoredTask(taskId);
     const updated = tasks.filter((t) => t.id !== taskId);
     updateTasksList(updated);
     triggerToast('Task deleted from assignment board.');

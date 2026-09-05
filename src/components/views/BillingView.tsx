@@ -43,11 +43,16 @@ import { FeeNote, Client, LegalMatter, Advocate, PaymentRecord, Quotation, Payme
 import {
   loadSavedFeeNotes,
   saveStoredFeeNotes,
+  deleteStoredFeeNote,
   loadSavedPayments,
   saveStoredPayments,
+  deleteStoredPayment,
   loadSavedQuotes,
   saveStoredQuotes,
+  deleteStoredQuote,
 } from '../../utils/chambersDataStorage';
+import ChambersCloudService from '../../services/chambersCloudService';
+import { isSupabaseConfigured } from '../../utils/supabaseClient';
 
 interface BillingViewProps {
   clients?: Client[];
@@ -78,7 +83,51 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [payments, setPayments] = useState<PaymentRecord[]>(() => loadSavedPayments());
   const [quotes, setQuotes] = useState<Quotation[]>(() => loadSavedQuotes());
 
-  // Automatically sync state to persistent storage
+  // Cloud Hydration & Realtime Synchronization
+  useEffect(() => {
+    let isCancelled = false;
+    const loadBillingCloudData = async () => {
+      if (!isSupabaseConfigured()) return;
+      try {
+        const [cloudNotes, cloudPayments, cloudQuotes] = await Promise.all([
+          ChambersCloudService.fetchFeeNotes(),
+          ChambersCloudService.fetchPayments(),
+          ChambersCloudService.fetchQuotes(),
+        ]);
+        if (isCancelled) return;
+        if (cloudNotes && cloudNotes.length > 0) setFeeNotes(cloudNotes);
+        if (cloudPayments && cloudPayments.length > 0) setPayments(cloudPayments);
+        if (cloudQuotes && cloudQuotes.length > 0) setQuotes(cloudQuotes);
+      } catch (err) {
+        console.warn('[BillingView] Direct cloud load error:', err);
+      }
+    };
+
+    loadBillingCloudData();
+
+    const handleInvoicesUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setFeeNotes(e.detail);
+    };
+    const handlePaymentsUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setPayments(e.detail);
+    };
+    const handleQuotesUpdated = (e: any) => {
+      if (Array.isArray(e.detail)) setQuotes(e.detail);
+    };
+
+    window.addEventListener('chambers-invoices-updated', handleInvoicesUpdated);
+    window.addEventListener('chambers-payments-updated', handlePaymentsUpdated);
+    window.addEventListener('chambers-quotes-updated', handleQuotesUpdated);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('chambers-invoices-updated', handleInvoicesUpdated);
+      window.removeEventListener('chambers-payments-updated', handlePaymentsUpdated);
+      window.removeEventListener('chambers-quotes-updated', handleQuotesUpdated);
+    };
+  }, []);
+
+  // Automatically sync state to persistent storage & cloud
   useEffect(() => {
     saveStoredFeeNotes(feeNotes);
   }, [feeNotes]);
@@ -174,7 +223,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
       return;
     }
 
-    // 1. Remove from payments
+    // 1. Delete from Supabase & local cache
+    deleteStoredPayment(paymentId);
     setPayments((prev) => prev.filter((p) => p.id !== paymentId));
 
     // 2. Recalculate invoice

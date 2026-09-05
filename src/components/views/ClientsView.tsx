@@ -15,9 +15,12 @@ import {
   Building,
   Briefcase,
   IdCard,
+  Pencil,
 } from 'lucide-react';
 import { loadVisibleStaffRoster } from '../../utils/staffStorage';
 import { Client, LegalMatter } from '../../types';
+import { DraggableModal } from '../common/DraggableModal';
+import { EditClientModal } from '../EditClientModal';
 
 interface ClientsViewProps {
   clients?: Client[];
@@ -48,6 +51,10 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   const [clientTypeFilter, setClientTypeFilter] = useState<'All' | 'Individual' | 'Corporate'>('All');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Client Editing State
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   // Client Creation Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formType, setFormType] = useState<'Individual' | 'Corporate'>('Individual');
@@ -55,30 +62,36 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   // Form State - Individual
   const [indName, setIndName] = useState('');
   const [indIdNumber, setIndIdNumber] = useState('');
-  const [indKraPin, setIndKraPin] = useState('');
   const [indOccupation, setIndOccupation] = useState('');
   const [indEmail, setIndEmail] = useState('');
   const [indPhone, setIndPhone] = useState('');
   const [indCity, setIndCity] = useState('Nairobi (Kilimani)');
   const [indEmergencyContact, setIndEmergencyContact] = useState('');
-  const [indRetainer, setIndRetainer] = useState<'Active Retainer' | 'Per-Matter' | 'Pending Deposit'>('Per-Matter');
   const [indAdvocate, setIndAdvocate] = useState('Adv. Costa Kimathi');
 
   // Form State - Corporate
   const [corpName, setCorpName] = useState('');
   const [corpRegNo, setCorpRegNo] = useState('');
-  const [corpKraPin, setCorpKraPin] = useState('');
   const [corpIndustry, setCorpIndustry] = useState('Financial Services & Banking');
   const [corpContactPerson, setCorpContactPerson] = useState('');
   const [corpEmail, setCorpEmail] = useState('');
   const [corpPhone, setCorpPhone] = useState('');
   const [corpCity, setCorpCity] = useState('Nairobi (Upper Hill)');
-  const [corpRetainer, setCorpRetainer] = useState<'Active Retainer' | 'Per-Matter' | 'Pending Deposit'>('Active Retainer');
   const [corpLeadPartner, setCorpLeadPartner] = useState('Adv. Paul Ahago');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleOpenEditModal = (client: Client) => {
+    setEditingClient(client);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditedClient = (updatedClient: Client) => {
+    updateClientsList(clients.map((c) => (c.id === updatedClient.id ? updatedClient : c)));
+    showToast(`Client '${updatedClient.name}' updated successfully.`);
   };
 
   const handleOpenModal = (type: 'Individual' | 'Corporate') => {
@@ -88,21 +101,19 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
 
   const handleIndividualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!indName || !indKraPin) return;
+    if (!indName) return;
 
     const newClient: Client = {
       id: `cli-${Date.now()}`,
       name: indName,
       type: 'Individual',
       industry: indOccupation || 'Private Individual',
-      kraPin: indKraPin.toUpperCase(),
       contactPerson: indEmergencyContact ? `Next of Kin: ${indEmergencyContact}` : indName,
       email: indEmail || 'client@muthoniahago.co.ke',
       phone: indPhone || '+254 700 000 000',
       city: indCity,
       activeMattersCount: 1,
       totalBilledKES: 1500000,
-      retainerStatus: indRetainer,
     };
 
     updateClientsList([newClient, ...clients]);
@@ -111,7 +122,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
     // Reset individual fields
     setIndName('');
     setIndIdNumber('');
-    setIndKraPin('');
     setIndOccupation('');
     setIndEmail('');
     setIndPhone('');
@@ -120,21 +130,19 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
 
   const handleCorporateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!corpName || !corpKraPin) return;
+    if (!corpName) return;
 
     const newClient: Client = {
       id: `cli-${Date.now()}`,
       name: corpName,
       type: 'Corporate',
       industry: corpIndustry,
-      kraPin: corpKraPin.toUpperCase(),
       contactPerson: corpContactPerson || 'Legal Director',
       email: corpEmail || 'legal@corporate.co.ke',
       phone: corpPhone || '+254 20 000 0000',
       city: corpCity,
       activeMattersCount: 1,
       totalBilledKES: 5000000,
-      retainerStatus: corpRetainer,
     };
 
     updateClientsList([newClient, ...clients]);
@@ -143,7 +151,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
     // Reset corporate fields
     setCorpName('');
     setCorpRegNo('');
-    setCorpKraPin('');
     setCorpContactPerson('');
     setCorpEmail('');
     setCorpPhone('');
@@ -152,9 +159,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   const filteredClients = clients.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.kraPin.toLowerCase().includes(search.toLowerCase()) ||
       c.industry.toLowerCase().includes(search.toLowerCase()) ||
-      c.city.toLowerCase().includes(search.toLowerCase());
+      c.city.toLowerCase().includes(search.toLowerCase()) ||
+      (c.contactPerson && c.contactPerson.toLowerCase().includes(search.toLowerCase()));
 
     const matchesType =
       clientTypeFilter === 'All' ||
@@ -289,10 +296,8 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                   <th className="py-3 px-4">Client / Organization</th>
                   <th className="py-3 px-4">Category</th>
                   <th className="py-3 px-4">Contact Person</th>
-                  <th className="py-3 px-4">KRA PIN</th>
                   <th className="py-3 px-4">Location / Contact</th>
                   <th className="py-3 px-4 text-center">Active Matters</th>
-                  <th className="py-3 px-4">Retainer Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -350,13 +355,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                         <span className="font-medium">{client.contactPerson || client.name}</span>
                       </td>
 
-                      {/* KRA PIN */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="font-mono text-[11px] bg-stone-100 px-2 py-0.5 rounded border border-stone-200 text-stone-700 font-medium">
-                          {client.kraPin || 'N/A'}
-                        </span>
-                      </td>
-
                       {/* Location / Email / Phone */}
                       <td className="py-3.5 px-4 text-stone-600">
                         <div className="space-y-0.5">
@@ -378,33 +376,31 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                         </span>
                       </td>
 
-                      {/* Retainer Status */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                            client.retainerStatus === 'Active Retainer'
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                              : client.retainerStatus === 'Pending Deposit'
-                              ? 'bg-amber-50 text-amber-800 border-amber-300'
-                              : 'bg-stone-100 text-stone-700 border-stone-200'
-                          }`}
-                        >
-                          {client.retainerStatus || 'Per-Matter'}
-                        </span>
-                      </td>
-
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {onOpenNewMatter && (
+                        <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            onClick={onOpenNewMatter}
-                            className="inline-flex items-center gap-1 rounded bg-[#0B63E5] px-2.5 py-1 text-[11px] font-semibold text-white shadow-2xs hover:bg-[#0256D0] transition-colors cursor-pointer"
+                            id={`edit-client-btn-${client.id}`}
+                            onClick={() => handleOpenEditModal(client)}
+                            className="inline-flex items-center gap-1 rounded border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-50 hover:text-[#0B2840] hover:border-stone-400 transition-colors cursor-pointer shadow-2xs"
+                            title="Edit client profile"
                           >
-                            <Plus className="h-3 w-3" />
-                            <span>New Matter</span>
+                            <Pencil className="h-3 w-3 text-stone-500" />
+                            <span>Edit</span>
                           </button>
-                        )}
+
+                          {onOpenNewMatter && (
+                            <button
+                              type="button"
+                              onClick={onOpenNewMatter}
+                              className="inline-flex items-center gap-1 rounded bg-[#0B63E5] px-2.5 py-1 text-[11px] font-semibold text-white shadow-2xs hover:bg-[#0256D0] transition-colors cursor-pointer"
+                            >
+                              <Plus className="h-3 w-3" />
+                              <span>New Matter</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -423,9 +419,15 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
       {/* CLIENT CREATION MODAL WITH SEPARATE INDIVIDUAL & CORPORATE FORMS */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-stone-300 overflow-hidden text-stone-800">
+          <DraggableModal
+            gripLabel={formType === 'Individual' ? 'INDIVIDUAL CLIENT REGISTRATION' : 'CORPORATE CLIENT REGISTRATION'}
+            className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-stone-300 overflow-hidden text-stone-800 my-6"
+          >
             {/* Modal Header */}
-            <div className="flex items-center justify-between bg-[#1a1d20] px-6 py-4 text-white">
+            <div
+              data-drag-handle="true"
+              className="flex items-center justify-between bg-[#1a1d20] px-6 py-4 text-white cursor-grab active:cursor-grabbing select-none"
+            >
               <div className="flex items-center space-x-3">
                 {formType === 'Individual' ? (
                   <User className="h-6 w-6 text-[#f3ad82]" />
@@ -439,7 +441,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                   <p className="text-[11px] text-stone-300">
                     {formType === 'Individual'
                       ? 'Private client onboarding & personal KYC registration'
-                      : 'Corporate entity, company registration & retainer setup'}
+                      : 'Corporate entity, company registration & matters setup'}
                   </p>
                 </div>
               </div>
@@ -516,20 +518,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Individual KRA PIN *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. A002891042Z"
-                      value={indKraPin}
-                      onChange={(e) => setIndKraPin(e.target.value)}
-                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-mono text-stone-900 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Occupation / Profession / Business
                     </label>
                     <input
@@ -537,6 +525,19 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       placeholder="e.g. Medical Consultant, Land Developer, Trustee"
                       value={indOccupation}
                       onChange={(e) => setIndOccupation(e.target.value)}
+                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                      Residential Area / City Location
+                    </label>
+                    <input
+                      type="text"
+                      value={indCity}
+                      onChange={(e) => setIndCity(e.target.value)}
+                      placeholder="e.g. Nairobi (Karen Estates) or Nyali Mombasa"
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
                     />
                   </div>
@@ -575,19 +576,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Residential Area / City Location
-                    </label>
-                    <input
-                      type="text"
-                      value={indCity}
-                      onChange={(e) => setIndCity(e.target.value)}
-                      placeholder="e.g. Nairobi (Karen Estates) or Nyali Mombasa"
-                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Next of Kin / Emergency Contact
                     </label>
                     <input
@@ -597,23 +585,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       onChange={(e) => setIndEmergencyContact(e.target.value)}
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
                     />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Retainer Status
-                    </label>
-                    <select
-                      value={indRetainer}
-                      onChange={(e) => setIndRetainer(e.target.value as any)}
-                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-semibold text-stone-900 focus:bg-white focus:outline-none"
-                    >
-                      <option value="Per-Matter">Per-Matter Engagement</option>
-                      <option value="Active Retainer">Active Private Retainer</option>
-                      <option value="Pending Deposit">Pending Trust Deposit</option>
-                    </select>
                   </div>
 
                   <div>
@@ -688,20 +659,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Corporate KRA PIN *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. P051123984A"
-                      value={corpKraPin}
-                      onChange={(e) => setCorpKraPin(e.target.value)}
-                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-mono text-stone-900 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Industry Sector / Domain
                     </label>
                     <select
@@ -717,9 +674,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       <option value="State Agency / Government">State Agency / Government Entity</option>
                     </select>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       General Counsel / Key Contact Person
@@ -733,7 +688,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
                     />
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Official Corporate Email
@@ -747,9 +704,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-mono text-stone-900 focus:bg-white focus:outline-none"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Corporate Phone / HQ Telephone
@@ -763,7 +718,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-mono text-stone-900 focus:bg-white focus:outline-none"
                     />
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700 mb-1">
                       Registered Office HQ Location & City
@@ -775,23 +732,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                       placeholder="e.g. Nairobi (Equity Centre, Upper Hill)"
                       className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs text-stone-900 focus:bg-white focus:outline-none"
                     />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Retainer Agreement Status
-                    </label>
-                    <select
-                      value={corpRetainer}
-                      onChange={(e) => setCorpRetainer(e.target.value as any)}
-                      className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-semibold text-stone-900 focus:bg-white focus:outline-none"
-                    >
-                      <option value="Active Retainer">Active Corporate Retainer</option>
-                      <option value="Per-Matter">Per-Matter Brief</option>
-                      <option value="Pending Deposit">Pending Deposit</option>
-                    </select>
                   </div>
 
                   <div>
@@ -829,9 +769,17 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                 </div>
               </form>
             )}
-          </div>
+          </DraggableModal>
         </div>
       )}
+
+      {/* EDIT CLIENT MODAL */}
+      <EditClientModal
+        isOpen={isEditModalOpen}
+        client={editingClient}
+        onClose={() => setIsEditModalOpen(false)}
+        onSave={handleSaveEditedClient}
+      />
     </div>
   );
 };

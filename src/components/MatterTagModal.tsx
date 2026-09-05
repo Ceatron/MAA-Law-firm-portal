@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Tag, Plus, Check, Sparkles, AlertCircle } from 'lucide-react';
 import { LegalMatter } from '../types';
+import { DraggableModal } from './common/DraggableModal';
 
 interface MatterTagModalProps {
   isOpen: boolean;
@@ -151,12 +152,15 @@ export const MatterTagModal: React.FC<MatterTagModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={onClose}
     >
-      <div
+      <DraggableModal
+        gripLabel="CATEGORIZE MATTER"
         className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl text-slate-900 animate-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+        <div
+          data-drag-handle="true"
+          className="flex items-start justify-between pb-4 border-b border-slate-100 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-800 border border-amber-200/80">
               <Tag className="h-5 w-5" />
@@ -304,7 +308,7 @@ export const MatterTagModal: React.FC<MatterTagModalProps> = ({
             Done
           </button>
         </div>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

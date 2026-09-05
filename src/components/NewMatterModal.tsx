@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { PracticeArea, LegalMatter, Client, Advocate } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
+import { DraggableModal } from './common/DraggableModal';
 
 interface NewMatterModalProps {
   isOpen: boolean;
@@ -156,14 +157,12 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
               ? 'Corporate'
               : 'Individual',
             industry: practiceArea,
-            kraPin: `P05${Math.floor(10000000 + Math.random() * 90000000)}X`,
             contactPerson: resolvedClientName,
             email: `contact@${resolvedClientName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}.co.ke`,
             phone: '+254 700 000 000',
             city: 'Nairobi',
             activeMattersCount: 1,
             totalBilledKES: 0,
-            retainerStatus: 'Per-Matter',
           };
           onAddClient(autoCreatedClient);
         }
@@ -251,12 +250,16 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
       id="new-matter-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto"
     >
-      <div
+      <DraggableModal
         id="register-new-legal-matter-modal"
+        gripLabel="REGISTER NEW LEGAL MATTER"
         className="w-full max-w-4xl bg-white rounded-xl border border-[#E1DFD6] overflow-hidden shadow-2xl my-auto text-[#1E1D1A]"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-7 py-4 border-b border-[#E1DFD6] bg-[#fbfaf6]">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between px-7 py-4 border-b border-[#E1DFD6] bg-[#fbfaf6] cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-[#E6F1FB] flex items-center justify-center text-[#0C447C] shrink-0 border border-blue-200">
               <Gavel className="h-5 w-5" />
@@ -679,7 +682,7 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
             </div>
           </div>
         </form>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

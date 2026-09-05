@@ -132,14 +132,14 @@ export interface Client {
   name: string;
   type: 'Corporate' | 'Individual' | 'State Entity';
   industry: string;
-  kraPin: string;
   contactPerson: string;
   email: string;
   phone: string;
   city: string; // Nairobi, Mombasa, Eldoret, Nakuru
   activeMattersCount: number;
   totalBilledKES: number;
-  retainerStatus: 'Active Retainer' | 'Per-Matter' | 'Pending Deposit';
+  kraPin?: string;
+  retainerStatus?: 'Active Retainer' | 'Per-Matter' | 'Pending Deposit';
 }
 
 export interface ActivityLog {
@@ -894,5 +894,31 @@ export type ClientServicesTab =
   | 'FollowUps'
   | 'Timeline'
   | 'Reports';
+
+export interface LeaveRequest {
+  id: string;
+  staffName: string;
+  role: string;
+  leaveType: 'Annual Leave' | 'Sick Leave' | 'Maternity / Paternity' | 'Study / CLE Leave' | 'Compassionate Leave';
+  startDate: string;
+  endDate: string;
+  daysRequested: number;
+  reason: string;
+  reliefStaff: string;
+  status: 'Pending' | 'Approved' | 'Declined';
+  requestedOn: string;
+  approvedBy?: string;
+}
+
+export interface LeaveBalance {
+  staffName: string;
+  role: string;
+  annualTotal: number;
+  annualUsed: number;
+  sickTotal: number;
+  sickUsed: number;
+  cleTotal: number;
+  cleUsed: number;
+}
 
 

@@ -13,6 +13,7 @@ import {
 import { Advocate } from '../types';
 import { updateStaffPasswordDirectly, loadStaffRoster } from '../utils/staffStorage';
 import { recordLoginAttempt } from '../utils/authAuditStorage';
+import { DraggableModal } from './common/DraggableModal';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -133,10 +134,15 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-stone-200">
-        
+      <DraggableModal
+        gripLabel="CHANGE PASSWORD"
+        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-stone-200"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-stone-100">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between pb-4 border-b border-stone-100 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
               <KeyRound className="h-5 w-5" />
@@ -310,7 +316,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

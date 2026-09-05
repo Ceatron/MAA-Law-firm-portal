@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Client, FeeNote, PaymentMethod, PaymentRecord } from '../types';
+import { DraggableModal } from './common/DraggableModal';
 
 interface ReceivePaymentModalProps {
   isOpen: boolean;
@@ -251,10 +252,15 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[92vh]">
-        
+      <DraggableModal
+        gripLabel="RECEIVE CLIENT PAYMENT"
+        className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[92vh]"
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-[#132c3f] text-white shrink-0">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-[#132c3f] text-white shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0098db]/20 text-[#0098db] border border-[#0098db]/40">
               <CreditCard className="h-5 w-5" />
@@ -649,7 +655,7 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
             </div>
           </form>
         )}
-      </div>
+      </DraggableModal>
     </div>
   );
 };

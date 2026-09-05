@@ -22,6 +22,7 @@ import {
   Advocate,
 } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
+import { DraggableModal } from './common/DraggableModal';
 
 interface EditMatterModalProps {
   isOpen: boolean;
@@ -208,12 +209,16 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
         </div>
       )}
 
-      <div
+      <DraggableModal
         id="edit-matter-modal-container"
-        className="relative w-full max-w-3xl rounded-xl border border-stone-300 bg-[#fbf9f4] shadow-2xl overflow-hidden my-6 max-h-[92vh] flex flex-col"
+        gripLabel={`EDIT MATTER • ${matter.referenceNumber}`}
+        className="relative w-full max-w-5xl rounded-xl border border-stone-300 bg-[#fbf9f4] shadow-2xl overflow-hidden my-6 max-h-[92vh] flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 bg-[#16181b] px-6 py-4 text-white shrink-0">
+        <div
+          data-drag-handle="true"
+          className="flex items-center justify-between border-b border-stone-200 bg-[#16181b] px-6 py-4 text-white shrink-0 cursor-grab active:cursor-grabbing select-none"
+        >
           <div className="flex items-center space-x-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0B2840] border border-amber-500/30 text-amber-400">
               <Scale className="h-5 w-5" />
@@ -734,7 +739,7 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
             </div>
           </div>
         </form>
-      </div>
+      </DraggableModal>
     </div>
   );
 };

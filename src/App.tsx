@@ -57,6 +57,7 @@ import {
   loadSavedNotifications,
   saveStoredNotifications,
   initChambersDatabaseSync,
+  syncAllChambersDataFromCloud,
 } from './utils/chambersDataStorage';
 import { isMatterVisibleToUser, isTaskVisibleToUser, canUserViewAll } from './utils/visibilityRules';
 import { getSupabaseClient, isSupabaseConfigured } from './utils/supabaseClient';
@@ -227,32 +228,27 @@ export default function App() {
       if (!isSupabaseConfigured()) return;
 
       try {
-        const [cloudMatters, cloudClients, cloudDeadlines, cloudActivities] = await Promise.all([
-          ChambersCloudService.fetchMatters(currentAdvocate),
-          ChambersCloudService.fetchClients(),
-          ChambersCloudService.fetchDeadlines(currentAdvocate),
-          ChambersCloudService.fetchActivities(),
-        ]);
+        const snapshot = await syncAllChambersDataFromCloud(currentAdvocate);
 
         if (isCancelled) return;
 
-        if (cloudMatters && cloudMatters.length > 0) {
-          setMatters(cloudMatters);
+        if (snapshot.matters && snapshot.matters.length > 0) {
+          setMatters(snapshot.matters);
         }
-        if (cloudClients && cloudClients.length > 0) {
-          setClients(cloudClients);
+        if (snapshot.clients && snapshot.clients.length > 0) {
+          setClients(snapshot.clients);
         }
-        if (cloudDeadlines && cloudDeadlines.length > 0) {
-          setDeadlines(cloudDeadlines);
+        if (snapshot.tasks && snapshot.tasks.length > 0) {
+          setTasks(snapshot.tasks);
         }
-        if (cloudActivities && cloudActivities.length > 0) {
-          setActivities(cloudActivities);
+        if (snapshot.deadlines && snapshot.deadlines.length > 0) {
+          setDeadlines(snapshot.deadlines);
         }
-
-        // Fetch scoped tasks using the retrieved matters
-        const cloudTasks = await ChambersCloudService.fetchTasks(currentAdvocate, cloudMatters || undefined);
-        if (!isCancelled && cloudTasks && cloudTasks.length > 0) {
-          setTasks(cloudTasks);
+        if (snapshot.activities && snapshot.activities.length > 0) {
+          setActivities(snapshot.activities);
+        }
+        if (snapshot.notifications && snapshot.notifications.length > 0) {
+          setNotifications(snapshot.notifications);
         }
       } catch (err) {
         console.warn('[App] Direct cloud data fetch error, maintaining cached store:', err);
@@ -290,11 +286,19 @@ export default function App() {
     const handleRemoteDeadlines = (e: any) => {
       if (Array.isArray(e.detail)) setDeadlines(e.detail);
     };
+    const handleRemoteActivities = (e: any) => {
+      if (Array.isArray(e.detail)) setActivities(e.detail);
+    };
+    const handleRemoteNotifications = (e: any) => {
+      if (Array.isArray(e.detail)) setNotifications(e.detail);
+    };
 
     window.addEventListener('chambers-matters-updated', handleRemoteMatters);
     window.addEventListener('chambers-tasks-updated', handleRemoteTasks);
     window.addEventListener('chambers-clients-updated', handleRemoteClients);
     window.addEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
+    window.addEventListener('chambers-activities-updated', handleRemoteActivities);
+    window.addEventListener('chambers-notifications-updated', handleRemoteNotifications);
 
     return () => {
       cleanup();
@@ -302,6 +306,8 @@ export default function App() {
       window.removeEventListener('chambers-tasks-updated', handleRemoteTasks);
       window.removeEventListener('chambers-clients-updated', handleRemoteClients);
       window.removeEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
+      window.removeEventListener('chambers-activities-updated', handleRemoteActivities);
+      window.removeEventListener('chambers-notifications-updated', handleRemoteNotifications);
     };
   }, []);
 
@@ -512,6 +518,12 @@ export default function App() {
   const handleUpdateTasks = (updater: TaskItem[] | ((prev: TaskItem[]) => TaskItem[])) => {
     setTasks((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      const nextIds = new Set(next.map((t) => t.id));
+      prev.forEach((t) => {
+        if (!nextIds.has(t.id)) {
+          ChambersCloudService.deleteTask(t.id);
+        }
+      });
       next.forEach((t) => ChambersCloudService.upsertTask(t));
       return next;
     });
@@ -525,6 +537,12 @@ export default function App() {
   const handleUpdateClients = (updater: Client[] | ((prev: Client[]) => Client[])) => {
     setClients((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      const nextIds = new Set(next.map((c) => c.id));
+      prev.forEach((c) => {
+        if (!nextIds.has(c.id)) {
+          ChambersCloudService.deleteClient(c.id);
+        }
+      });
       next.forEach((c) => ChambersCloudService.upsertClient(c));
       return next;
     });
@@ -570,6 +588,7 @@ export default function App() {
 
   const handleMarkNotificationsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    ChambersCloudService.markAllNotificationsRead(currentAdvocate.email);
   };
 
   const scopedTasksForCount = isManagingAdvocate

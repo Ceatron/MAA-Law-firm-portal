@@ -544,6 +544,29 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['chambers_settings']['Insert']>;
       };
+      time_entries: {
+        Row: {
+          id: string;
+          matter_id: string | null;
+          matter_ref: string | null;
+          advocate_name: string;
+          date: string;
+          activity_type: string;
+          description: string;
+          duration_minutes: number;
+          billable: boolean;
+          hourly_rate_kes: number;
+          total_fee_kes: number;
+          billed: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['time_entries']['Row'], 'created_at' | 'updated_at'> & {
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['time_entries']['Insert']>;
+      };
     };
   };
 }
