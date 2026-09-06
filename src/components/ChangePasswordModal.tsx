@@ -171,7 +171,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-stone-900 truncate">{currentAdvocate.name}</p>
             <p className="text-[11px] text-stone-500 truncate">{currentAdvocate.email}</p>
-            <p className="text-[10px] font-mono text-amber-800">{currentAdvocate.title}</p>
           </div>
         </div>
 

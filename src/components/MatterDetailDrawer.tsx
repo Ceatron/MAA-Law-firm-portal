@@ -42,12 +42,12 @@ import {
   CheckSquare,
   Flame,
   Briefcase,
+  MoreHorizontal,
 } from 'lucide-react';
 import { LegalMatter, TaskItem, Advocate, Client } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
 import { MatterTimeline } from './MatterTimeline';
 import { CaseReportModal } from './CaseReportModal';
-import { VoiceDictationModal } from './VoiceDictationModal';
 import { MatterTagModal, getTagColorClass } from './MatterTagModal';
 import { FiledDocumentsList } from './FiledDocumentsList';
 import { EditMatterModal } from './EditMatterModal';
@@ -99,13 +99,12 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
   const canDeleteMatter = isSysAdmin || isManagingUser;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'timeline' | 'documents' | 'billing' | 'reminders' | 'notes'>('overview');
-  const [loggedHours, setLoggedHours] = useState('');
-  const [showLogHours, setShowLogHours] = useState(false);
-  const [logSuccess, setLogSuccess] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [showDictationModal, setShowDictationModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
+  const [showTagsDropdown, setShowTagsDropdown] = useState(false);
+  const [showMoreActionsMenu, setShowMoreActionsMenu] = useState(false);
+  const [isQuickNoteFocused, setIsQuickNoteFocused] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [archiveReasonInput, setArchiveReasonInput] = useState('');
@@ -386,33 +385,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     setEditingNoteId(null);
   };
 
-  const handleSaveDictationNote = (dictation: {
-    title: string;
-    content: string;
-    category: 'Client Call' | 'Court Observation' | 'Strategy' | 'General Thoughts' | 'Hearing Debrief';
-    pinned: boolean;
-    audioRecorded?: boolean;
-    duration?: string;
-  }) => {
-    const now = new Date();
-    const newNote = {
-      id: `voice-note-${Date.now()}`,
-      author: matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate',
-      date: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      timestamp: now.getTime(),
-      category: dictation.category,
-      title: dictation.title,
-      content: dictation.content,
-      pinned: dictation.pinned,
-      audioRecorded: true,
-      duration: dictation.duration || '00:45',
-    };
-
-    setCaseNotes([newNote, ...caseNotes]);
-    setNoteToast('Transcribed voice note added to chronological log!');
-    setTimeout(() => setNoteToast(null), 3500);
-  };
-
   const togglePinNote = (id: string) => {
     setCaseNotes(caseNotes.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n)));
   };
@@ -487,32 +459,22 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     setReminders(reminders.filter((r) => r.id !== id));
   };
 
-  const handleLogHours = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loggedHours) return;
-    setLogSuccess(true);
-    setTimeout(() => {
-      setLogSuccess(false);
-      setShowLogHours(false);
-      setLoggedHours('');
-    }, 1500);
-  };
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end">
       <div className="relative w-full max-w-2xl bg-[#fbf9f4] shadow-2xl h-full flex flex-col border-l border-[#dedbc5] animate-in slide-in-from-right duration-300">
         {/* Drawer Header */}
         <div className="bg-[#16181b] p-6 text-white flex items-start justify-between border-b border-stone-800">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs font-bold text-[#60A5FA]">
+          <div className="flex-1 pr-4">
+            {/* Collapsed Badges and Tags Row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs font-bold text-[#60A5FA] bg-[#60A5FA]/10 border border-[#60A5FA]/25 px-2.5 py-0.5 rounded-full">
                 {matter.referenceNumber}
               </span>
-              <span className="rounded bg-[#0B63E5]/20 px-2 py-0.5 text-[10px] font-semibold text-[#60A5FA]">
+              <span className="rounded-full bg-[#0B63E5]/20 px-2.5 py-0.5 text-[10px] font-semibold text-[#60A5FA] border border-[#0B63E5]/30">
                 {matter.practiceArea}
               </span>
               <span
-                className={`inline-flex items-center space-x-1 rounded px-2 py-0.5 text-[10px] font-semibold border ${
+                className={`inline-flex items-center space-x-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
                   matter.priority === 'High'
                     ? 'bg-rose-900/40 text-rose-300 border-rose-700/60'
                     : matter.priority === 'Medium'
@@ -529,48 +491,77 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                 )}
                 <span>{matter.priority} Priority</span>
               </span>
+
+              {/* Tags Dropdown Menu */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTagsDropdown(!showTagsDropdown)}
+                  className="inline-flex items-center space-x-1 rounded-full border border-stone-700 bg-stone-800/90 px-2.5 py-0.5 text-[10px] font-medium text-stone-300 hover:border-stone-500 hover:text-white transition cursor-pointer"
+                  title="View and manage matter keyword tags"
+                >
+                  <Tag className="h-2.5 w-2.5 text-stone-400" />
+                  <span>Tags {matter.tags && matter.tags.length > 0 ? `(${matter.tags.length})` : ''} ▾</span>
+                </button>
+
+                {showTagsDropdown && (
+                  <div className="absolute left-0 mt-1.5 z-30 w-60 rounded-xl border border-stone-700 bg-stone-900 text-white p-3 shadow-2xl space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between border-b border-stone-800 pb-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                      <span>Assigned Tags</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowTagsDropdown(false)}
+                        className="text-stone-400 hover:text-white cursor-pointer"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {matter.tags && matter.tags.length > 0 ? (
+                        matter.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${getTagColorClass(
+                              tag
+                            )}`}
+                          >
+                            <Tag className="h-2.5 w-2.5 opacity-60" />
+                            <span>{tag}</span>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-stone-400 italic py-1">No tags assigned yet</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTagsDropdown(false);
+                        setShowTagModal(true);
+                      }}
+                      className="w-full flex items-center justify-center space-x-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 border border-stone-700 py-1.5 text-xs font-semibold text-white cursor-pointer transition shadow-2xs"
+                    >
+                      <Plus className="h-3 w-3 text-[#60A5FA]" />
+                      <span>Manage Tags</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-            <h2 className="mt-1.5 font-serif-title text-lg font-bold text-stone-100 leading-snug">
+
+            <h2 className="mt-2 font-serif-title text-lg font-bold text-stone-100 leading-snug">
               {matter.title}
             </h2>
             <p className="mt-1 text-xs text-stone-400">
               Client: <span className="font-semibold text-stone-200">{matter.clientName}</span>
             </p>
-            {/* Pill-shaped keyword labels */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {matter.tags && matter.tags.length > 0 ? (
-                matter.tags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setShowTagModal(true)}
-                    title={`Click to manage tags: ${tag}`}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-medium transition cursor-pointer ${getTagColorClass(
-                      tag
-                    )}`}
-                  >
-                    <Tag className="h-2.5 w-2.5 opacity-70" />
-                    <span>{tag}</span>
-                  </button>
-                ))
-              ) : (
-                <span className="text-[11px] text-stone-500 italic">No custom tags</span>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowTagModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-stone-600 bg-stone-800/80 px-2 py-0.5 text-[10px] font-medium text-stone-300 hover:border-stone-400 hover:text-white transition cursor-pointer"
-                title="Add or edit keyword tags for this matter"
-              >
-                <Plus className="h-2.5 w-2.5" />
-                <span>Manage Tags</span>
-              </button>
-            </div>
           </div>
 
           <button
             onClick={onClose}
-            className="rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-white cursor-pointer"
+            className="rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-white cursor-pointer shrink-0"
           >
             <X className="h-5 w-5" />
           </button>
@@ -595,34 +586,7 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
-            {matter.status === 'Archived' ? (
-              <button
-                onClick={() => {
-                  onUpdateStatus(matter.id, 'Completed');
-                  setArchiveToast('Matter restored from Archive to Active Workspace');
-                  setTimeout(() => setArchiveToast(null), 3000);
-                }}
-                className="flex items-center space-x-1.5 rounded border border-amber-300 bg-amber-50 px-3 py-1 font-bold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer shadow-2xs"
-                title="Restore this case file to active workspace"
-              >
-                <ArchiveRestore className="h-3.5 w-3.5 text-amber-700" />
-                <span>Restore to Active</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowArchiveModal(true)}
-                className={`flex items-center space-x-1.5 rounded border px-3 py-1 font-bold transition-colors cursor-pointer shadow-2xs ${
-                  matter.status === 'Completed'
-                    ? 'border-purple-300 bg-purple-100 text-purple-900 hover:bg-purple-200 ring-2 ring-purple-300'
-                    : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-                }`}
-                title="Move closed/completed case file to Archived Register"
-              >
-                <Archive className="h-3.5 w-3.5 text-purple-700" />
-                <span>Move to Archive</span>
-              </button>
-            )}
-
+            {/* Primary Action 1: Edit Matter */}
             <button
               id="drawer-edit-matter-button"
               onClick={() => setShowEditModal(true)}
@@ -633,18 +597,7 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
               <span>Edit Matter</span>
             </button>
 
-            {canDeleteMatter && onDeleteMatter && (
-              <button
-                id="drawer-delete-matter-button"
-                onClick={() => setShowDeleteConfirmModal(true)}
-                className="flex items-center space-x-1.5 rounded border border-rose-300 bg-rose-50 px-3 py-1 font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-400 transition-colors cursor-pointer shadow-2xs"
-                title="Delete this matter (System Admin & Managing Advocate only)"
-              >
-                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
-                <span>Delete Matter</span>
-              </button>
-            )}
-
+            {/* Primary Action 2: Assign Task */}
             {canAssignTasks && (
               <button
                 onClick={() => {
@@ -661,32 +614,112 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
               </button>
             )}
 
-            <button
-              onClick={() => setShowDictationModal(true)}
-              className="flex items-center space-x-1.5 rounded border border-red-200 bg-red-50 px-3 py-1 font-bold text-red-700 hover:bg-red-100 transition-colors cursor-pointer shadow-2xs"
-              title="Dictate voice case notes or meeting debriefs with live speech-to-text"
-            >
-              <Mic className="h-3.5 w-3.5 text-red-600 animate-pulse" />
-              <span>Dictate Voice Note</span>
-            </button>
+            {/* Overflow Menu: ⋯ More Actions */}
+            <div className="relative">
+              <button
+                onClick={() => setShowMoreActionsMenu(!showMoreActionsMenu)}
+                className="flex items-center space-x-1 rounded border border-stone-300 bg-white px-2.5 py-1 font-semibold text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer shadow-2xs"
+                title="More actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                <span>More ▾</span>
+              </button>
 
-            <button
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center space-x-1.5 rounded border border-[#0B63E5] bg-white px-3 py-1 font-semibold text-[#0B63E5] hover:bg-blue-50 transition-colors cursor-pointer shadow-2xs"
-              title="Generate & export a formal client report summary PDF"
-            >
-              <Download className="h-3.5 w-3.5 text-[#0B63E5]" />
-              <span>Export PDF Report</span>
-            </button>
+              {showMoreActionsMenu && (
+                <div className="absolute right-0 mt-1.5 z-30 w-48 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    onClick={() => {
+                      setShowMoreActionsMenu(false);
+                      setShowReportModal(true);
+                    }}
+                    className="w-full flex items-center space-x-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-blue-50 hover:text-[#0B63E5] transition text-left cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5 text-[#0B63E5]" />
+                    <span>Export PDF Report</span>
+                  </button>
 
-            <button
-              onClick={() => setShowLogHours(!showLogHours)}
-              className="flex items-center space-x-1 rounded bg-stone-800 px-3 py-1 font-semibold text-white shadow-2xs hover:bg-stone-700 cursor-pointer"
-            >
-              <Clock className="h-3.5 w-3.5" />
-              <span>Log Hours</span>
-            </button>
+                  {matter.status === 'Archived' ? (
+                    <button
+                      onClick={() => {
+                        setShowMoreActionsMenu(false);
+                        onUpdateStatus(matter.id, 'Completed');
+                        setArchiveToast('Matter restored from Archive to Active Workspace');
+                        setTimeout(() => setArchiveToast(null), 3000);
+                      }}
+                      className="w-full flex items-center space-x-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 transition text-left cursor-pointer"
+                    >
+                      <ArchiveRestore className="h-3.5 w-3.5 text-amber-700" />
+                      <span>Restore to Active</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowMoreActionsMenu(false);
+                        setShowArchiveModal(true);
+                      }}
+                      className="w-full flex items-center space-x-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-purple-900 hover:bg-purple-50 transition text-left cursor-pointer"
+                    >
+                      <Archive className="h-3.5 w-3.5 text-purple-700" />
+                      <span>Move to Archive</span>
+                    </button>
+                  )}
+
+                  {canDeleteMatter && onDeleteMatter && (
+                    <div className="border-t border-stone-100 pt-1 mt-1">
+                      <button
+                        id="drawer-delete-matter-button"
+                        onClick={() => {
+                          setShowMoreActionsMenu(false);
+                          setShowDeleteConfirmModal(true);
+                        }}
+                        className="w-full flex items-center space-x-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 transition text-left cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                        <span>Delete Matter</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+
+        {/* Pinned Condensed Fee Note Bar */}
+        <div className="bg-[#fcfbf9] px-6 py-2 border-b border-[#e2dfd5] flex flex-wrap items-center justify-between text-xs gap-2">
+          <div className="flex items-center space-x-3 text-stone-600">
+            <div className="flex items-center space-x-1 text-stone-900 font-bold">
+              <DollarSign className="h-3.5 w-3.5 text-[#0B63E5]" />
+              <span>Fee Note:</span>
+            </div>
+            <span>
+              {matter.feeToBeDiscussedLater || !matter.estimatedFeeKES || matter.estimatedFeeKES === 0 ? (
+                <span className="text-amber-800 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px]">
+                  TBD Later
+                </span>
+              ) : (
+                <span className="font-mono font-bold text-stone-900">
+                  KES {matter.estimatedFeeKES >= 1000000 ? `${(matter.estimatedFeeKES / 1000000).toFixed(2)}M` : matter.estimatedFeeKES.toLocaleString()}
+                </span>
+              )}
+            </span>
+            <span className="text-stone-300">|</span>
+            <span>
+              Billed: <strong className="font-mono text-[#0B63E5]">KES {((matter.billedKES || 0) >= 1000000 ? `${((matter.billedKES || 0) / 1000000).toFixed(2)}M` : (matter.billedKES || 0).toLocaleString())}</strong>
+            </span>
+            <span className="text-stone-300">|</span>
+            <span>
+              Paid: <strong className="font-mono text-emerald-700">KES {((matter.paidKES || 0) >= 1000000 ? `${((matter.paidKES || 0) / 1000000).toFixed(2)}M` : (matter.paidKES || 0).toLocaleString())}</strong>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('billing')}
+            className="text-[11px] font-bold text-[#0B63E5] hover:underline cursor-pointer flex items-center space-x-1"
+          >
+            <span>Full Ledger →</span>
+          </button>
         </div>
 
         {archiveToast && (
@@ -708,47 +741,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
             <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
             <span>{editToast}</span>
           </div>
-        )}
-
-        {/* Log Hours Form Popup */}
-        {showLogHours && (
-          <form onSubmit={handleLogHours} className="bg-blue-50/60 p-4 border-b border-[#0B63E5]/30 text-xs space-y-2">
-            <div className="flex items-center justify-between font-semibold text-[#0B63E5]">
-              <span>Log Billable Time on Case File</span>
-              <button type="button" onClick={() => setShowLogHours(false)} className="cursor-pointer">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="number"
-                step="0.5"
-                placeholder="Hours (e.g. 2.5)"
-                value={loggedHours}
-                onChange={(e) => setLoggedHours(e.target.value)}
-                required
-                className="w-32 rounded border border-[#dcd8c9] bg-white px-3 py-1 text-stone-900 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Task description (e.g. Drafted Replying Affidavit)"
-                required
-                className="flex-1 rounded border border-[#dcd8c9] bg-white px-3 py-1 text-stone-900 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="rounded bg-[#0B63E5] px-3 py-1 font-semibold text-white hover:bg-[#0256D0] cursor-pointer"
-              >
-                Save Log
-              </button>
-            </div>
-            {logSuccess && (
-              <p className="text-emerald-700 font-semibold flex items-center space-x-1">
-                <CheckCircle className="h-3.5 w-3.5 inline" />
-                <span>2.5 hours logged to Fee Note ledger!</span>
-              </p>
-            )}
-          </form>
         )}
 
         {/* Sub-tabs */}
@@ -888,16 +880,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                   <div className="flex items-center space-x-2">
                     <button
                       type="button"
-                      onClick={() => setShowDictationModal(true)}
-                      className="flex items-center space-x-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700 hover:bg-red-100 transition-colors cursor-pointer"
-                      title="Speak your observation with voice dictation"
-                    >
-                      <Mic className="h-3 w-3 text-red-600 animate-pulse" />
-                      <span>Dictate</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setActiveTab('notes')}
                       className="text-[11px] font-bold text-[#0070ba] hover:underline cursor-pointer flex items-center space-x-1"
                     >
@@ -906,80 +888,107 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Note Input Box */}
-                <form
-                  onSubmit={handleAddQuickNote}
-                  className="rounded-lg border border-[#c3e1f7] bg-white p-3 space-y-2.5 shadow-2xs"
-                >
-                  {/* Category Pills for 1-Click Classification */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-[#5c6f84] tracking-wider mr-1">
-                      Observation Tag:
-                    </span>
-                    {(
-                      [
-                        { id: 'Client Call', label: '📞 Client Call', color: 'border-purple-300 bg-purple-50 text-purple-800' },
-                        { id: 'Court Observation', label: '🏛️ Court / Registry', color: 'border-amber-300 bg-amber-50 text-amber-800' },
-                        { id: 'Strategy', label: '💡 Strategy Idea', color: 'border-blue-300 bg-blue-50 text-blue-800' },
-                        { id: 'Hearing Debrief', label: '⚖️ Hearing Debrief', color: 'border-indigo-300 bg-indigo-50 text-indigo-800' },
-                        { id: 'General Thoughts', label: '📝 General Thought', color: 'border-stone-300 bg-stone-50 text-stone-800' },
-                      ] as const
-                    ).map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => setQuickNoteCategory(tag.id)}
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition-all cursor-pointer ${
-                          quickNoteCategory === tag.id
-                            ? `${tag.color} ring-2 ring-[#0070ba] font-extrabold shadow-2xs`
-                            : 'border-[#e2e7eb] bg-white text-[#5c6f84] hover:bg-[#f4f6f8]'
-                        }`}
-                      >
-                        {tag.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-1.5">
+                {/* Quick Note Input Box - Shrinks to single-line input and expands on focus */}
+                {!isQuickNoteFocused && !quickNoteText.trim() ? (
+                  <div
+                    onClick={() => setIsQuickNoteFocused(true)}
+                    className="rounded-lg border border-[#c3e1f7] bg-white p-2.5 shadow-2xs cursor-text flex items-center justify-between hover:border-[#0070ba] transition"
+                  >
                     <input
                       type="text"
-                      placeholder="Optional brief headline (e.g. Call with MD regarding escrow release approval)"
-                      value={quickNoteTitle}
-                      onChange={(e) => setQuickNoteTitle(e.target.value)}
-                      className="w-full rounded border border-[#d1d7dc] bg-[#fbfcfd] px-2.5 py-1 text-xs text-[#1c2d3d] focus:bg-white focus:border-[#0070ba] focus:outline-none"
+                      readOnly
+                      placeholder="Jot a quick note..."
+                      className="w-full bg-transparent text-xs text-[#1c2d3d] placeholder:text-[#8c9ba8] focus:outline-none cursor-text"
                     />
-
-                    <textarea
-                      rows={2}
-                      required
-                      placeholder="Jot rapid observation during or after call (e.g., Client confirmed willingness to settle at 75% valuation; expressed urgency before next Friday's mention)..."
-                      value={quickNoteText}
-                      onChange={(e) => setQuickNoteText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddQuickNote();
-                        }
-                      }}
-                      className="w-full rounded border border-[#d1d7dc] bg-white p-2.5 text-xs text-[#1c2d3d] placeholder:text-[#8c9ba8] focus:border-[#0070ba] focus:ring-1 focus:ring-[#0070ba] focus:outline-none resize-y"
-                    />
+                    <Zap className="h-3.5 w-3.5 text-[#0070ba] shrink-0 opacity-60" />
                   </div>
+                ) : (
+                  <form
+                    onSubmit={handleAddQuickNote}
+                    className="rounded-lg border border-[#c3e1f7] bg-white p-3 space-y-2.5 shadow-2xs animate-in fade-in duration-150"
+                  >
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        placeholder="Optional brief headline (e.g. Call with MD regarding escrow release)"
+                        value={quickNoteTitle}
+                        onChange={(e) => setQuickNoteTitle(e.target.value)}
+                        className="w-full rounded border border-[#d1d7dc] bg-[#fbfcfd] px-2.5 py-1 text-xs text-[#1c2d3d] focus:bg-white focus:border-[#0070ba] focus:outline-none"
+                      />
 
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] text-[#5c6f84]">
-                      Shortcut: <kbd className="rounded bg-stone-100 px-1 py-0.5 font-mono text-[9px] border">Ctrl+Enter</kbd> to save
-                    </span>
+                      <textarea
+                        rows={2}
+                        autoFocus
+                        required
+                        placeholder="Jot a quick note..."
+                        value={quickNoteText}
+                        onChange={(e) => setQuickNoteText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddQuickNote();
+                          }
+                        }}
+                        className="w-full rounded border border-[#d1d7dc] bg-white p-2.5 text-xs text-[#1c2d3d] placeholder:text-[#8c9ba8] focus:border-[#0070ba] focus:ring-1 focus:ring-[#0070ba] focus:outline-none resize-y"
+                      />
+                    </div>
 
-                    <button
-                      type="submit"
-                      disabled={!quickNoteText.trim()}
-                      className="flex items-center space-x-1.5 rounded-md bg-[#0070ba] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#005a96] disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    >
-                      <Zap className="h-3.5 w-3.5" />
-                      <span>Save Quick Note</span>
-                    </button>
-                  </div>
-                </form>
+                    {/* Category Pills appear AFTER typing */}
+                    {quickNoteText.trim().length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 animate-in fade-in duration-150">
+                        <span className="text-[10px] font-bold text-[#5c6f84] tracking-wider mr-1">
+                          Observation Tag:
+                        </span>
+                        {(
+                          [
+                            { id: 'Client Call', label: '📞 Client Call', color: 'border-purple-300 bg-purple-50 text-purple-800' },
+                            { id: 'Court Observation', label: '🏛️ Court / Registry', color: 'border-amber-300 bg-amber-50 text-amber-800' },
+                            { id: 'Strategy', label: '💡 Strategy Idea', color: 'border-blue-300 bg-blue-50 text-blue-800' },
+                            { id: 'Hearing Debrief', label: '⚖️ Hearing Debrief', color: 'border-indigo-300 bg-indigo-50 text-indigo-800' },
+                            { id: 'General Thoughts', label: '📝 General Thought', color: 'border-stone-300 bg-stone-50 text-stone-800' },
+                          ] as const
+                        ).map((tag) => (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => setQuickNoteCategory(tag.id)}
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition-all cursor-pointer ${
+                              quickNoteCategory === tag.id
+                                ? `${tag.color} ring-2 ring-[#0070ba] font-extrabold shadow-2xs`
+                                : 'border-[#e2e7eb] bg-white text-[#5c6f84] hover:bg-[#f4f6f8]'
+                            }`}
+                          >
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsQuickNoteFocused(false);
+                          if (!quickNoteText.trim()) {
+                            setQuickNoteTitle('');
+                          }
+                        }}
+                        className="text-[10px] text-stone-500 hover:text-stone-800 cursor-pointer"
+                      >
+                        Collapse
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={!quickNoteText.trim()}
+                        className="flex items-center space-x-1.5 rounded-md bg-[#0070ba] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#005a96] disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      >
+                        <Zap className="h-3.5 w-3.5" />
+                        <span>Save Quick Note</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {/* Stream of Recent Observations */}
                 <div className="space-y-2 pt-1">
@@ -1088,45 +1097,59 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Next Deadline Panel, Timeline Teaser & PDF Export Banner */}
+              {/* Normalized Summary Cards: Next High Court Deadline, Case Timeline, and Client PDF Report */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="rounded-lg border border-[#0B63E5]/30 bg-blue-50/60 p-3.5 flex flex-col justify-between">
-                  <div>
+                <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs hover:border-stone-300 transition-all flex flex-col justify-between space-y-3">
+                  <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#0B63E5] text-[11px]">Next High Court Deadline</span>
-                      <span className="font-bold text-[#0B63E5] font-mono text-[11px]">{matter.nextDeadlineDate}</span>
+                      <div className="flex items-center space-x-1.5 text-[#0B63E5]">
+                        <Calendar className="h-4 w-4" />
+                        <span className="font-bold text-xs text-stone-900">Next High Court Deadline</span>
+                      </div>
+                      <span className="font-bold text-[#0B63E5] font-mono text-[11px] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {matter.nextDeadlineDate}
+                      </span>
                     </div>
-                    <p className="mt-1 text-stone-800 font-medium text-xs line-clamp-2">{matter.nextDeadlineDescription}</p>
+                    <p className="text-stone-700 font-medium text-xs line-clamp-2">
+                      {matter.nextDeadlineDescription}
+                    </p>
+                  </div>
+                  <div className="text-[10px] text-stone-400 font-medium">
+                    Priority court hearing calendar
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[#e2dfd5] bg-stone-900 text-white p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center space-x-1.5">
-                    <Clock className="h-4 w-4 text-[#60A5FA]" />
-                    <span className="font-bold text-xs text-stone-100">Case Timeline</span>
+                <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs hover:border-stone-300 transition-all flex flex-col justify-between space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center space-x-1.5 text-[#0B63E5]">
+                      <Clock className="h-4 w-4" />
+                      <span className="font-bold text-xs text-stone-900">Case Timeline</span>
+                    </div>
+                    <p className="text-xs text-stone-600 line-clamp-2">
+                      Map court hearings, e-filed pleadings & client meetings.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-stone-300 line-clamp-2">
-                    Map court hearings, e-filed pleadings & client meetings.
-                  </p>
                   <button
                     onClick={() => setActiveTab('timeline')}
-                    className="self-start text-[11px] font-bold text-[#60A5FA] hover:underline cursor-pointer flex items-center space-x-1"
+                    className="self-start text-xs font-bold text-[#0B63E5] hover:underline cursor-pointer flex items-center space-x-1"
                   >
                     <span>View Vertical Timeline →</span>
                   </button>
                 </div>
 
-                <div className="rounded-lg border border-emerald-300 bg-emerald-50/80 p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center space-x-1.5 text-emerald-900">
-                    <FileText className="h-4 w-4 text-emerald-700" />
-                    <span className="font-bold text-xs">Client PDF Report</span>
+                <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs hover:border-stone-300 transition-all flex flex-col justify-between space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center space-x-1.5 text-[#0B63E5]">
+                      <FileText className="h-4 w-4" />
+                      <span className="font-bold text-xs text-stone-900">Client PDF Report</span>
+                    </div>
+                    <p className="text-xs text-stone-600 line-clamp-2">
+                      Formal law firm letterhead summary for board updates.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-emerald-800 line-clamp-2">
-                    Formal law firm letterhead summary for board updates.
-                  </p>
                   <button
                     onClick={() => setShowReportModal(true)}
-                    className="self-start text-[11px] font-bold text-emerald-800 hover:underline cursor-pointer flex items-center space-x-1"
+                    className="self-start text-xs font-bold text-[#0B63E5] hover:underline cursor-pointer flex items-center space-x-1"
                   >
                     <span>Export PDF Report →</span>
                   </button>
@@ -1142,8 +1165,8 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
               />
 
               {/* Assigned Matter Tasks & Workload Section */}
-              <div className="rounded-lg border-2 border-blue-200 bg-white p-4 space-y-3 shadow-xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-2.5">
+              <div className="rounded-lg border border-stone-200 bg-white p-4 space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
                   <div className="flex items-center space-x-2">
                     <div className="rounded-md bg-[#0B63E5] p-1.5 text-white">
                       <CheckSquare className="h-4 w-4" />
@@ -1188,14 +1211,11 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                 </div>
 
                 {matterTasks.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50/70 p-4 text-center space-y-2">
-                    <CheckSquare className="h-6 w-6 text-stone-400 mx-auto" />
-                    <p className="text-xs font-semibold text-stone-700">
-                      No tasks assigned to this case file yet.
-                    </p>
-                    <p className="text-[11px] text-stone-500 max-w-sm mx-auto">
-                      Assign research tasks, affidavit drafting, client follow-ups, or court appearance preparations directly to team advocates.
-                    </p>
+                  <div className="flex items-center justify-between rounded-lg border border-dashed border-stone-200 bg-stone-50/70 px-3.5 py-2.5">
+                    <span className="text-xs text-stone-500 font-medium flex items-center gap-1.5">
+                      <CheckSquare className="h-3.5 w-3.5 text-stone-400" />
+                      <span>No tasks assigned to this case file yet.</span>
+                    </span>
                     {canAssignTasks && (
                       <button
                         type="button"
@@ -1205,10 +1225,10 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                           );
                           setIsAssignTaskModalOpen(true);
                         }}
-                        className="inline-flex items-center space-x-1 rounded bg-[#0B63E5] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#0256D0] cursor-pointer"
+                        className="inline-flex items-center space-x-1 text-xs font-bold text-[#0B63E5] hover:underline cursor-pointer"
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        <span>Assign First Task to Matter</span>
+                        <span>Assign Task</span>
                       </button>
                     )}
                   </div>
@@ -1957,14 +1977,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     </p>
                   </div>
                 </div>
-
-                <button
-                  onClick={() => setShowDictationModal(true)}
-                  className="flex items-center justify-center space-x-2 rounded-lg bg-red-600 px-3.5 py-2 font-bold text-white shadow-md hover:bg-red-700 transition-colors cursor-pointer text-xs shrink-0"
-                >
-                  <Mic className="h-4 w-4 animate-pulse" />
-                  <span>Voice Dictation Note</span>
-                </button>
               </div>
 
               {noteToast && (
@@ -2024,14 +2036,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     <Plus className="h-4 w-4 text-[#0B63E5]" />
                     <span>Add New Case Note</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowDictationModal(true)}
-                    className="text-[11px] font-bold text-red-600 hover:underline flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Mic className="h-3 w-3" />
-                    <span>Use Speech Dictation</span>
-                  </button>
                 </div>
 
                 <div className="space-y-2.5">
@@ -2330,14 +2334,6 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
         matter={matter}
         isOpen={showReportModal}
         onClose={() => setShowReportModal(false)}
-      />
-
-      {/* Voice-to-Text Dictation Modal */}
-      <VoiceDictationModal
-        matter={matter}
-        isOpen={showDictationModal}
-        onClose={() => setShowDictationModal(false)}
-        onSaveNote={handleSaveDictationNote}
       />
 
       {/* Archive Confirmation Modal */}

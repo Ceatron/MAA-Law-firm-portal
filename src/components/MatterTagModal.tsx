@@ -199,7 +199,7 @@ export const MatterTagModal: React.FC<MatterTagModalProps> = ({
           <div className="min-h-[52px] rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 flex flex-wrap items-center gap-1.5">
             {currentTags.length === 0 ? (
               <p className="text-xs text-slate-400 italic">
-                No tags assigned yet. Type custom keywords or select suggestions below.
+                No tags assigned yet. Type custom keywords or select standard keywords below.
               </p>
             ) : (
               currentTags.map((tag) => (

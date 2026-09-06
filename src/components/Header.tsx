@@ -221,9 +221,6 @@ export const Header: React.FC<HeaderProps> = ({
               <p className="text-xs font-semibold leading-none text-slate-900 flex items-center gap-1">
                 <span>{currentAdvocate.name}</span>
               </p>
-              <p className="mt-0.5 text-[10px] text-slate-500 font-mono">
-                {currentAdvocate.lskRollNo}
-              </p>
             </div>
             <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
           </button>
@@ -241,14 +238,12 @@ export const Header: React.FC<HeaderProps> = ({
                     <p className="text-xs font-semibold text-slate-900">
                       {currentAdvocate.name}
                     </p>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${currentRoleInfo.badgeClass}`}
-                    >
-                      {currentRoleInfo.label}
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                      Active
                     </span>
                   </div>
-                  <p className="mt-1 text-[10px] text-slate-500 font-mono">
-                    ID / Roll: {currentAdvocate.lskRollNo} • Active
+                  <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+                    {currentAdvocate.email}
                   </p>
                 </div>
 

@@ -53,11 +53,35 @@ export const canUserViewAll = (adv?: Advocate | null): boolean => {
     adv.isSystemAdmin ||
     adv.isDeveloper ||
     roleLower === 'system admin' ||
+    roleLower === 'system administrator' ||
     roleLower === 'managing advocate' ||
     titleLower.includes('managing') ||
     titleLower.includes('system admin') ||
     titleLower.includes('sys admin') ||
     adv.permissions?.canViewAllMatters
+  );
+};
+
+/**
+ * Determines whether the user can register new matters, assign matters, and delete clients.
+ * Firm Policy: ONLY System Administrator and Managing Advocate have this capability.
+ */
+export const canUserAssignAndAddMatters = (adv?: Advocate | null): boolean => {
+  if (!adv) return false;
+  const roleLower = (adv.role || '').toLowerCase();
+  const titleLower = (adv.title || '').toLowerCase();
+
+  return Boolean(
+    adv.id === 'dev-admin' ||
+    adv.id === 'adv-1' ||
+    adv.isSystemAdmin ||
+    adv.isDeveloper ||
+    roleLower === 'system admin' ||
+    roleLower === 'system administrator' ||
+    roleLower === 'managing advocate' ||
+    titleLower.includes('managing') ||
+    titleLower.includes('system admin') ||
+    titleLower.includes('sys admin')
   );
 };
 

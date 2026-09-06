@@ -20,6 +20,9 @@ import {
   PieChart,
 } from 'lucide-react';
 import { loadVisibleStaffRoster } from '../../utils/staffStorage';
+import { canUserAssignAndAddMatters } from '../../utils/visibilityRules';
+import { useDraggable } from '../../hooks/useDraggable';
+import { Advocate } from '../../types';
 import {
   loadSavedLeaveRequests,
   saveStoredLeaveRequests,
@@ -57,8 +60,15 @@ interface LeaveBalance {
   cleUsed: number;
 }
 
-export const HRMView: React.FC = () => {
+interface HRMViewProps {
+  currentAdvocate?: Advocate;
+}
+
+export const HRMView: React.FC<HRMViewProps> = ({ currentAdvocate }) => {
   const staffList = loadVisibleStaffRoster();
+  const canManageLeave = canUserAssignAndAddMatters(currentAdvocate);
+  const currentUserName = currentAdvocate?.name || staffList[0]?.name || 'Advocate';
+
   // Navigation Tabs: Leave Functionality vs HRM Reports
   const [activeTab, setActiveTab] = useState<'leave' | 'balances' | 'reports'>('leave');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -68,11 +78,11 @@ export const HRMView: React.FC = () => {
     loadSavedLeaveRequests() as LeaveRequest[]
   );
 
-  // Leave Balances across all firm staff and roles
+  // Leave Balances across all firm staff
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>(() => {
     const defaultBalances = staffList.map((adv) => ({
       staffName: adv.name,
-      role: adv.role || adv.title,
+      role: '',
       annualTotal: 21,
       annualUsed: 0,
       sickTotal: 14,
@@ -131,12 +141,35 @@ export const HRMView: React.FC = () => {
 
   // Apply Leave Modal State
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [leaveStaffName, setLeaveStaffName] = useState(staffList[0]?.name || 'Advocate');
+  const { handleProps, modalStyle } = useDraggable({ isOpen: isLeaveModalOpen });
   const [leaveType, setLeaveType] = useState<LeaveRequest['leaveType']>('Annual Leave');
   const [leaveStartDate, setLeaveStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [leaveReason, setLeaveReason] = useState('');
-  const [leaveRelief, setLeaveRelief] = useState(staffList[0]?.name || 'Advocate');
+  const [leaveRelief, setLeaveRelief] = useState(
+    staffList.find((s) => s.name.toLowerCase() !== currentUserName.toLowerCase())?.name ||
+      staffList[0]?.name ||
+      'Staff Member'
+  );
+
+  // Current logged in user's leave balance
+  const currentUserBalance = leaveBalances.find(
+    (b) => b.staffName.toLowerCase() === currentUserName.toLowerCase()
+  ) || {
+    staffName: currentUserName,
+    role: '',
+    annualTotal: 21,
+    annualUsed: 0,
+    sickTotal: 14,
+    sickUsed: 0,
+    cleTotal: 7,
+    cleUsed: 0,
+  };
+
+  const remainingAnnual = Math.max(0, currentUserBalance.annualTotal - currentUserBalance.annualUsed);
+  const remainingSick = Math.max(0, currentUserBalance.sickTotal - currentUserBalance.sickUsed);
+  const remainingCLE = Math.max(0, currentUserBalance.cleTotal - currentUserBalance.cleUsed);
+  const totalRemainingDays = remainingAnnual + remainingSick + remainingCLE;
 
   // Filters
   const [leaveFilterStatus, setLeaveFilterStatus] = useState<string>('all');
@@ -147,7 +180,7 @@ export const HRMView: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Leave Application Submission
+  // Leave Application Submission (Applicant is automatically current user)
   const handleApplyLeaveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!leaveStartDate || !leaveEndDate) return;
@@ -159,8 +192,8 @@ export const HRMView: React.FC = () => {
 
     const newReq: LeaveRequest = {
       id: `lvr-${Date.now()}`,
-      staffName: leaveStaffName,
-      role: staffList.find((a) => a.name === leaveStaffName)?.title || 'Firm Workspace Staff',
+      staffName: currentUserName,
+      role: '',
       leaveType,
       startDate: leaveStartDate,
       endDate: leaveEndDate,
@@ -174,26 +207,72 @@ export const HRMView: React.FC = () => {
     setLeaveRequests([newReq, ...leaveRequests]);
     setIsLeaveModalOpen(false);
     setLeaveReason('');
-    showToast(`Leave application submitted for ${leaveStaffName} (${diffDays} days). Pending Managing Partner approval.`);
+    showToast(`Leave application submitted for ${currentUserName} (${diffDays} days). Pending approval.`);
   };
 
-  // Approve or Decline
+  // Approve or Decline (Updates leave balances immediately when leave is approved or declined)
   const handleLeaveAction = (id: string, newStatus: 'Approved' | 'Declined') => {
-    setLeaveRequests(
-      leaveRequests.map((r) =>
+    const target = leaveRequests.find((r) => r.id === id);
+    if (!target) return;
+    const oldStatus = target.status;
+
+    setLeaveRequests((prev) =>
+      prev.map((r) =>
         r.id === id
           ? {
               ...r,
               status: newStatus,
-              approvedBy: 'Adv. Costa Kimathi (Managing Partner)',
+              approvedBy: currentAdvocate?.name || 'Managing Advocate',
             }
           : r
       )
     );
+
+    // Update leave balances reactively when leave is approved
+    if (newStatus === 'Approved' && oldStatus !== 'Approved') {
+      setLeaveBalances((prev) =>
+        prev.map((b) => {
+          if (b.staffName.toLowerCase() === target.staffName.toLowerCase()) {
+            if (target.leaveType === 'Annual Leave') {
+              return { ...b, annualUsed: b.annualUsed + target.daysRequested };
+            } else if (target.leaveType === 'Sick Leave') {
+              return { ...b, sickUsed: b.sickUsed + target.daysRequested };
+            } else if (target.leaveType === 'Study / CLE Leave') {
+              return { ...b, cleUsed: b.cleUsed + target.daysRequested };
+            }
+          }
+          return b;
+        })
+      );
+    } else if (newStatus === 'Declined' && oldStatus === 'Approved') {
+      setLeaveBalances((prev) =>
+        prev.map((b) => {
+          if (b.staffName.toLowerCase() === target.staffName.toLowerCase()) {
+            if (target.leaveType === 'Annual Leave') {
+              return { ...b, annualUsed: Math.max(0, b.annualUsed - target.daysRequested) };
+            } else if (target.leaveType === 'Sick Leave') {
+              return { ...b, sickUsed: Math.max(0, b.sickUsed - target.daysRequested) };
+            } else if (target.leaveType === 'Study / CLE Leave') {
+              return { ...b, cleUsed: Math.max(0, b.cleUsed - target.daysRequested) };
+            }
+          }
+          return b;
+        })
+      );
+    }
+
     showToast(`Leave request ${newStatus.toLowerCase()} successfully.`);
   };
 
+  // Filter leave requests:
+  // - Applicants only see their own leave details
+  // - Sys Admin and Managing Adv see all leave details
   const filteredLeave = leaveRequests.filter((r) => {
+    if (!canManageLeave) {
+      if (r.staffName.toLowerCase() !== currentUserName.toLowerCase()) {
+        return false;
+      }
+    }
     const matchesStatus =
       leaveFilterStatus === 'all' || r.status.toLowerCase() === leaveFilterStatus.toLowerCase();
     const matchesType =
@@ -259,43 +338,135 @@ export const HRMView: React.FC = () => {
         </div>
       )}
 
+      {/* Remaining Leave Days Banner / Overview (Updates reactively when leave is taken) */}
+      <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-indigo-50/40 to-slate-50 p-4 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <ShieldCheck className="h-5 w-5 text-[#0B63E5]" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Remaining Leave Days for {currentUserName}
+              </h2>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
+                Auto-updates when leave is approved
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Your available leave entitlements for the current annual employment cycle.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 text-center shadow-2xs">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Annual Leave</span>
+              <span className="font-mono font-bold text-base text-[#0B63E5]">{remainingAnnual}</span>
+              <span className="text-[10px] text-slate-500 font-medium"> / {currentUserBalance.annualTotal} left</span>
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 text-center shadow-2xs">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sick Leave</span>
+              <span className="font-mono font-bold text-base text-emerald-700">{remainingSick}</span>
+              <span className="text-[10px] text-slate-500 font-medium"> / {currentUserBalance.sickTotal} left</span>
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 text-center shadow-2xs">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">CLE / Study</span>
+              <span className="font-mono font-bold text-base text-purple-700">{remainingCLE}</span>
+              <span className="text-[10px] text-slate-500 font-medium"> / {currentUserBalance.cleTotal} left</span>
+            </div>
+
+            <div className="bg-[#0B63E5] text-white rounded-lg px-3.5 py-2 text-center shadow-xs">
+              <span className="block text-[10px] font-bold text-blue-100 uppercase tracking-wider">Total Available</span>
+              <span className="font-mono font-bold text-lg leading-tight">{totalRemainingDays}</span>
+              <span className="block text-[9px] text-blue-100">Days</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Metric Cards Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-[11px] font-bold tracking-wider">Total Leave Requests</span>
-            <CalendarDays className="h-4 w-4 text-[#0B63E5]" />
-          </div>
-          <p className="font-serif font-bold text-2xl text-stone-900 mt-2">{leaveRequests.length}</p>
-          <p className="text-[10px] text-stone-500 mt-1">Total applications logged this period</p>
-        </div>
+        {canManageLeave ? (
+          <>
+            <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-stone-500">
+                <span className="text-[11px] font-bold tracking-wider">Total Leave Requests</span>
+                <CalendarDays className="h-4 w-4 text-[#0B63E5]" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-stone-900 mt-2">{leaveRequests.length}</p>
+              <p className="text-[10px] text-stone-500 mt-1">Total applications logged this period</p>
+            </div>
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-amber-800">
-            <span className="text-[11px] font-bold tracking-wider">Pending Partner Approvals</span>
-            <Clock className="h-4 w-4 text-amber-600" />
-          </div>
-          <p className="font-serif font-bold text-2xl text-amber-900 mt-2">{pendingRequestsCount}</p>
-          <p className="text-[10px] text-amber-700 mt-1">Awaiting Managing Partner sign-off</p>
-        </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-amber-800">
+                <span className="text-[11px] font-bold tracking-wider">Pending Partner Approvals</span>
+                <Clock className="h-4 w-4 text-amber-600" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-amber-900 mt-2">{pendingRequestsCount}</p>
+              <p className="text-[10px] text-amber-700 mt-1">Awaiting Managing Partner sign-off</p>
+            </div>
 
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-emerald-800">
-            <span className="text-[11px] font-bold tracking-wider">Approved Leave Days</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          </div>
-          <p className="font-serif font-bold text-2xl text-emerald-900 mt-2">{totalApprovedDays} Days</p>
-          <p className="text-[10px] text-emerald-700 mt-1">Cumulatively granted to advocates & staff</p>
-        </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-emerald-800">
+                <span className="text-[11px] font-bold tracking-wider">Approved Leave Days</span>
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-emerald-900 mt-2">{totalApprovedDays} Days</p>
+              <p className="text-[10px] text-emerald-700 mt-1">Cumulatively granted to advocates & staff</p>
+            </div>
 
-        <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-[11px] font-bold tracking-wider">Statutory Entitlement</span>
-            <ShieldCheck className="h-4 w-4 text-[#0B63E5]" />
-          </div>
-          <p className="font-serif font-bold text-2xl text-stone-900 mt-2">21 Days / Year</p>
-          <p className="text-[10px] text-stone-500 mt-1">Kenya Employment Act 2007 compliant</p>
-        </div>
+            <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-stone-500">
+                <span className="text-[11px] font-bold tracking-wider">Statutory Entitlement</span>
+                <ShieldCheck className="h-4 w-4 text-[#0B63E5]" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-stone-900 mt-2">21 Days / Year</p>
+              <p className="text-[10px] text-stone-500 mt-1">Kenya Employment Act 2007 compliant</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-stone-500">
+                <span className="text-[11px] font-bold tracking-wider">Remaining Annual Leave</span>
+                <CalendarDays className="h-4 w-4 text-[#0B63E5]" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-stone-900 mt-2">{remainingAnnual} Days</p>
+              <p className="text-[10px] text-stone-500 mt-1">Of {currentUserBalance.annualTotal} statutory annual entitlement</p>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-amber-800">
+                <span className="text-[11px] font-bold tracking-wider">Pending Applications</span>
+                <Clock className="h-4 w-4 text-amber-600" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-amber-900 mt-2">
+                {filteredLeave.filter((r) => r.status === 'Pending').length}
+              </p>
+              <p className="text-[10px] text-amber-700 mt-1">Awaiting approval</p>
+            </div>
+
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-emerald-800">
+                <span className="text-[11px] font-bold tracking-wider">Approved Leave Taken</span>
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-emerald-900 mt-2">
+                {filteredLeave.filter((r) => r.status === 'Approved').reduce((acc, r) => acc + r.daysRequested, 0)} Days
+              </p>
+              <p className="text-[10px] text-emerald-700 mt-1">Days taken this employment cycle</p>
+            </div>
+
+            <div className="rounded-xl border border-[#e2dfd5] bg-white p-4 shadow-2xs">
+              <div className="flex items-center justify-between text-stone-500">
+                <span className="text-[11px] font-bold tracking-wider">Total Available Days</span>
+                <ShieldCheck className="h-4 w-4 text-[#0B63E5]" />
+              </div>
+              <p className="font-serif font-bold text-2xl text-stone-900 mt-2">{totalRemainingDays} Days</p>
+              <p className="text-[10px] text-stone-500 mt-1">Annual, sick, and study leave combined</p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Main HRM Navigation Sub-Tabs */}
@@ -309,7 +480,7 @@ export const HRMView: React.FC = () => {
           }`}
         >
           <CalendarDays className="h-4 w-4" />
-          <span>Leave Applications & Approvals ({leaveRequests.length})</span>
+          <span>{canManageLeave ? `Leave Applications & Approvals (${leaveRequests.length})` : `My Leave Applications (${filteredLeave.length})`}</span>
         </button>
 
         <button
@@ -321,20 +492,22 @@ export const HRMView: React.FC = () => {
           }`}
         >
           <ShieldCheck className="h-4 w-4" />
-          <span>Staff Leave Entitlements & Balances</span>
+          <span>{canManageLeave ? 'Staff Leave Entitlements & Balances' : 'My Leave Entitlements & Balance'}</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`flex items-center space-x-2 border-b-2 px-5 py-3 text-xs font-bold transition-colors cursor-pointer ${
-            activeTab === 'reports'
-              ? 'border-[#0B63E5] text-[#0B63E5]'
-              : 'border-transparent text-stone-500 hover:text-stone-900'
-          }`}
-        >
-          <BarChart3 className="h-4 w-4" />
-          <span>HRM & Leave Audit Reports</span>
-        </button>
+        {canManageLeave && (
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`flex items-center space-x-2 border-b-2 px-5 py-3 text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === 'reports'
+                ? 'border-[#0B63E5] text-[#0B63E5]'
+                : 'border-transparent text-stone-500 hover:text-stone-900'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>HRM & Leave Audit Reports</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: LEAVE APPLICATIONS & APPROVAL WORKFLOW */}
@@ -417,7 +590,6 @@ export const HRMView: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="font-bold text-stone-900 text-sm">{req.staffName}</h3>
-                      <p className="text-[11px] text-[#0B63E5] font-semibold">{req.role}</p>
                     </div>
                   </div>
 
@@ -434,7 +606,7 @@ export const HRMView: React.FC = () => {
                       {req.status}
                     </span>
 
-                    {req.status === 'Pending' && (
+                    {req.status === 'Pending' && canManageLeave && (
                       <div className="flex items-center space-x-1">
                         <button
                           onClick={() => handleLeaveAction(req.id, 'Approved')}
@@ -511,15 +683,17 @@ export const HRMView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {leaveBalances.map((bal, idx) => {
-              const annRem = bal.annualTotal - bal.annualUsed;
+            {(canManageLeave
+              ? leaveBalances
+              : leaveBalances.filter((b) => b.staffName.toLowerCase() === currentUserName.toLowerCase())
+            ).map((bal, idx) => {
+              const annRem = Math.max(0, bal.annualTotal - bal.annualUsed);
               const annPct = Math.round((annRem / bal.annualTotal) * 100);
 
               return (
                 <div key={idx} className="rounded-lg border border-[#e2dfd5] bg-white p-5 shadow-2xs space-y-4">
                   <div className="border-b border-stone-100 pb-3">
                     <h4 className="font-bold text-stone-900 text-sm">{bal.staffName}</h4>
-                    <p className="text-xs font-semibold text-[#0B63E5]">{bal.role}</p>
                   </div>
 
                   {/* Annual Leave Bar */}
@@ -538,14 +712,14 @@ export const HRMView: React.FC = () => {
                     <div className="rounded bg-stone-50 p-2.5 border border-stone-200">
                       <span className="block text-[10px] font-bold text-stone-400">Sick Leave</span>
                       <span className="font-mono font-bold text-stone-900 text-sm">
-                        {bal.sickTotal - bal.sickUsed} <span className="text-[10px] text-stone-500 font-normal">/ {bal.sickTotal} left</span>
+                        {Math.max(0, bal.sickTotal - bal.sickUsed)} <span className="text-[10px] text-stone-500 font-normal">/ {bal.sickTotal} left</span>
                       </span>
                     </div>
 
                     <div className="rounded bg-stone-50 p-2.5 border border-stone-200">
                       <span className="block text-[10px] font-bold text-stone-400">LSK CLE / Study</span>
                       <span className="font-mono font-bold text-stone-900 text-sm">
-                        {bal.cleTotal - bal.cleUsed} <span className="text-[10px] text-stone-500 font-normal">/ {bal.cleTotal} left</span>
+                        {Math.max(0, bal.cleTotal - bal.cleUsed)} <span className="text-[10px] text-stone-500 font-normal">/ {bal.cleTotal} left</span>
                       </span>
                     </div>
                   </div>
@@ -708,11 +882,23 @@ export const HRMView: React.FC = () => {
       {/* LEAVE APPLICATION MODAL */}
       {isLeaveModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-stone-300 overflow-hidden text-stone-800">
-            <div className="flex items-center justify-between bg-[#1a1d20] px-6 py-4 text-white">
+          <div
+            style={modalStyle}
+            className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-stone-300 overflow-hidden text-stone-800 my-auto"
+          >
+            <div
+              {...handleProps}
+              className={`flex items-center justify-between bg-[#1a1d20] px-6 py-4 text-white ${handleProps.className}`}
+              title="Click and drag to reposition"
+            >
               <div className="flex items-center space-x-2">
                 <CalendarDays className="h-5 w-5 text-[#0B63E5]" />
-                <h3 className="font-serif font-bold text-base">Submit Staff Leave Application</h3>
+                <h3 className="font-serif font-bold text-base flex items-center gap-2">
+                  <span>Submit Staff Leave Application</span>
+                  <span className="text-[10px] font-sans font-medium text-stone-400 bg-white/10 px-1.5 py-0.5 rounded border border-white/20">
+                    Draggable
+                  </span>
+                </h3>
               </div>
               <button
                 onClick={() => setIsLeaveModalOpen(false)}
@@ -723,21 +909,15 @@ export const HRMView: React.FC = () => {
             </div>
 
             <form onSubmit={handleApplyLeaveSubmit} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                  Applicant Staff Member
-                </label>
-                <select
-                  value={leaveStaffName}
-                  onChange={(e) => setLeaveStaffName(e.target.value)}
-                  className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-semibold text-stone-900 focus:bg-white focus:outline-none cursor-pointer"
-                >
-                  {staffList.map((adv) => (
-                    <option key={adv.id} value={adv.name}>
-                      {adv.name} ({adv.title})
-                    </option>
-                  ))}
-                </select>
+              <div className="rounded-lg bg-blue-50/60 p-3.5 border border-blue-200 flex items-center justify-between">
+                <div>
+                  <span className="block text-[10px] font-bold text-blue-700 uppercase tracking-wider">Applicant</span>
+                  <span className="font-bold text-slate-900 text-xs">{currentUserName}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] font-bold text-blue-700 uppercase tracking-wider">Remaining Annual Leave</span>
+                  <span className="font-mono font-bold text-xs text-[#0B63E5]">{remainingAnnual} Days</span>
+                </div>
               </div>
 
               <div>
@@ -787,18 +967,20 @@ export const HRMView: React.FC = () => {
 
               <div>
                 <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                  Handover / Relief Advocate
+                  Handover / Relief Staff
                 </label>
                 <select
                   value={leaveRelief}
                   onChange={(e) => setLeaveRelief(e.target.value)}
                   className="w-full rounded border border-stone-300 bg-stone-50 p-2 text-xs font-semibold text-stone-900 focus:bg-white focus:outline-none cursor-pointer"
                 >
-                  {staffList.map((adv) => (
-                    <option key={adv.id} value={adv.name}>
-                      {adv.name}
-                    </option>
-                  ))}
+                  {staffList
+                    .filter((adv) => adv.name.toLowerCase() !== currentUserName.toLowerCase())
+                    .map((adv) => (
+                      <option key={adv.id} value={adv.name}>
+                        {adv.name}
+                      </option>
+                    ))}
                 </select>
               </div>
 

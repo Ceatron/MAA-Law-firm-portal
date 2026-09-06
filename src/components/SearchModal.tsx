@@ -112,7 +112,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     if (!q && (selectedCategory !== 'All' || selectedTag !== 'All')) return false;
     return (
       a.name.toLowerCase().includes(q) ||
-      a.lskRollNo.toLowerCase().includes(q) ||
       a.practiceArea.toLowerCase().includes(q)
     );
   });
@@ -343,7 +342,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     <div>
                       <p className="font-semibold text-slate-900">{a.name}</p>
                       <p className="text-[10px] text-slate-500 font-mono">
-                        {a.lskRollNo} • {a.title} ({a.practiceArea})
+                        {a.practiceArea || 'Staff Member'}
                       </p>
                     </div>
                   </div>

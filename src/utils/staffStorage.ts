@@ -4,7 +4,7 @@ export const SYS_ADMIN_ACCOUNT: Advocate = {
   id: 'dev-admin',
   name: 'Eric',
   title: 'Sys Admin & Technical Lead',
-  lskRollNo: 'SYS/ADM/001',
+  lskRollNo: '',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=350&q=80',
   email: 'eahago@gmail.com',
   phone: '+254 700 000 000',
@@ -191,6 +191,7 @@ export const loadStaffRoster = (): Advocate[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Normalize canonical emails if outdated in stored roster
         const normalized: Advocate[] = parsed.map((m: Advocate): Advocate => {
+          const cleanRollNo = (m.lskRollNo === 'SYS/ADM/001' || m.lskRollNo?.includes('SYS/ADM')) ? '' : (m.lskRollNo || '');
           if (m.id === 'dev-admin' || m.email === 'eahago@gmail.com') {
             return {
               ...m,
@@ -198,6 +199,7 @@ export const loadStaffRoster = (): Advocate[] => {
               email: 'eahago@gmail.com',
               role: 'System Admin' as UserRole,
               title: 'Sys Admin & Technical Lead',
+              lskRollNo: '',
               isSystemAdmin: true,
               isDeveloper: true,
               password: m.password || 'password123',
@@ -206,6 +208,7 @@ export const loadStaffRoster = (): Advocate[] => {
           if (m.id === 'adv-1') {
             return {
               ...m,
+              lskRollNo: cleanRollNo,
               isSystemAdmin: false,
               role: 'Managing Advocate',
               email: EMAIL_CANONICAL_MAP[m.id],
@@ -215,12 +218,14 @@ export const loadStaffRoster = (): Advocate[] => {
           if (EMAIL_CANONICAL_MAP[m.id]) {
             return {
               ...m,
+              lskRollNo: cleanRollNo,
               email: EMAIL_CANONICAL_MAP[m.id],
               password: m.password || 'password123',
             };
           }
           return {
             ...m,
+            lskRollNo: cleanRollNo,
             password: m.password || 'password123',
           };
         });

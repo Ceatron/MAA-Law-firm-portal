@@ -895,24 +895,14 @@ export const TeamView: React.FC<TeamViewProps> = ({
                         <h3 className="font-serif-title font-bold text-stone-900 text-sm truncate">
                           {adv.name}
                         </h3>
-                        <span className={`inline-flex items-center space-x-1 rounded px-1.5 py-0.5 text-[9px] font-bold border shrink-0 ${roleInfo.bg}`}>
-                          <IconComp className="h-2.5 w-2.5" />
-                          <span>{roleInfo.label}</span>
-                        </span>
-                      </div>
-
-                      <p className={`text-xs font-semibold truncate mt-0.5 ${isDev ? 'text-indigo-700' : 'text-[#0070ba]'}`}>
-                        {adv.title}
-                      </p>
-
-                      <div className="flex items-center justify-between mt-1">
-                        <p className="text-[10px] text-stone-500 font-mono">
-                          {isDev ? 'SYS ID' : 'LSK Roll / ID'}: {adv.lskRollNo}
-                        </p>
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold border ${statusClass}`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${statusClass}`}>
                           {adv.status || 'Active'}
                         </span>
                       </div>
+
+                      <p className="text-xs text-stone-500 font-medium truncate mt-0.5">
+                        {adv.practiceArea || 'General Practice'}
+                      </p>
                     </div>
                   </div>
 
@@ -1005,7 +995,6 @@ export const TeamView: React.FC<TeamViewProps> = ({
               <thead>
                 <tr className="border-b border-[#e2dfd5] bg-stone-50/80 text-[11px] font-bold text-stone-600 tracking-wider">
                   <th className="py-3 px-4">Staff Member</th>
-                  <th className="py-3 px-4">Role & Credentials</th>
                   <th className="py-3 px-4">Practice Domain</th>
                   <th className="py-3 px-4">Contact</th>
                   <th className="py-3 px-4">Active Files</th>
@@ -1031,21 +1020,11 @@ export const TeamView: React.FC<TeamViewProps> = ({
                           />
                           <div>
                             <p className="font-bold text-stone-900 text-xs">{adv.name}</p>
-                            <p className="text-[11px] text-stone-500 truncate max-w-[180px]">
-                              {adv.title}
+                            <p className="text-[11px] text-stone-500">
+                              {adv.practiceArea || 'General Practice'}
                             </p>
                           </div>
                         </div>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center space-x-1 rounded px-2 py-0.5 text-[10px] font-bold border ${roleInfo.bg}`}>
-                          <IconComp className="h-2.5 w-2.5" />
-                          <span>{roleInfo.label}</span>
-                        </span>
-                        <p className="text-[10px] font-mono text-stone-500 mt-1">
-                          Roll: {adv.lskRollNo}
-                        </p>
                       </td>
 
                       <td className="py-3 px-4">

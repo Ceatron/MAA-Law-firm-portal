@@ -59,7 +59,7 @@ import {
   initChambersDatabaseSync,
   syncAllChambersDataFromCloud,
 } from './utils/chambersDataStorage';
-import { isMatterVisibleToUser, isTaskVisibleToUser, canUserViewAll } from './utils/visibilityRules';
+import { isMatterVisibleToUser, isTaskVisibleToUser, canUserViewAll, canUserAssignAndAddMatters } from './utils/visibilityRules';
 import { getSupabaseClient, isSupabaseConfigured } from './utils/supabaseClient';
 import { ChambersCloudService } from './services/chambersCloudService';
 import SupabaseMigrationService from './services/SupabaseMigrationService';
@@ -131,6 +131,8 @@ export default function App() {
     currentAdvocate.id === 'adv-1' ||
     Boolean(currentAdvocate.title?.toLowerCase().includes('managing')) ||
     canUserViewAll(currentAdvocate);
+
+  const canAssignMatters = canUserAssignAndAddMatters(currentAdvocate);
 
   const hasExplicitBillingRight =
     Boolean(currentAdvocate.permissions?.canEditBilling) ||
@@ -645,7 +647,7 @@ export default function App() {
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
               canAccessBilling={canAccessBilling}
-              onOpenNewMatter={() => setIsNewMatterOpen(true)}
+              onOpenNewMatter={canAssignMatters ? () => setIsNewMatterOpen(true) : undefined}
               onToggleDeadline={handleToggleDeadline}
               onSelectMatter={(m) => setSelectedMatter(m)}
             />
@@ -656,7 +658,7 @@ export default function App() {
               matters={matters}
               clients={clients}
               onSelectMatter={(m) => setSelectedMatter(m)}
-              onOpenNewMatter={() => setIsNewMatterOpen(true)}
+              onOpenNewMatter={canAssignMatters ? () => setIsNewMatterOpen(true) : undefined}
               onUpdateMatter={handleUpdateMatter}
               onUpdateMatterTags={handleUpdateMatterTags}
               currentAdvocate={currentAdvocate}
@@ -678,7 +680,8 @@ export default function App() {
               clients={clients}
               onUpdateClients={handleUpdateClients}
               matters={matters}
-              onOpenNewMatter={() => setIsNewMatterOpen(true)}
+              onOpenNewMatter={canAssignMatters ? () => setIsNewMatterOpen(true) : undefined}
+              currentAdvocate={currentAdvocate}
             />
           )}
 
@@ -702,13 +705,13 @@ export default function App() {
               tasks={tasks}
               onUpdateTasks={handleUpdateTasks}
               matters={matters}
-              onOpenNewMatter={() => setIsNewMatterOpen(true)}
+              onOpenNewMatter={canAssignMatters ? () => setIsNewMatterOpen(true) : undefined}
               onSelectMatter={(m) => setSelectedMatter(m)}
               onAddNotification={(newNotif) => setNotifications((prev) => [newNotif, ...prev])}
             />
           )}
 
-          {activeTab === 'HRM' && <HRMView />}
+          {activeTab === 'HRM' && <HRMView currentAdvocate={currentAdvocate} />}
 
           {activeTab === 'Calendar' && (
             <CalendarView
