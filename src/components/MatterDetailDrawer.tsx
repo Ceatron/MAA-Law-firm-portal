@@ -183,6 +183,16 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     setTaskSubtasks([]);
     setTaskToast(`Task assigned to ${recipient.name}!`);
     setTimeout(() => setTaskToast(null), 5000);
+
+    // Dispatch automated task assignment email via server gateway
+    try {
+      const emailPayload = generateTaskAssignmentEmail(newTask, advocates, matter);
+      dispatchAssignmentEmail(emailPayload).catch((err) => {
+        console.warn('[MatterDetailDrawer] Task assignment email dispatch notice:', err);
+      });
+    } catch (err) {
+      console.warn('[MatterDetailDrawer] Failed to generate task assignment email payload:', err);
+    }
   };
 
   const handleToggleMatterSubtask = (taskId: string, subtaskId: string) => {

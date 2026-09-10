@@ -13,6 +13,7 @@ import {
   AssignmentEmailPayload,
   createMatterAssignmentNotification,
   createTaskAssignmentNotification,
+  dispatchAssignmentEmail,
 } from './utils/assignmentNotificationService';
 
 import { MattersView } from './components/views/MattersView';
@@ -26,6 +27,7 @@ import { DocumentsView } from './components/views/DocumentsView';
 import { TeamView } from './components/views/TeamView';
 import { SettingsView } from './components/views/SettingsView';
 import { ClientServicesView } from './components/views/ClientServicesView';
+import { AuditTrailView } from './components/views/AuditTrailView';
 
 import { mockAdvocates } from './data/mockData';
 import {
@@ -195,13 +197,56 @@ export default function App() {
     saveAuthSession(advocate, true);
   };
 
-  // Core Datasets State loaded from persistent storage
-  const [matters, setMatters] = useState<LegalMatter[]>(() => loadSavedMatters());
+  // Core Datasets State loaded from persistent storage (excluding test 735 records)
+  const [matters, setMatters] = useState<LegalMatter[]>(() =>
+    loadSavedMatters().filter(
+      (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+    )
+  );
   const [clients, setClients] = useState<Client[]>(() => loadSavedClients());
-  const [tasks, setTasks] = useState<TaskItem[]>(() => loadSavedTasks());
+  const [tasks, setTasks] = useState<TaskItem[]>(() =>
+    loadSavedTasks().filter(
+      (t) =>
+        t &&
+        t.matterRef !== 'MAA/CIV/2026/735' &&
+        !t.matterRef?.includes('735') &&
+        !t.description?.includes('735') &&
+        !t.title?.includes('735')
+    )
+  );
   const [deadlines, setDeadlines] = useState<DeadlineItem[]>(() => loadSavedDeadlines());
-  const [activities, setActivities] = useState(() => loadSavedActivities());
+  const [activities, setActivities] = useState(() =>
+    loadSavedActivities().filter(
+      (a) =>
+        a &&
+        a.matterRef !== 'MAA/CIV/2026/735' &&
+        !a.matterRef?.includes('735') &&
+        !a.description?.includes('735') &&
+        !a.title?.includes('735')
+    )
+  );
   const [notifications, setNotifications] = useState(() => loadSavedNotifications());
+
+  // Proactively purge any residual test data with '735' or 'MAA/CIV/2026/735' from browser storage
+  useEffect(() => {
+    try {
+      ['muthoni_ahago_matters_v3', 'muthoni_ahago_tasks_v2', 'muthoni_ahago_activities_v1'].forEach((key) => {
+        const raw = localStorage.getItem(key);
+        if (raw && (raw.includes('735') || raw.includes('MAA/CIV/2026/735'))) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              const cleaned = parsed.filter((item: any) => {
+                const str = JSON.stringify(item);
+                return !str.includes('735') && !str.includes('MAA/CIV/2026/735');
+              });
+              localStorage.setItem(key, JSON.stringify(cleaned));
+            }
+          } catch {}
+        }
+      });
+    } catch {}
+  }, []);
 
   // Automatically sync datasets to persistent local storage whenever changed
   useEffect(() => {
@@ -382,7 +427,7 @@ export default function App() {
     setMatters([newMatter, ...matters]);
     ChambersCloudService.upsertMatter(newMatter);
 
-    // In-App Notification to assigned advocate
+    // In-App Notification and email to assigned advocate
     try {
       const inAppNotif = createMatterAssignmentNotification(
         newMatter,
@@ -391,6 +436,12 @@ export default function App() {
         false
       );
       setNotifications((prev) => [inAppNotif, ...prev]);
+
+      if (inAppNotif.emailPayload) {
+        dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
+          console.warn('[App] Matter assignment email dispatch notice:', err);
+        });
+      }
     } catch (err) {
       console.warn('Failed to record matter assignment notification:', err);
     }
@@ -401,7 +452,7 @@ export default function App() {
       type: 'Court Event' as const,
       title: 'New Matter Registered in Firm Workspace',
       description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
       user: currentAdvocate.name,
       matterId: newMatter.id,
       matterRef: newMatter.referenceNumber,
@@ -417,7 +468,7 @@ export default function App() {
       (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
         prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
 
-    // If assigned advocate changed, dispatch in-app reassignment notification
+    // If assigned advocate changed, dispatch in-app and email reassignment notification
     if (isReassigned) {
       try {
         const inAppNotif = createMatterAssignmentNotification(
@@ -427,6 +478,12 @@ export default function App() {
           true
         );
         setNotifications((prev) => [inAppNotif, ...prev]);
+
+        if (inAppNotif.emailPayload) {
+          dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
+            console.warn('[App] Matter reassignment email dispatch notice:', err);
+          });
+        }
       } catch (err) {
         console.warn('Failed to record matter reassignment notification:', err);
       }
@@ -449,7 +506,7 @@ export default function App() {
       description: isReassigned
         ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
         : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
       user: currentAdvocate.name,
       matterId: updatedMatter.id,
       matterRef: updatedMatter.referenceNumber,
@@ -486,7 +543,7 @@ export default function App() {
       type: 'Status Change' as const,
       title: 'Matter Record Deleted',
       description: `${matterToDelete?.referenceNumber || matterId}: ${matterToDelete?.title || 'Matter'} deleted by ${currentAdvocate.name}`,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
       user: currentAdvocate.name,
       matterId,
       matterRef: matterToDelete?.referenceNumber || '',
@@ -743,6 +800,16 @@ export default function App() {
               isManagingAdvocate={isManagingAdvocate}
               advocates={advocates}
               onUpdateAdvocates={setAdvocates}
+            />
+          )}
+
+          {activeTab === 'AuditTrail' && (
+            <AuditTrailView
+              activities={activities}
+              matters={matters}
+              currentAdvocate={currentAdvocate}
+              isManagingAdvocate={isManagingAdvocate}
+              onSelectMatter={(m) => setSelectedMatter(m)}
             />
           )}
 

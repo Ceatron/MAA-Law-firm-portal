@@ -246,7 +246,10 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
             isManagingAdvocate={isManagingAdvocate}
           />
 
-          <ActivityFeed activities={activities} />
+          <ActivityFeed
+            activities={activities}
+            onViewFullPage={() => onNavigateTab('AuditTrail')}
+          />
         </div>
       </div>
     </div>

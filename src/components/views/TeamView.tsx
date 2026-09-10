@@ -65,43 +65,43 @@ const AVAILABLE_ROLES: UserRole[] = [
 export const AFRICAN_STAFF_AVATAR_PRESETS = [
   {
     id: 'av-1',
-    label: 'Costa Kimathi (Managing Partner)',
-    url: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=350&q=80',
+    label: 'Adv. Costa Kimathi (Managing Advocate - Cartoon)',
+    url: '/avatars/african_lawyer.jpg',
   },
   {
     id: 'av-2',
-    label: 'Allan Khasabuli (Consultant)',
-    url: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?auto=format&fit=crop&w=350&q=80',
+    label: 'Wendy Moraa (Advocate - Cartoon)',
+    url: '/avatars/african_female_lawyer.jpg',
   },
   {
     id: 'av-3',
-    label: 'Wendy Moraa (Advocate)',
-    url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=350&q=80',
+    label: 'Allan Khasabuli (Consultant Advocate - Cartoon)',
+    url: '/avatars/african_consultant.jpg',
   },
   {
     id: 'av-4',
-    label: 'Phylis Adhiambo (Operations)',
-    url: 'https://images.unsplash.com/photo-1573496799652-408c2ac9fe98?auto=format&fit=crop&w=350&q=80',
+    label: 'Phylis Adhiambo (Operations Manager - Cartoon)',
+    url: '/avatars/african_operations_mgr.jpg',
   },
   {
     id: 'av-5',
-    label: 'Enrique Irungu (Registry Clerk)',
-    url: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?auto=format&fit=crop&w=350&q=80',
+    label: 'Enrique Irungu (Registry Clerk - Cartoon)',
+    url: '/avatars/african_clerk.jpg',
   },
   {
     id: 'av-6',
-    label: 'Legal Associate (Female)',
-    url: 'https://images.unsplash.com/photo-1580894732444-8ecded7900cd?auto=format&fit=crop&w=350&q=80',
+    label: 'Senior Partner / Counsel (Female Cartoon)',
+    url: '/avatars/african_senior_partner_female.jpg',
   },
   {
     id: 'av-7',
-    label: 'Senior Counsel (Male)',
-    url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=350&q=80',
+    label: 'Advocate Vector Avatar (Male Cartoon)',
+    url: 'https://api.dicebear.com/9.x/avataaars/svg?seed=Costa&skinColor=4b3029,614335,3d211a&hairColor=000000&top=shortCurly&clothing=blazerAndShirt',
   },
   {
     id: 'av-8',
-    label: 'Managing Partner (Female)',
-    url: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&w=350&q=80',
+    label: 'Advocate Vector Avatar (Female Cartoon)',
+    url: 'https://api.dicebear.com/9.x/avataaars/svg?seed=Wendy&skinColor=614335,4b3029,5c3826&hairColor=000000&top=dreads01&clothing=blazerAndSweater',
   },
 ];
 
@@ -888,6 +888,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                     <img
                       src={adv.avatar}
                       alt={adv.name}
+                      referrerPolicy="no-referrer"
                       className={`h-12 w-12 rounded-full object-cover ring-2 shrink-0 ${roleInfo.ring}`}
                     />
                     <div className="flex-1 min-w-0">
@@ -1016,6 +1017,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                           <img
                             src={adv.avatar}
                             alt={adv.name}
+                            referrerPolicy="no-referrer"
                             className={`h-9 w-9 rounded-full object-cover ring-1 ${roleInfo.ring}`}
                           />
                           <div>
@@ -1123,15 +1125,16 @@ export const TeamView: React.FC<TeamViewProps> = ({
               <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <label className="font-bold text-stone-800 flex items-center gap-1.5">
-                    <span>Profile Photo (African Professional Model)</span>
+                    <span>Cartoon Avatar (African Professional)</span>
                   </label>
-                  <span className="text-[11px] text-stone-500">Select preset or enter URL</span>
+                  <span className="text-[11px] text-stone-500">Select cartoon preset or enter URL</span>
                 </div>
                 
                 <div className="flex items-center gap-3 mb-3">
                   <img
                     src={formData.avatar || AFRICAN_STAFF_AVATAR_PRESETS[0].url}
                     alt="Preview"
+                    referrerPolicy="no-referrer"
                     className="h-12 w-12 rounded-full object-cover ring-2 ring-[#0070ba] shrink-0 bg-stone-200"
                   />
                   <div className="flex-1">
@@ -1161,6 +1164,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       <img
                         src={preset.url}
                         alt={preset.label}
+                        referrerPolicy="no-referrer"
                         className="h-9 w-9 rounded-full object-cover bg-stone-200"
                       />
                       {formData.avatar === preset.url && (
@@ -1460,15 +1464,16 @@ export const TeamView: React.FC<TeamViewProps> = ({
               <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <label className="font-bold text-stone-800 flex items-center gap-1.5">
-                    <span>Profile Photo (African Professional Model)</span>
+                    <span>Cartoon Avatar (African Professional)</span>
                   </label>
-                  <span className="text-[11px] text-stone-500">Select preset or enter URL</span>
+                  <span className="text-[11px] text-stone-500">Select cartoon preset or enter URL</span>
                 </div>
                 
                 <div className="flex items-center gap-3 mb-3">
                   <img
                     src={formData.avatar || AFRICAN_STAFF_AVATAR_PRESETS[0].url}
                     alt="Preview"
+                    referrerPolicy="no-referrer"
                     className="h-12 w-12 rounded-full object-cover ring-2 ring-[#0070ba] shrink-0 bg-stone-200"
                   />
                   <div className="flex-1">
@@ -1498,6 +1503,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       <img
                         src={preset.url}
                         alt={preset.label}
+                        referrerPolicy="no-referrer"
                         className="h-9 w-9 rounded-full object-cover bg-stone-200"
                       />
                       {formData.avatar === preset.url && (
@@ -1795,6 +1801,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
               <img
                 src={passwordResetStaff.avatar}
                 alt={passwordResetStaff.name}
+                referrerPolicy="no-referrer"
                 className="h-10 w-10 rounded-full object-cover ring-1 ring-stone-300"
               />
               <div className="flex-1 min-w-0">

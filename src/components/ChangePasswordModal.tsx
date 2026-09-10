@@ -166,6 +166,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           <img
             src={currentAdvocate.avatar}
             alt={currentAdvocate.name}
+            referrerPolicy="no-referrer"
             className="h-10 w-10 rounded-lg object-cover ring-1 ring-stone-200"
           />
           <div className="min-w-0 flex-1">

@@ -21,6 +21,10 @@ import {
   Send,
   SlidersHorizontal,
   BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Circle,
+  ListTodo,
 } from 'lucide-react';
 import { TaskItem, Advocate, LegalMatter, NotificationItem } from '../../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../../utils/staffStorage';
@@ -118,6 +122,14 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [sortBy, setSortBy] = useState<TaskSortOption>('priority-desc');
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [showPerformanceCard, setShowPerformanceCard] = useState(false);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
+
+  const toggleTaskExpand = (taskId: string) => {
+    setExpandedTaskIds((prev) => ({
+      ...prev,
+      [taskId]: !prev[taskId],
+    }));
+  };
   
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<{
@@ -276,6 +288,16 @@ export const TasksView: React.FC<TasksViewProps> = ({
       onAddNotification(inAppNotif);
     }
 
+    // Dispatch automated assignment email via server gateway
+    try {
+      const emailPayload = generateTaskEmailPayload(newTask, staffList, selectedMatter);
+      dispatchAssignmentEmail(emailPayload).catch((err) => {
+        console.warn('[TasksView] Task assignment email dispatch notice:', err);
+      });
+    } catch (err) {
+      console.warn('[TasksView] Failed to generate task assignment email payload:', err);
+    }
+
     setIsAssignModalOpen(false);
     setNewTitle('');
     setNewDescription('');
@@ -286,9 +308,23 @@ export const TasksView: React.FC<TasksViewProps> = ({
   // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
   const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
 
-  const scopedTasks = effectiveCanViewAll
+  const sanitizedMatters = useMemo(() => {
+    return (matters || []).filter(
+      (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+    );
+  }, [matters]);
+
+  const scopedTasks = (effectiveCanViewAll
     ? tasks
-    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters));
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, sanitizedMatters))
+  ).filter(
+    (t) =>
+      t &&
+      t.matterRef !== 'MAA/CIV/2026/735' &&
+      !t.matterRef?.includes('735') &&
+      !t.title?.includes('735') &&
+      !t.description?.includes('735')
+  );
 
   // Filter and Sort logic
   const filteredAndSortedTasks = useMemo(() => {
@@ -601,9 +637,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 className="w-full rounded-lg border border-slate-200 bg-white p-1.5 text-xs font-medium text-slate-800 focus:border-slate-400 focus:outline-none cursor-pointer shadow-2xs"
               >
                 <option value="all">All Legal Matters ({tasks.length})</option>
-                {matters.length > 0 && (
+                {sanitizedMatters.length > 0 && (
                   <optgroup label="Active Chambers Matters">
-                    {matters.map((m) => (
+                    {sanitizedMatters.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.referenceNumber} - {m.clientName}
                       </option>
@@ -683,231 +719,328 @@ export const TasksView: React.FC<TasksViewProps> = ({
           </div>
         </div>
       ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4.5">
-            {filteredAndSortedTasks.map((task) => {
-              const currentNormStatus = normalizeStatus(task.status);
-              const currentNormPriority = normalizePriority(task.priority);
-              const subtasksDone = task.subtasks.filter((s) => s.completed).length;
-              const subtasksTotal = task.subtasks.length;
-              const subtaskPercent =
-                subtasksTotal > 0 ? Math.round((subtasksDone / subtasksTotal) * 100) : 0;
+          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden">
+            {/* Desktop List Header */}
+            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-5 py-3 bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider items-center">
+              <div className="col-span-1 text-center">Status</div>
+              <div className="col-span-4">Task & Matter Details</div>
+              <div className="col-span-2">Assigned Advocate</div>
+              <div className="col-span-2">Due Date</div>
+              <div className="col-span-1 text-center">Checklist</div>
+              <div className="col-span-2 text-right">Quick Actions</div>
+            </div>
 
-              const connectedMatter = matters.find((m) => m.id === task.matterId);
-              const assigneeInfo = getAdvocateEmailByName(task.assignedTo, staffList);
+            {/* Task Rows */}
+            <div className="divide-y divide-slate-100">
+              {filteredAndSortedTasks.map((task) => {
+                const currentNormStatus = normalizeStatus(task.status);
+                const currentNormPriority = normalizePriority(task.priority);
+                const subtasksDone = task.subtasks.filter((s) => s.completed).length;
+                const subtasksTotal = task.subtasks.length;
+                const subtaskPercent =
+                  subtasksTotal > 0 ? Math.round((subtasksDone / subtasksTotal) * 100) : 0;
 
-              // Priority Border & Background Styling
-              const isHigh = currentNormPriority === 'High';
-              const isMedium = currentNormPriority === 'Medium';
-              const isLow = currentNormPriority === 'Low';
+                const connectedMatter = matters.find((m) => m.id === task.matterId);
+                const assigneeInfo = getAdvocateEmailByName(task.assignedTo, staffList);
 
-              return (
-                <div
-                  key={task.id}
-                  className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.03)] hover:shadow-md hover:border-slate-300 transition-all space-y-4"
-                >
-                  {/* Top Badges & Actions Bar */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Priority Indicator Badge */}
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-0.5 text-[10px] font-bold tracking-wide border ${
-                          isHigh
-                            ? 'bg-rose-50 text-rose-800 border-rose-200'
-                            : isMedium
-                            ? 'bg-amber-50 text-amber-900 border-amber-200'
-                            : 'bg-sky-50 text-sky-900 border-sky-200'
-                        }`}
-                      >
-                        {isHigh ? (
-                          <Flame className="h-3 w-3 text-rose-600" />
-                        ) : isMedium ? (
-                          <Clock className="h-3 w-3 text-amber-600" />
-                        ) : (
-                          <CheckCircle2 className="h-3 w-3 text-sky-600" />
-                        )}
-                        <span>{currentNormPriority} Priority</span>
-                      </span>
+                const isHigh = currentNormPriority === 'High';
+                const isMedium = currentNormPriority === 'Medium';
+                const isLow = currentNormPriority === 'Low';
 
-                      {/* Status Indicator */}
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
-                          currentNormStatus === 'open'
-                            ? 'bg-amber-50 text-amber-900 border-amber-200'
-                            : currentNormStatus === 'running'
-                            ? 'bg-blue-50 text-blue-900 border-blue-200'
-                            : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            currentNormStatus === 'open'
-                              ? 'bg-amber-500'
-                              : currentNormStatus === 'running'
-                              ? 'bg-blue-600 animate-pulse'
-                              : 'bg-emerald-600'
-                          }`}
-                        />
-                        <span className="capitalize">
-                          {currentNormStatus === 'running' ? 'In Progress' : currentNormStatus === 'open' ? 'Open' : 'Completed'}
-                        </span>
-                      </span>
-                    </div>
+                const isClosed = currentNormStatus === 'closed';
+                const isRunning = currentNormStatus === 'running';
 
-                    {/* Quick Priority & Status Switcher Dropdown */}
-                    <div className="flex items-center gap-1.5">
-                      {/* Priority Inline Switcher */}
-                      <select
-                        value={currentNormPriority}
-                        onChange={(e) => handlePriorityChange(task.id, e.target.value as TaskPriorityLevel)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer focus:outline-none shadow-2xs"
-                        title="Change Priority Level"
-                      >
-                        <option value="High">High Priority</option>
-                        <option value="Medium">Medium Priority</option>
-                        <option value="Low">Low Priority</option>
-                      </select>
+                const todayStr = new Date().toISOString().split('T')[0];
+                const isOverdue = !isClosed && task.dueDate && task.dueDate < todayStr;
+                const isDueToday = !isClosed && task.dueDate === todayStr;
 
-                      {/* Status Setter Dropdown */}
-                      <select
-                        value={currentNormStatus}
-                        onChange={(e) => handleStatusChange(task.id, e.target.value as any)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer focus:outline-none shadow-2xs"
-                      >
-                        <option value="open">Set Open</option>
-                        <option value="running">Set In Progress</option>
-                        <option value="closed">Set Completed</option>
-                      </select>
+                const isExpanded = Boolean(expandedTaskIds[task.id]);
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition"
-                        title="Delete task"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Task Title & Description */}
-                  <div>
-                    <h3 className="font-heading font-bold text-slate-900 text-base leading-snug">
-                      {task.title}
-                    </h3>
-                    {task.description && (
-                      <p className="mt-1 text-xs text-slate-600 leading-relaxed line-clamp-2">
-                        {task.description}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Attached Legal Matter & Client Context */}
-                  <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Briefcase className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-                        <span className="font-mono font-bold text-slate-800 text-[11px]">
-                          {task.matterRef}
-                        </span>
-                      </div>
-                      {connectedMatter && onSelectMatter && (
+                return (
+                  <div
+                    key={task.id}
+                    className={`transition-colors ${
+                      isClosed ? 'bg-slate-50/40 hover:bg-slate-50/80' : 'hover:bg-slate-50/60'
+                    }`}
+                  >
+                    {/* Primary Row Content */}
+                    <div className="p-4 lg:px-5 lg:py-3.5 flex flex-col lg:grid lg:grid-cols-12 gap-3 lg:gap-4 lg:items-center">
+                      {/* 1. Quick Complete & Status (Col 1) */}
+                      <div className="lg:col-span-1 flex items-center justify-between lg:justify-center gap-2">
                         <button
                           type="button"
-                          onClick={() => onSelectMatter(connectedMatter)}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:underline cursor-pointer"
+                          onClick={() => handleStatusChange(task.id, isClosed ? 'open' : 'closed')}
+                          className="cursor-pointer transition-transform active:scale-90 inline-flex items-center gap-1.5 group"
+                          title={isClosed ? 'Mark task as open' : 'Mark task as completed'}
                         >
-                          <span>Open Matter</span>
-                          <ExternalLink className="h-3 w-3" />
+                          {isClosed ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                          ) : isRunning ? (
+                            <div className="h-5 w-5 rounded-full border-2 border-blue-500 flex items-center justify-center bg-blue-50 group-hover:border-emerald-500">
+                              <div className="h-2 w-2 rounded-full bg-blue-600 animate-pulse group-hover:bg-emerald-500" />
+                            </div>
+                          ) : (
+                            <Circle className="h-5 w-5 text-slate-300 group-hover:text-emerald-500 shrink-0" />
+                          )}
+                          <span className="lg:hidden text-xs font-semibold text-slate-700">
+                            {isClosed ? 'Completed' : isRunning ? 'In Progress' : 'Open'}
+                          </span>
                         </button>
-                      )}
-                    </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-200/60 pt-1.5">
-                      <div className="flex items-center gap-1">
-                        <span className="text-slate-400 font-medium">Client:</span>
-                        <span className="font-semibold text-slate-800">{task.clientName}</span>
-                      </div>
-                      {connectedMatter && (
-                        <span className="text-[10px] text-slate-500 font-medium truncate max-w-[150px]">
-                          {connectedMatter.title}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Assignee & Dates Bar + Email Dispatch Indicator */}
-                  <div className="space-y-2 border-t border-slate-100 pt-3">
-                    <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                      <div>
-                        <span className="block text-[10px] font-semibold text-slate-400">
-                          Assigned Advocate:
-                        </span>
-                        <span className="font-semibold text-slate-900">{task.assignedTo}</span>
+                        {/* Mobile-only delete button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="lg:hidden rounded-lg p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Delete task"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
 
-                      <div>
-                        <span className="block text-[10px] font-semibold text-slate-400">
-                          Target Due Date:
-                        </span>
-                        <span className="font-mono font-bold text-slate-800">{task.dueDate}</span>
-                      </div>
-                    </div>
-
-                    {/* Email Notification Dispatch Link */}
-                    <div className="flex items-center justify-between bg-blue-50/60 border border-blue-100 rounded-lg px-2.5 py-1.5 text-[11px]">
-                      <div className="flex items-center space-x-1.5 text-blue-900">
-                        <Mail className="h-3.5 w-3.5 text-blue-600" />
-                        <span>Email Sent to: <strong className="font-mono">{assigneeInfo.email}</strong></span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEmailPreviewForTask(task)}
-                        className="text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer flex items-center space-x-0.5"
-                      >
-                        <span>Preview Email</span>
-                        <ExternalLink className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Checklist / Subtasks */}
-                  {subtasksTotal > 0 && (
-                    <div className="space-y-1.5 pt-1 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                        <span>Checklist Subtasks ({subtasksDone}/{subtasksTotal})</span>
-                        <span>{subtaskPercent}%</span>
-                      </div>
-
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-slate-900 h-1.5 transition-all duration-300"
-                          style={{ width: `${subtaskPercent}%` }}
-                        />
-                      </div>
-
-                      <div className="space-y-1 pt-1">
-                        {task.subtasks.map((st) => (
-                          <label
-                            key={st.id}
-                            className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition"
+                      {/* 2. Task Details, Badges & Matter (Col 4) */}
+                      <div className="lg:col-span-4 min-w-0 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Priority Pill */}
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide border ${
+                              isHigh
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : isMedium
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-sky-50 text-sky-900 border-sky-200'
+                            }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={st.completed}
-                              onChange={() => handleToggleSubtask(task.id, st.id)}
-                              className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer"
+                            {isHigh ? (
+                              <Flame className="h-2.5 w-2.5 text-rose-600" />
+                            ) : isMedium ? (
+                              <Clock className="h-2.5 w-2.5 text-amber-600" />
+                            ) : (
+                              <CheckCircle2 className="h-2.5 w-2.5 text-sky-600" />
+                            )}
+                            <span>{currentNormPriority}</span>
+                          </span>
+
+                          {/* Status Pill (desktop) */}
+                          <span
+                            className={`hidden lg:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                              isClosed
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : isRunning
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isClosed
+                                  ? 'bg-emerald-600'
+                                  : isRunning
+                                  ? 'bg-blue-600 animate-pulse'
+                                  : 'bg-amber-500'
+                              }`}
                             />
-                            <span className={st.completed ? 'line-through text-slate-400' : ''}>
-                              {st.text}
+                            <span>{isClosed ? 'Closed' : isRunning ? 'Running' : 'Open'}</span>
+                          </span>
+
+                          {/* Matter Ref Badge */}
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 border border-slate-200">
+                            <Briefcase className="h-2.5 w-2.5 text-slate-500" />
+                            <span>{task.matterRef}</span>
+                          </span>
+
+                          {connectedMatter && onSelectMatter && (
+                            <button
+                              type="button"
+                              onClick={() => onSelectMatter(connectedMatter)}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-800 hover:underline cursor-pointer"
+                              title="Open matter workspace file"
+                            >
+                              <span>Open File</span>
+                              <ExternalLink className="h-2.5 w-2.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Title & Description */}
+                        <div>
+                          <h4
+                            className={`text-sm font-bold text-slate-900 leading-snug ${
+                              isClosed ? 'line-through text-slate-400' : ''
+                            }`}
+                          >
+                            {task.title}
+                          </h4>
+                          {task.description && (
+                            <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                              {task.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Client context */}
+                        <div className="text-[11px] text-slate-500">
+                          Client: <span className="font-semibold text-slate-700">{task.clientName}</span>
+                        </div>
+                      </div>
+
+                      {/* 3. Assigned Advocate & Email (Col 2) */}
+                      <div className="lg:col-span-2 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700 shrink-0">
+                            {task.assignedTo.charAt(0)}
+                          </div>
+                          <span className="text-xs font-semibold text-slate-800 truncate" title={task.assignedTo}>
+                            {task.assignedTo}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEmailPreviewForTask(task)}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 hover:text-blue-900 hover:underline bg-blue-50/80 border border-blue-100 px-2 py-0.5 rounded cursor-pointer transition"
+                          title={`Preview notification email for ${assigneeInfo.email}`}
+                        >
+                          <Mail className="h-2.5 w-2.5 text-blue-600" />
+                          <span className="truncate max-w-[130px]">{assigneeInfo.email}</span>
+                        </button>
+                      </div>
+
+                      {/* 4. Due Date & Timeline Status (Col 2) */}
+                      <div className="lg:col-span-2 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span className="font-mono text-xs font-semibold text-slate-800">
+                            {task.dueDate || 'No due date'}
+                          </span>
+                        </div>
+                        <div>
+                          {isOverdue ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              <span>Overdue</span>
                             </span>
-                          </label>
-                        ))}
+                          ) : isDueToday ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                              <Clock className="h-2.5 w-2.5" />
+                              <span>Due Today</span>
+                            </span>
+                          ) : isClosed ? (
+                            <span className="text-[10px] font-medium text-emerald-700">Completed</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">On Track</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 5. Checklist / Subtasks (Col 1) */}
+                      <div className="lg:col-span-1 lg:text-center">
+                        {subtasksTotal > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleTaskExpand(task.id)}
+                            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md transition cursor-pointer ${
+                              isExpanded
+                                ? 'bg-slate-900 text-white'
+                                : 'text-slate-700 bg-slate-100 hover:bg-slate-200'
+                            }`}
+                            title="Toggle action checklist subtasks"
+                          >
+                            <CheckSquare className="h-3 w-3" />
+                            <span>
+                              {subtasksDone}/{subtasksTotal}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">—</span>
+                        )}
+                      </div>
+
+                      {/* 6. Inline Selectors & Actions (Col 2) */}
+                      <div className="lg:col-span-2 flex items-center lg:justify-end gap-1.5 flex-wrap">
+                        {/* Priority Selector */}
+                        <select
+                          value={currentNormPriority}
+                          onChange={(e) =>
+                            handlePriorityChange(task.id, e.target.value as TaskPriorityLevel)
+                          }
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer focus:outline-none shadow-2xs"
+                          title="Change Priority Level"
+                        >
+                          <option value="High">High</option>
+                          <option value="Medium">Medium</option>
+                          <option value="Low">Low</option>
+                        </select>
+
+                        {/* Status Setter */}
+                        <select
+                          value={currentNormStatus}
+                          onChange={(e) => handleStatusChange(task.id, e.target.value as any)}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer focus:outline-none shadow-2xs"
+                          title="Update Task Status"
+                        >
+                          <option value="open">Open</option>
+                          <option value="running">In Progress</option>
+                          <option value="closed">Completed</option>
+                        </select>
+
+                        {/* Delete Button (desktop) */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="hidden lg:inline-flex rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition"
+                          title="Delete task"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {/* Expandable Subtasks Checklist Panel */}
+                    {isExpanded && subtasksTotal > 0 && (
+                      <div className="bg-slate-50/90 px-5 py-3 border-t border-slate-200/70 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                          <span>
+                            Action Checklist Items ({subtasksDone}/{subtasksTotal} completed)
+                          </span>
+                          <span className="font-mono">{subtaskPercent}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-slate-900 h-1.5 transition-all duration-200"
+                            style={{ width: `${subtaskPercent}%` }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          {task.subtasks.map((st) => (
+                            <label
+                              key={st.id}
+                              className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-2 rounded-lg border border-slate-200/70 transition bg-white/70"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={st.completed}
+                                onChange={() => handleToggleSubtask(task.id, st.id)}
+                                className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer"
+                              />
+                              <span
+                                className={st.completed ? 'line-through text-slate-400' : 'font-medium'}
+                              >
+                                {st.text}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -971,12 +1104,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   }}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-slate-400 focus:outline-none cursor-pointer shadow-2xs"
                 >
-                  {matters.length === 0 ? (
+                  {sanitizedMatters.length === 0 ? (
                     <option value="">General Chambers Task (No Active Cases)</option>
                   ) : (
                     <>
                       <option value="">-- General Administrative Task (No Matter Attached) --</option>
-                      {matters.map((m) => (
+                      {sanitizedMatters.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.referenceNumber} — {m.title} ({m.clientName})
                         </option>

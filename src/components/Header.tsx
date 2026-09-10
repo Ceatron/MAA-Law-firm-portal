@@ -215,6 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
             <img
               src={currentAdvocate.avatar}
               alt={currentAdvocate.name}
+              referrerPolicy="no-referrer"
               className="h-7 w-7 rounded-lg object-cover ring-1 ring-slate-200"
             />
             <div className="hidden text-left sm:block">

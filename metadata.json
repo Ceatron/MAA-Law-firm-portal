@@ -1,9 +1,7 @@
 {
   "name": "Muthoni Ahago Advocates V2",
   "description": "Legal practice management system with VAT-compliant invoicing, M-Pesa/Bank payment recording, and fee quotations for Muthoni Ahago Advocates",
-  "requestFramePermissions": [
-    "microphone"
-  ],
+  "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

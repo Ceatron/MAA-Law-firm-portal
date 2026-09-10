@@ -117,6 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'HRM', label: 'HRM', icon: Users },
         ...(canAccessBilling ? [{ id: 'Billing', label: 'Billing', icon: CreditCard }] : []),
         { id: 'Documents', label: 'Documents', icon: FileText },
+        { id: 'AuditTrail', label: 'Audit Trail', icon: ShieldCheck },
       ],
     },
     {

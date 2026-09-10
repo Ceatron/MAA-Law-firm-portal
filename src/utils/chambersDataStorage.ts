@@ -93,7 +93,14 @@ function safeSet<T>(key: string, data: T): void {
 // 1. MATTERS
 // ============================================================================
 export const loadSavedMatters = (): LegalMatter[] => {
-  return safeGet<LegalMatter[]>(STORAGE_KEYS.MATTERS, mockMatters);
+  const loaded = safeGet<LegalMatter[]>(STORAGE_KEYS.MATTERS, mockMatters);
+  const filtered = (loaded || []).filter(
+    (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+  );
+  if (filtered.length !== loaded.length) {
+    safeSet(STORAGE_KEYS.MATTERS, filtered);
+  }
+  return filtered;
 };
 
 export const saveStoredMattersCache = (matters: LegalMatter[]): void => {
@@ -168,7 +175,19 @@ export const deleteStoredClient = async (clientId: string): Promise<void> => {
 // 3. TASKS
 // ============================================================================
 export const loadSavedTasks = (): TaskItem[] => {
-  return safeGet<TaskItem[]>(STORAGE_KEYS.TASKS, mockTasks);
+  const loaded = safeGet<TaskItem[]>(STORAGE_KEYS.TASKS, mockTasks);
+  const filtered = (loaded || []).filter(
+    (t) =>
+      t &&
+      t.matterRef !== 'MAA/CIV/2026/735' &&
+      !t.matterRef?.includes('735') &&
+      !t.title?.includes('735') &&
+      !t.description?.includes('735')
+  );
+  if (filtered.length !== loaded.length) {
+    safeSet(STORAGE_KEYS.TASKS, filtered);
+  }
+  return filtered;
 };
 
 export const saveStoredTasksCache = (tasks: TaskItem[]): void => {
@@ -238,7 +257,19 @@ export const deleteStoredDeadline = async (deadlineId: string): Promise<void> =>
 // 5. ACTIVITIES
 // ============================================================================
 export const loadSavedActivities = (): ActivityLog[] => {
-  return safeGet<ActivityLog[]>(STORAGE_KEYS.ACTIVITIES, mockActivities);
+  const loaded = safeGet<ActivityLog[]>(STORAGE_KEYS.ACTIVITIES, mockActivities);
+  const filtered = (loaded || []).filter(
+    (a) =>
+      a &&
+      a.matterRef !== 'MAA/CIV/2026/735' &&
+      !a.matterRef?.includes('735') &&
+      !a.title?.includes('735') &&
+      !a.description?.includes('735')
+  );
+  if (filtered.length !== loaded.length) {
+    safeSet(STORAGE_KEYS.ACTIVITIES, filtered);
+  }
+  return filtered;
 };
 
 export const saveStoredActivitiesCache = (activities: ActivityLog[]): void => {

@@ -25,6 +25,7 @@ import {
   PasswordResetEmailPayload,
 } from '../utils/staffStorage';
 import { recordLoginAttempt } from '../utils/authAuditStorage';
+import { dispatchPasswordResetEmail } from '../utils/assignmentNotificationService';
 
 interface LandingPageProps {
   onLogin: (advocate: Advocate) => void;
@@ -210,6 +211,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
       setStaffList(updatedRoster);
 
       setDispatchedResetPayload(result.emailPayload);
+
+      // Dispatch real email via the server email gateway (Resend / SMTP)
+      dispatchPasswordResetEmail(
+        result.staff.email,
+        result.staff.name,
+        result.newPassword,
+        result.emailPayload.bodyText
+      ).catch((err) => {
+        console.warn('[LandingPage] Password reset email dispatch notice:', err);
+      });
     }, 450);
   };
 

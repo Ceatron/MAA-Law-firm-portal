@@ -5,7 +5,7 @@ export const SYS_ADMIN_ACCOUNT: Advocate = {
   name: 'Eric',
   title: 'Sys Admin & Technical Lead',
   lskRollNo: '',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=350&q=80',
+  avatar: '/avatars/african_lawyer.jpg',
   email: 'eahago@gmail.com',
   phone: '+254 700 000 000',
   practiceArea: 'Commercial Law',
@@ -35,7 +35,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Adv. Costa Kimathi',
     title: 'Managing Advocate & Senior Partner',
     lskRollNo: 'P.105/18492/18',
-    avatar: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=350&q=80',
+    avatar: '/avatars/african_lawyer.jpg',
     email: 'muthoni@muthoniahagolaw.co.ke',
     phone: '+254 722 410 890',
     practiceArea: 'Civil Litigation',
@@ -61,7 +61,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Allan Khasabuli',
     title: 'Consultant Advocate (Public Policy, Energy & Tax Advisory)',
     lskRollNo: 'P.105/15904/14',
-    avatar: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?auto=format&fit=crop&w=350&q=80',
+    avatar: '/avatars/african_consultant.jpg',
     email: 'allan@muthoniahagolaw.co.ke',
     phone: '+254 733 812 770',
     practiceArea: 'Constitutional & Tax',
@@ -86,7 +86,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Wendy Moraa',
     title: 'Advocate (Commercial & Conveyancing Transactions)',
     lskRollNo: 'P.105/23114/23',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=350&q=80',
+    avatar: '/avatars/african_female_lawyer.jpg',
     email: 'wendy@muthoniahagolaw.co.ke',
     phone: '+254 718 440 293',
     practiceArea: 'Conveyancing Law',
@@ -111,7 +111,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Enrique Irungu',
     title: 'Senior Court Registry & Legal Support Clerk',
     lskRollNo: 'CLK/CTS/2025',
-    avatar: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?auto=format&fit=crop&w=350&q=80',
+    avatar: '/avatars/african_clerk.jpg',
     email: 'irungu@muthoniahagolaw.co.ke',
     phone: '+254 723 552 119',
     practiceArea: 'Civil Litigation',
@@ -136,7 +136,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Phylis Adhiambo',
     title: 'Office Manager & Head of Chambers Operations',
     lskRollNo: 'OPS/MGR/2024',
-    avatar: 'https://images.unsplash.com/photo-1573496799652-408c2ac9fe98?auto=format&fit=crop&w=350&q=80',
+    avatar: '/avatars/african_operations_mgr.jpg',
     email: 'phylis@muthoniahagolaw.co.ke',
     phone: '+254 722 314 908',
     practiceArea: 'Commercial Law',
@@ -158,7 +158,17 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
   },
 ];
 
-const STAFF_STORAGE_KEY = 'muthoni_ahago_staff_roster_v12';
+const STAFF_STORAGE_KEY = 'muthoni_ahago_staff_roster_v14';
+
+// Default African cartoon avatars mapping for standard accounts
+const DEFAULT_CARTOON_AVATARS: Record<string, string> = {
+  'dev-admin': '/avatars/african_lawyer.jpg',
+  'adv-1': '/avatars/african_lawyer.jpg',
+  'adv-allan': '/avatars/african_consultant.jpg',
+  'adv-moraa': '/avatars/african_female_lawyer.jpg',
+  'staff-clerk-1': '/avatars/african_clerk.jpg',
+  'staff-om-1': '/avatars/african_operations_mgr.jpg',
+};
 
 // Email normalization map to ensure official emails persist
 const EMAIL_CANONICAL_MAP: Record<string, string> = {
@@ -189,14 +199,20 @@ export const loadStaffRoster = (): Advocate[] => {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Normalize canonical emails if outdated in stored roster
+        // Normalize canonical emails and upgrade any legacy photo avatars to African cartoon avatars
         const normalized: Advocate[] = parsed.map((m: Advocate): Advocate => {
           const cleanRollNo = (m.lskRollNo === 'SYS/ADM/001' || m.lskRollNo?.includes('SYS/ADM')) ? '' : (m.lskRollNo || '');
+          const cleanAvatar =
+            (!m.avatar || m.avatar.includes('images.unsplash.com'))
+              ? (DEFAULT_CARTOON_AVATARS[m.id] || '/avatars/african_lawyer.jpg')
+              : m.avatar;
+
           if (m.id === 'dev-admin' || m.email === 'eahago@gmail.com') {
             return {
               ...m,
               name: 'Eric',
               email: 'eahago@gmail.com',
+              avatar: cleanAvatar,
               role: 'System Admin' as UserRole,
               title: 'Sys Admin & Technical Lead',
               lskRollNo: '',
@@ -208,6 +224,7 @@ export const loadStaffRoster = (): Advocate[] => {
           if (m.id === 'adv-1') {
             return {
               ...m,
+              avatar: cleanAvatar,
               lskRollNo: cleanRollNo,
               isSystemAdmin: false,
               role: 'Managing Advocate',
@@ -218,6 +235,7 @@ export const loadStaffRoster = (): Advocate[] => {
           if (EMAIL_CANONICAL_MAP[m.id]) {
             return {
               ...m,
+              avatar: cleanAvatar,
               lskRollNo: cleanRollNo,
               email: EMAIL_CANONICAL_MAP[m.id],
               password: m.password || 'password123',
@@ -225,6 +243,7 @@ export const loadStaffRoster = (): Advocate[] => {
           }
           return {
             ...m,
+            avatar: cleanAvatar,
             lskRollNo: cleanRollNo,
             password: m.password || 'password123',
           };
@@ -284,8 +303,9 @@ export const addStaffMember = (
     ...staffData,
     id,
     avatar:
-      staffData.avatar ||
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+      staffData.avatar && !staffData.avatar.includes('images.unsplash.com')
+        ? staffData.avatar
+        : '/avatars/african_lawyer.jpg',
     activeCasesCount: staffData.activeCasesCount ?? 0,
     billableHoursThisMonth: staffData.billableHoursThisMonth ?? 0,
     billingRatePerHour: 0,

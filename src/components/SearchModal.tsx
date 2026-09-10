@@ -338,7 +338,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     key={a.id}
                     className="flex items-center space-x-3 p-2 rounded-lg border border-slate-200/80 bg-white"
                   >
-                    <img src={a.avatar} alt={a.name} className="h-7 w-7 rounded-full object-cover border border-slate-200" />
+                    <img src={a.avatar} alt={a.name} referrerPolicy="no-referrer" className="h-7 w-7 rounded-full object-cover border border-slate-200" />
                     <div>
                       <p className="font-semibold text-slate-900">{a.name}</p>
                       <p className="text-[10px] text-slate-500 font-mono">

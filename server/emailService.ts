@@ -51,9 +51,35 @@ function cleanupRecentDispatches() {
   }
 }
 
+function htmlToPlainText(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/tr>|<\/div>|<\/p>|<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .trim();
+}
+
 export function isEmailSendingEnabled(): boolean {
   const explicit = (process.env.ENABLE_EMAIL_SERVICE || '').toLowerCase().trim();
-  return explicit === 'true';
+  if (explicit === 'false' || explicit === '0' || explicit === 'no' || explicit === 'disabled') {
+    return false;
+  }
+  if (explicit === 'true' || explicit === '1' || explicit === 'yes' || explicit === 'enabled') {
+    return true;
+  }
+  // Automatically enable when a transactional API key or SMTP configuration is detected
+  return Boolean(
+    process.env.RESEND_API_KEY ||
+    process.env.EMAIL_API_KEY ||
+    (process.env.SMTP_HOST && process.env.SMTP_USER)
+  );
 }
 
 /**
@@ -216,12 +242,15 @@ async function sendViaResend(options: EmailOptions, apiKey: string): Promise<Ema
   const fromAddress = options.from || getDefaultFromAddress();
   const timestamp = new Date().toISOString();
 
+  const textBody = (options.text && options.text.trim()) || htmlToPlainText(options.html || '');
+  const htmlBody = (options.html && options.html.trim()) || options.text?.replace(/\n/g, '<br/>') || '';
+
   const payload: any = {
     from: fromAddress,
     to: [options.to],
     subject: options.subject,
-    text: options.text || '',
-    html: options.html || options.text?.replace(/\n/g, '<br/>') || '',
+    text: textBody,
+    html: htmlBody,
   };
 
   const headers: Record<string, string> = {
@@ -243,7 +272,10 @@ async function sendViaResend(options: EmailOptions, apiKey: string): Promise<Ema
   const responseData: any = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const errorMsg = responseData.message || responseData.error || `Resend API returned HTTP ${response.status}`;
+    let errorMsg = responseData.message || responseData.error || `Resend API returned HTTP ${response.status}`;
+    if (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('not verified')) {
+      errorMsg += ' (Hint: To send with an unverified domain in Resend testing, set EMAIL_FROM="Muthoni Ahago Advocates <onboarding@resend.dev>")';
+    }
     console.error(`[EmailService:Resend] Failed to send email to ${options.to}:`, errorMsg);
     return {
       success: false,
@@ -310,12 +342,15 @@ async function sendViaSmtp(options: EmailOptions): Promise<EmailSendResult> {
 
   const fromAddress = options.from || getDefaultFromAddress();
 
+  const textBody = (options.text && options.text.trim()) || htmlToPlainText(options.html || '');
+  const htmlBody = (options.html && options.html.trim()) || options.text?.replace(/\n/g, '<br/>') || '';
+
   const mailOptions = {
     from: fromAddress,
     to: options.toName ? `"${options.toName}" <${options.to}>` : options.to,
     subject: options.subject,
-    text: options.text || '',
-    html: options.html || options.text?.replace(/\n/g, '<br/>') || '',
+    text: textBody,
+    html: htmlBody,
   };
 
   try {

@@ -40,9 +40,14 @@ export const MattersView: React.FC<MattersViewProps> = ({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [matterToEdit, setMatterToEdit] = useState<LegalMatter | null>(null);
 
+  // Sanitize matters to exclude 735 test records
+  const sanitizedMatters = matters.filter(
+    (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+  );
+
   // Scoped matters based on advocate permissions
-  const activeMatters = matters.filter((m) => m.status !== 'Archived');
-  const archivedMatters = matters.filter((m) => m.status === 'Archived');
+  const activeMatters = sanitizedMatters.filter((m) => m.status !== 'Archived');
+  const archivedMatters = sanitizedMatters.filter((m) => m.status === 'Archived');
 
   return (
     <div className="space-y-6">

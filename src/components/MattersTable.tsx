@@ -100,6 +100,10 @@ export const MattersTable: React.FC<MattersTableProps> = ({
   ].filter(Boolean).length;
 
   const filteredMatters = scopedMatters.filter((m) => {
+    if (m.referenceNumber === 'MAA/CIV/2026/735' || m.referenceNumber?.includes('735')) {
+      return false;
+    }
+
     const matchesSearch =
       !searchTerm.trim() ||
       m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
