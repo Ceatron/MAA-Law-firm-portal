@@ -31,6 +31,7 @@ import {
   ChevronRight,
   TrendingUp,
   Percent,
+  Briefcase,
 } from 'lucide-react';
 import { InvoicePreviewDrawer } from '../InvoicePreviewDrawer';
 import { GenerateInvoiceModal } from '../GenerateInvoiceModal';
@@ -53,6 +54,7 @@ import {
 } from '../../utils/chambersDataStorage';
 import ChambersCloudService from '../../services/chambersCloudService';
 import { isSupabaseConfigured } from '../../utils/supabaseClient';
+import { canUserViewAll, isMatterVisibleToUser } from '../../utils/visibilityRules';
 
 interface BillingViewProps {
   clients?: Client[];
@@ -142,6 +144,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
   // Modals and Drawers States
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [selectedMatterForInvoice, setSelectedMatterForInvoice] = useState<string | undefined>(undefined);
+  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<string | undefined>(undefined);
   const [isReceivePaymentModalOpen, setIsReceivePaymentModalOpen] = useState(false);
   const [isCreateQuoteModalOpen, setIsCreateQuoteModalOpen] = useState(false);
   
@@ -158,7 +162,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
   // Search & Filter States
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
-  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue'>('ALL');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Matter Retainers'>('ALL');
 
   const [paymentSearchQuery, setPaymentSearchQuery] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | 'M-Pesa' | 'Bank Transfer' | 'Cheque'>('ALL');
@@ -356,17 +360,46 @@ export const BillingView: React.FC<BillingViewProps> = ({
   // ----------------------------------------------------
   // FINANCIAL CALCULATIONS & TOTALS
   // ----------------------------------------------------
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
+  const scopedMatters = effectiveCanViewAll
+    ? (matters || []).filter((m) => m && m.status !== 'Archived' && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735'))
+    : (matters || []).filter(
+        (m) => m && m.status !== 'Archived' && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735') && isMatterVisibleToUser(m, currentAdvocate)
+      );
+
+  // Matters where an agreed/estimated fee was indicated upon matter registration or retainer
+  const mattersWithFee = scopedMatters.filter((m) => {
+    const fee = m.billedKES || m.estimatedFeeKES || 0;
+    const paid = m.paidKES || 0;
+    return Math.max(0, fee - paid) > 0;
+  });
+
+  const mattersReceivablesKES = scopedMatters.reduce(
+    (acc, m) => acc + Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)),
+    0
+  );
+
+  const unpaidFeeNotes = (feeNotes || []).filter(
+    (fn) => fn.status !== 'Paid' || (fn.balanceKES !== undefined && fn.balanceKES > 0)
+  );
+
+  const feeNotesReceivablesKES = unpaidFeeNotes.reduce(
+    (acc, fn) => acc + (fn.balanceKES !== undefined ? fn.balanceKES : (fn.status === 'Paid' ? 0 : fn.totalKES)),
+    0
+  );
+
+  // Total Receivables strictly matches MetricCards Overview: fee notes receivables + matters receivables
+  const totalReceivablesKES = mattersReceivablesKES + feeNotesReceivablesKES;
+
   const totalInvoicedKES = feeNotes.reduce((sum, fn) => sum + fn.totalKES, 0);
   
   const totalPaidKES = feeNotes.reduce((sum, fn) => {
     if (fn.amountPaidKES !== undefined) return sum + fn.amountPaidKES;
     return sum + (fn.status === 'Paid' ? fn.totalKES : 0);
-  }, 0);
+  }, 0) + scopedMatters.reduce((sum, m) => sum + (m.paidKES || 0), 0);
 
-  const totalOutstandingKES = feeNotes.reduce((sum, fn) => {
-    if (fn.balanceKES !== undefined) return sum + fn.balanceKES;
-    return sum + (fn.status === 'Paid' ? 0 : fn.totalKES);
-  }, 0);
+  const totalOutstandingKES = totalReceivablesKES;
 
   const paidInvoicesCount = feeNotes.filter((fn) => {
     const bal = fn.balanceKES !== undefined ? fn.balanceKES : (fn.status === 'Paid' ? 0 : fn.totalKES);
@@ -405,6 +438,19 @@ export const BillingView: React.FC<BillingViewProps> = ({
       (invoiceStatusFilter === 'Overdue' && fn.status === 'Overdue');
 
     return matchesSearch && matchesStatus;
+  });
+
+  // Filtered Matters with Registered Fee
+  const filteredMattersWithFee = mattersWithFee.filter((m) => {
+    const q = invoiceSearchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (m.title || '').toLowerCase().includes(q) ||
+      (m.referenceNumber || '').toLowerCase().includes(q) ||
+      (m.clientName || '').toLowerCase().includes(q) ||
+      (m.responsibleAdvocateName || '').toLowerCase().includes(q) ||
+      (m.practiceArea || '').toLowerCase().includes(q)
+    );
   });
 
   // Filtered Payments
@@ -466,17 +512,9 @@ export const BillingView: React.FC<BillingViewProps> = ({
       {/* Main Billing Hub Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-stone-200 pb-4">
         <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="font-serif-title text-2xl font-bold text-stone-900">
-              Billing & Financial Management
-            </h1>
-            <span className="rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold font-mono px-2.5 py-0.5 uppercase tracking-wider">
-              LSK & KRA Compliant
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-stone-600">
-            Fee Notes & Invoicing, Payment Remittances (M-Pesa, Bank, Cheque), and Fee Quotations
-          </p>
+          <h1 className="font-serif-title text-2xl font-bold text-stone-900">
+            Billing & Financial Management
+          </h1>
         </div>
 
         {/* Global Action Buttons */}
@@ -600,7 +638,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            {/* Total Invoiced */}
+            {/* Total Receivables */}
             <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
               <div className="flex items-center justify-between text-stone-500 mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider">Total Receivables</span>
@@ -609,10 +647,16 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 </div>
               </div>
               <p className="font-mono text-2xl font-bold text-stone-900">
-                KES {totalInvoicedKES.toLocaleString()}
+                KES {totalReceivablesKES.toLocaleString()}
               </p>
               <p className="text-[11px] text-stone-500 mt-1">
-                Across {feeNotes.length} tax fee notes
+                {mattersReceivablesKES > 0 ? (
+                  <span>
+                    KES {feeNotesReceivablesKES.toLocaleString()} fee notes • KES {mattersReceivablesKES.toLocaleString()} matter retainers
+                  </span>
+                ) : (
+                  <span>Across {feeNotes.length} tax fee notes</span>
+                )}
               </p>
             </div>
 
@@ -628,7 +672,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 KES {totalPaidKES.toLocaleString()}
               </p>
               <p className="text-[11px] text-emerald-700 mt-1">
-                {totalInvoicedKES > 0 ? Math.round((totalPaidKES / totalInvoicedKES) * 100) : 0}% collection rate
+                {totalReceivablesKES + totalPaidKES > 0 ? Math.round((totalPaidKES / (totalReceivablesKES + totalPaidKES)) * 100) : 0}% collection rate
               </p>
             </div>
 
@@ -644,35 +688,35 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 KES {totalOutstandingKES.toLocaleString()}
               </p>
               <p className="text-[11px] text-amber-700 mt-1">
-                {unpaidInvoicesCount + partialInvoicesCount} fee notes pending settlement
+                {unpaidInvoicesCount + partialInvoicesCount} fee notes & {mattersWithFee.length} matter retainers pending
               </p>
             </div>
 
-            {/* Fee Note Breakdown */}
+            {/* Receivables Breakdown */}
             <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
               <div className="flex items-center justify-between text-stone-500 mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Fee Note Breakdown</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Receivables Breakdown</span>
                 <div className="p-2 rounded-lg bg-purple-50 text-purple-600">
                   <TrendingUp className="h-5 w-5" />
                 </div>
               </div>
               <div className="flex items-center justify-between text-xs font-semibold pt-1">
                 <span className="text-emerald-700 font-bold">{paidInvoicesCount} Paid</span>
-                <span className="text-blue-700 font-bold">{partialInvoicesCount} Partial</span>
-                <span className="text-amber-700 font-bold">{unpaidInvoicesCount} Unpaid</span>
+                <span className="text-blue-700 font-bold">{unpaidInvoicesCount + partialInvoicesCount} Due Notes</span>
+                <span className="text-amber-700 font-bold">{mattersWithFee.length} Retainers</span>
               </div>
               <div className="w-full bg-stone-200 rounded-full h-2 mt-3 flex overflow-hidden">
                 <div
                   className="bg-emerald-500 h-full"
-                  style={{ width: `${feeNotes.length ? (paidInvoicesCount / feeNotes.length) * 100 : 0}%` }}
+                  style={{ width: `${(totalReceivablesKES + totalPaidKES) > 0 ? (totalPaidKES / (totalReceivablesKES + totalPaidKES)) * 100 : 0}%` }}
                 />
                 <div
                   className="bg-blue-500 h-full"
-                  style={{ width: `${feeNotes.length ? (partialInvoicesCount / feeNotes.length) * 100 : 0}%` }}
+                  style={{ width: `${(totalReceivablesKES + totalPaidKES) > 0 ? (feeNotesReceivablesKES / (totalReceivablesKES + totalPaidKES)) * 100 : 0}%` }}
                 />
                 <div
                   className="bg-amber-400 h-full"
-                  style={{ width: `${feeNotes.length ? (unpaidInvoicesCount / feeNotes.length) * 100 : 0}%` }}
+                  style={{ width: `${(totalReceivablesKES + totalPaidKES) > 0 ? (mattersReceivablesKES / (totalReceivablesKES + totalPaidKES)) * 100 : 0}%` }}
                 />
               </div>
             </div>
@@ -801,6 +845,125 @@ export const BillingView: React.FC<BillingViewProps> = ({
             </div>
 
           </div>
+
+          {/* Registered Matters Pending Invoicing (Matter Fees Contributing to Receivables) */}
+          <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Briefcase className="h-4 w-4 text-[#0098db]" />
+                  <h3 className="font-serif-title text-base font-bold text-stone-900">
+                    Registered Matters with Agreed / Estimated Fees
+                  </h3>
+                  <span className="rounded-full bg-blue-100 text-[#0098db] px-2 py-0.5 text-xs font-bold font-mono">
+                    {mattersWithFee.length}
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Matter fees indicated upon registration that automatically reflect in Total Receivables awaiting formal Tax Fee Note issuance.
+                </p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <span className="text-xs text-stone-500 font-medium">Matter Retainers Total: </span>
+                  <span className="font-mono text-sm font-bold text-[#0098db]">
+                    KES {mattersReceivablesKES.toLocaleString()}
+                  </span>
+                </div>
+                {canAccessInvoicing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMatterForInvoice(undefined);
+                      setSelectedClientForInvoice(undefined);
+                      setIsGenerateModalOpen(true);
+                    }}
+                    className="inline-flex items-center space-x-1.5 rounded-lg bg-[#132c3f] hover:bg-slate-800 text-white px-3 py-1.5 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Create Fee Note</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {mattersWithFee.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-stone-200 p-8 text-center bg-stone-50/50">
+                <Briefcase className="h-8 w-8 text-stone-300 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-stone-600">No unbilled matter fees pending.</p>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  When a new matter is registered with an agreed fee, it will automatically appear here and contribute to Total Receivables.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-stone-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Matter Ref</th>
+                      <th className="py-2.5 px-3">Matter Title</th>
+                      <th className="py-2.5 px-3">Client Particulars</th>
+                      <th className="py-2.5 px-3">Assigned Advocate</th>
+                      <th className="py-2.5 px-3 text-right">Agreed Fee (KES)</th>
+                      <th className="py-2.5 px-3 text-right">Paid (KES)</th>
+                      <th className="py-2.5 px-3 text-right">Receivable Due</th>
+                      <th className="py-2.5 px-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {mattersWithFee.map((m) => {
+                      const fee = m.billedKES || m.estimatedFeeKES || 0;
+                      const paid = m.paidKES || 0;
+                      const bal = Math.max(0, fee - paid);
+
+                      return (
+                        <tr key={m.id} className="hover:bg-stone-50/70 transition-colors">
+                          <td className="py-2.5 px-3 font-mono font-bold text-[#0098db] whitespace-nowrap">
+                            {m.referenceNumber}
+                          </td>
+                          <td className="py-2.5 px-3 font-medium text-stone-900 max-w-xs truncate">
+                            {m.title}
+                          </td>
+                          <td className="py-2.5 px-3 text-stone-700">
+                            {m.clientName}
+                          </td>
+                          <td className="py-2.5 px-3 text-stone-600">
+                            {m.responsibleAdvocateName}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-stone-900 whitespace-nowrap">
+                            {fee.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            {paid.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                            {bal.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            {canAccessInvoicing && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedMatterForInvoice(m.id);
+                                  setSelectedClientForInvoice(m.clientId);
+                                  setIsGenerateModalOpen(true);
+                                }}
+                                className="inline-flex items-center space-x-1 rounded bg-[#0098db] hover:bg-blue-600 text-white px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer"
+                                title="Generate Tax Fee Note for this Matter"
+                              >
+                                <Plus className="h-3 w-3" />
+                                <span>Generate Fee Note</span>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -830,25 +993,113 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 <Filter className="h-3.5 w-3.5 mr-1" />
                 Filter:
               </span>
-              {(['ALL', 'Unpaid', 'Partially Paid', 'Paid', 'Overdue'] as const).map((st) => (
+              {(['ALL', 'Unpaid', 'Partially Paid', 'Paid', 'Overdue', 'Matter Retainers'] as const).map((st) => (
                 <button
                   key={st}
                   type="button"
                   onClick={() => setInvoiceStatusFilter(st)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                     invoiceStatusFilter === st
                       ? 'bg-[#132c3f] text-white shadow-2xs'
                       : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                   }`}
                 >
-                  {st}
+                  {st === 'Matter Retainers' ? `Matter Retainers (${mattersWithFee.length})` : st}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Fee Notes Table */}
-          <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
+          {invoiceStatusFilter === 'Matter Retainers' ? (
+            /* Registered Matters with Pending Fees Table */
+            <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
+                    <tr>
+                      <th className="py-3 px-4">Matter Ref</th>
+                      <th className="py-3 px-4">Matter Title</th>
+                      <th className="py-3 px-4">Client Particulars</th>
+                      <th className="py-3 px-4">Assigned Advocate</th>
+                      <th className="py-3 px-3 text-right">Agreed Fee (KES)</th>
+                      <th className="py-3 px-3 text-right">Paid (KES)</th>
+                      <th className="py-3 px-3 text-right">Receivable Due</th>
+                      <th className="py-3 px-3 text-center">Status</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {filteredMattersWithFee.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-stone-500">
+                          No registered matters with pending fees matching your search or filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMattersWithFee.map((m) => {
+                        const fee = m.billedKES || m.estimatedFeeKES || 0;
+                        const paid = m.paidKES || 0;
+                        const bal = Math.max(0, fee - paid);
+
+                        return (
+                          <tr key={m.id} className="hover:bg-stone-50/70 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-[#0098db] whitespace-nowrap">
+                              {m.referenceNumber}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-stone-900 max-w-xs truncate">
+                              {m.title}
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-bold text-stone-900">{m.clientName}</p>
+                              {m.practiceArea && (
+                                <p className="text-[10px] text-stone-500">{m.practiceArea}</p>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-stone-700">
+                              {m.responsibleAdvocateName}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-stone-900 whitespace-nowrap">
+                              {fee.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                              {paid.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
+                              {bal.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              <span className="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">
+                                Fee Agreed • Unbilled
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              {canAccessInvoicing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedMatterForInvoice(m.id);
+                                    setSelectedClientForInvoice(m.clientId);
+                                    setIsGenerateModalOpen(true);
+                                  }}
+                                  className="inline-flex items-center space-x-1 rounded bg-[#0098db] hover:bg-blue-600 text-white px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title="Generate Tax Fee Note for this Matter"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>Generate Fee Note</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            /* Fee Notes Table */
+            <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -991,6 +1242,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -1342,7 +1594,12 @@ export const BillingView: React.FC<BillingViewProps> = ({
       {/* 5. FINANCIAL INSIGHTS TAB (Managing Advocate Only) */}
       {/* ======================================================== */}
       {activeSubTab === 'insights' && canAccessFinancialInsights && (
-        <FinancialInsightsReport />
+        <FinancialInsightsReport
+          isManagingAdvocate={isManagingAdvocate}
+          feeNotes={feeNotes}
+          matters={scopedMatters}
+          payments={payments}
+        />
       )}
 
       {/* ======================================================== */}
@@ -1381,9 +1638,15 @@ export const BillingView: React.FC<BillingViewProps> = ({
       {/* Generate Invoice Modal */}
       <GenerateInvoiceModal
         isOpen={isGenerateModalOpen}
-        onClose={() => setIsGenerateModalOpen(false)}
+        onClose={() => {
+          setIsGenerateModalOpen(false);
+          setSelectedMatterForInvoice(undefined);
+          setSelectedClientForInvoice(undefined);
+        }}
         clients={clients}
         matters={matters}
+        initialSelectedMatterId={selectedMatterForInvoice}
+        initialClientId={selectedClientForInvoice}
         onAddInvoice={(newInvoice) => {
           setFeeNotes((prev) => [newInvoice, ...prev]);
           showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created!`);

@@ -5,6 +5,7 @@ import {
   Client,
 } from '../../types';
 import { loadVisibleStaffRoster } from '../../utils/staffStorage';
+import { isMatterVisibleToUser, canUserViewAll } from '../../utils/visibilityRules';
 import { MattersTable } from '../MattersTable';
 import { CaseLifecycleChart } from '../CaseLifecycleChart';
 import { WorkloadChart } from '../WorkloadChart';
@@ -49,6 +50,14 @@ export const MattersView: React.FC<MattersViewProps> = ({
   const activeMatters = sanitizedMatters.filter((m) => m.status !== 'Archived');
   const archivedMatters = sanitizedMatters.filter((m) => m.status === 'Archived');
 
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+  const userActiveMatters = effectiveCanViewAll
+    ? activeMatters
+    : activeMatters.filter((m) => isMatterVisibleToUser(m, currentAdvocate));
+  const userArchivedMatters = effectiveCanViewAll
+    ? archivedMatters
+    : archivedMatters.filter((m) => isMatterVisibleToUser(m, currentAdvocate));
+
   return (
     <div className="space-y-6">
       {/* Matters Page Header */}
@@ -87,25 +96,39 @@ export const MattersView: React.FC<MattersViewProps> = ({
           <button
             type="button"
             onClick={() => setMattersSubView('all')}
-            className={`pb-2.5 text-xs font-medium transition cursor-pointer relative ${
+            className={`pb-2.5 text-xs font-medium transition cursor-pointer relative flex items-center gap-1.5 ${
               mattersSubView === 'all'
                 ? 'font-semibold text-slate-900 border-b-2 border-amber-500'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Active matters
+            <span>Active matters</span>
+            <span
+              className={`text-[12px] font-bold ${
+                mattersSubView === 'all' ? 'text-sky-600' : 'text-sky-500'
+              }`}
+            >
+              {userActiveMatters.length}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setMattersSubView('archived')}
-            className={`pb-2.5 text-xs font-medium transition cursor-pointer relative ${
+            className={`pb-2.5 text-xs font-medium transition cursor-pointer relative flex items-center gap-1.5 ${
               mattersSubView === 'archived'
                 ? 'font-semibold text-slate-900 border-b-2 border-amber-500'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Archived register
+            <span>Archived register</span>
+            <span
+              className={`text-[12px] font-bold ${
+                mattersSubView === 'archived' ? 'text-sky-600' : 'text-slate-400'
+              }`}
+            >
+              {userArchivedMatters.length}
+            </span>
           </button>
 
           <button

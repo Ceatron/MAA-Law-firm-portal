@@ -68,7 +68,42 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     Boolean(currentAdvocate?.title?.toLowerCase().includes('managing'));
   const canDeleteMatter = isSysAdmin || isManagingUser;
 
-  // Top 4 practice areas as shown in screenshot + remaining areas
+  // Helper to determine if a matter falls under a given practice area filter
+  const isMatterInPracticeArea = (matter: LegalMatter, areaValue: string): boolean => {
+    if (!matter || !matter.practiceArea) return false;
+    if (areaValue === 'All') return true;
+
+    const pArea = matter.practiceArea.toLowerCase();
+    const target = areaValue.toLowerCase();
+
+    if (target === 'succession') {
+      return pArea.includes('succession') || pArea.includes('probate');
+    }
+    if (target === 'conveyancing') {
+      return pArea.includes('conveyancing') || pArea.includes('land') || pArea.includes('property');
+    }
+    if (target === 'commercial') {
+      return pArea.includes('commercial') || pArea.includes('corporate');
+    }
+    if (target === 'civil litigation') {
+      return pArea.includes('civil') || (pArea.includes('litigation') && !pArea.includes('commercial'));
+    }
+    if (target === 'bank securities') {
+      return pArea.includes('bank') || pArea.includes('securities');
+    }
+    if (target === 'constitutional & tax') {
+      return pArea.includes('constitutional') || pArea.includes('tax') || pArea.includes('judicial review');
+    }
+    if (target === 'employment & labour') {
+      return pArea.includes('employment') || pArea.includes('labour') || pArea.includes('labor') || pArea.includes('elrc');
+    }
+    if (target === 'intellectual property') {
+      return pArea.includes('intellectual') || pArea.includes('ip') || pArea.includes('trademark') || pArea.includes('patent');
+    }
+    return pArea.includes(target) || target.includes(pArea);
+  };
+
+  // Top practice areas as shown in firm portal
   const primaryPracticeAreas = [
     { label: 'All', value: 'All' },
     { label: 'Succession', value: 'Succession' },
@@ -77,7 +112,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
     { label: 'Civil litigation', value: 'Civil Litigation' },
   ];
 
-  const secondaryPracticeAreas = [
+  const defaultSecondaryPracticeAreas = [
     { label: 'Bank Securities', value: 'Bank Securities' },
     { label: 'Constitutional & Tax', value: 'Constitutional & Tax' },
     { label: 'Employment & Labour', value: 'Employment & Labour' },
@@ -90,6 +125,33 @@ export const MattersTable: React.FC<MattersTableProps> = ({
   const scopedMatters = effectiveCanViewAll
     ? matters
     : matters.filter((m) => isMatterVisibleToUser(m, currentAdvocate));
+
+  const validScopedMatters = scopedMatters.filter(
+    (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+  );
+
+  // Discover any additional real practice areas dynamically from existing data
+  const allSecondaryAreas = React.useMemo(() => {
+    const known = [...primaryPracticeAreas, ...defaultSecondaryPracticeAreas];
+    const extra: { label: string; value: string }[] = [];
+    validScopedMatters.forEach((m) => {
+      if (m.practiceArea) {
+        const matchesExisting = known.some((k) => isMatterInPracticeArea(m, k.value));
+        if (!matchesExisting && !extra.some((e) => e.value.toLowerCase() === m.practiceArea.toLowerCase())) {
+          extra.push({ label: m.practiceArea, value: m.practiceArea });
+        }
+      }
+    });
+    return [...defaultSecondaryPracticeAreas, ...extra];
+  }, [validScopedMatters]);
+
+  // Real count calculation: returns exact count or 0 if category has no matters
+  const getCategoryCount = (areaValue: string): number => {
+    if (areaValue === 'All') {
+      return validScopedMatters.length;
+    }
+    return validScopedMatters.filter((m) => isMatterInPracticeArea(m, areaValue)).length;
+  };
 
   // Filter count for badge
   const activeDropdownFiltersCount = [
@@ -117,8 +179,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
 
     const matchesArea =
       selectedPracticeArea === 'All' ||
-      m.practiceArea.toLowerCase().includes(selectedPracticeArea.toLowerCase()) ||
-      selectedPracticeArea.toLowerCase().includes(m.practiceArea.toLowerCase());
+      isMatterInPracticeArea(m, selectedPracticeArea);
 
     const matchesStatus =
       selectedStatus === 'All' || m.status === selectedStatus;
@@ -268,38 +329,63 @@ export const MattersTable: React.FC<MattersTableProps> = ({
 
         {/* Practice Area Filter Pills: Top 4 + "+4 more" toggle */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          {primaryPracticeAreas.map((area) => (
-            <button
-              key={area.label}
-              type="button"
-              onClick={() => setSelectedPracticeArea(area.value)}
-              className={`rounded-full px-3.5 py-1 text-xs font-medium transition cursor-pointer ${
-                selectedPracticeArea === area.value || (area.value === 'All' && selectedPracticeArea === 'All')
-                  ? 'bg-[#121c2b] text-white font-semibold shadow-2xs'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {area.label}
-            </button>
-          ))}
+          {primaryPracticeAreas.map((area) => {
+            const isSelected =
+              selectedPracticeArea === area.value || (area.value === 'All' && selectedPracticeArea === 'All');
+            const count = getCategoryCount(area.value);
+
+            return (
+              <button
+                key={area.label}
+                type="button"
+                onClick={() => setSelectedPracticeArea(area.value)}
+                className={`rounded-full px-3.5 py-1 text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-[#121c2b] text-white font-semibold shadow-2xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span>{area.label}</span>
+                <span
+                  className={`text-[11px] font-bold ${
+                    isSelected ? 'text-sky-400' : 'text-sky-600'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
 
           {/* Secondary practice areas when expanded */}
           {showMorePracticeAreas && (
             <>
-              {secondaryPracticeAreas.map((area) => (
-                <button
-                  key={area.label}
-                  type="button"
-                  onClick={() => setSelectedPracticeArea(area.value)}
-                  className={`rounded-full px-3.5 py-1 text-xs font-medium transition cursor-pointer animate-in fade-in duration-150 ${
-                    selectedPracticeArea === area.value
-                      ? 'bg-[#121c2b] text-white font-semibold shadow-2xs'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {area.label}
-                </button>
-              ))}
+              {allSecondaryAreas.map((area) => {
+                const isSelected = selectedPracticeArea === area.value;
+                const count = getCategoryCount(area.value);
+
+                return (
+                  <button
+                    key={area.label}
+                    type="button"
+                    onClick={() => setSelectedPracticeArea(area.value)}
+                    className={`rounded-full px-3.5 py-1 text-xs font-medium transition cursor-pointer animate-in fade-in duration-150 flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-[#121c2b] text-white font-semibold shadow-2xs'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{area.label}</span>
+                    <span
+                      className={`text-[11px] font-bold ${
+                        isSelected ? 'text-sky-400' : 'text-sky-600'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </>
           )}
 
@@ -309,7 +395,7 @@ export const MattersTable: React.FC<MattersTableProps> = ({
             onClick={() => setShowMorePracticeAreas(!showMorePracticeAreas)}
             className="rounded-full border border-dashed border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition cursor-pointer flex items-center gap-1"
           >
-            <span>{showMorePracticeAreas ? 'Show less' : '+4 more'}</span>
+            <span>{showMorePracticeAreas ? 'Show less' : `+${allSecondaryAreas.length} more`}</span>
           </button>
         </div>
 

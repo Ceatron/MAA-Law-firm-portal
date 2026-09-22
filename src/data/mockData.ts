@@ -32,7 +32,7 @@ export const mockAdvocates: Advocate[] = [
     name: 'Adv. Costa Kimathi',
     title: 'Managing Advocate & Senior Partner',
     lskRollNo: 'P.105/18492/18',
-    avatar: '/avatars/african_lawyer.jpg',
+    avatar: '/avatars/african_senior_partner_female.jpg',
     email: 'muthoni@muthoniahagolaw.co.ke',
     phone: '+254 722 410 890',
     practiceArea: 'Civil Litigation',

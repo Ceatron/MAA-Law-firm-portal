@@ -65,8 +65,8 @@ const AVAILABLE_ROLES: UserRole[] = [
 export const AFRICAN_STAFF_AVATAR_PRESETS = [
   {
     id: 'av-1',
-    label: 'Adv. Costa Kimathi (Managing Advocate - Cartoon)',
-    url: '/avatars/african_lawyer.jpg',
+    label: 'Adv. Costa Kimathi (Managing Advocate - Female Cartoon)',
+    url: '/avatars/african_senior_partner_female.jpg',
   },
   {
     id: 'av-2',
@@ -90,8 +90,8 @@ export const AFRICAN_STAFF_AVATAR_PRESETS = [
   },
   {
     id: 'av-6',
-    label: 'Senior Partner / Counsel (Female Cartoon)',
-    url: '/avatars/african_senior_partner_female.jpg',
+    label: 'Senior Counsel / Advocate (Male Cartoon)',
+    url: '/avatars/african_lawyer.jpg',
   },
   {
     id: 'av-7',

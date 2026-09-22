@@ -163,6 +163,37 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     };
   }, []);
 
+  // Sync initialSelectedMatterId & initialClientId whenever modal opens or props change
+  useEffect(() => {
+    if (isOpen) {
+      if (initialSelectedMatterId) {
+        setSelectedMatterId(initialSelectedMatterId);
+        const targetMatter = matters.find((m) => m.id === initialSelectedMatterId);
+        if (targetMatter) {
+          if (targetMatter.clientId) {
+            setSelectedClientId(targetMatter.clientId);
+          }
+          if (targetMatter.estimatedFeeKES && targetMatter.estimatedFeeKES > 0) {
+            setItems([
+              {
+                id: `item-${Date.now()}-1`,
+                description: `Professional Legal Representation: ${targetMatter.title}`,
+                category: 'Professional Fees',
+                quantity: 1,
+                unitPriceKES: targetMatter.estimatedFeeKES,
+                totalPriceKES: targetMatter.estimatedFeeKES,
+                isTaxable: true,
+                vatAmountKES: Math.round(targetMatter.estimatedFeeKES * 0.16),
+              },
+            ]);
+          }
+        }
+      } else if (initialClientId) {
+        setSelectedClientId(initialClientId);
+      }
+    }
+  }, [isOpen, initialSelectedMatterId, initialClientId, matters]);
+
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
     setShowToast(true);
@@ -554,7 +585,28 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                     <select
                       id={matterIdSelectId}
                       value={selectedMatterId}
-                      onChange={(e) => setSelectedMatterId(e.target.value)}
+                      onChange={(e) => {
+                        const newMatterId = e.target.value;
+                        setSelectedMatterId(newMatterId);
+                        const m = matters.find((mat) => mat.id === newMatterId);
+                        if (m) {
+                          if (m.clientId) setSelectedClientId(m.clientId);
+                          if (m.estimatedFeeKES && m.estimatedFeeKES > 0) {
+                            setItems([
+                              {
+                                id: `item-${Date.now()}-1`,
+                                description: `Professional Legal Representation: ${m.title}`,
+                                category: 'Professional Fees',
+                                quantity: 1,
+                                unitPriceKES: m.estimatedFeeKES,
+                                totalPriceKES: m.estimatedFeeKES,
+                                isTaxable: true,
+                                vatAmountKES: Math.round(m.estimatedFeeKES * 0.16),
+                              },
+                            ]);
+                          }
+                        }
+                      }}
                       className="w-full rounded-md border border-stone-300 bg-white p-2.5 text-xs font-medium text-stone-800 focus:border-[#0098db] focus:ring-1 focus:ring-[#0098db]"
                     >
                       <option value="">-- General Firm Workspace Legal Retainer / Non-Litigation --</option>

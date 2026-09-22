@@ -34,13 +34,20 @@ import {
   mockPracticeAreaRevenue,
   mockFeeNotes,
 } from '../data/mockData';
+import { FeeNote, LegalMatter, PaymentRecord } from '../types';
 
 interface FinancialInsightsReportProps {
   isManagingAdvocate?: boolean;
+  feeNotes?: FeeNote[];
+  matters?: LegalMatter[];
+  payments?: PaymentRecord[];
 }
 
 export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = ({
   isManagingAdvocate = true,
+  feeNotes = [],
+  matters = [],
+  payments = [],
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<'FY2026' | 'Q3_2026' | 'Q2_2026'>('FY2026');
   const [clientCategoryFilter, setClientCategoryFilter] = useState<string>('All');
@@ -71,11 +78,18 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Calculations from dynamic data
-  const totalBilledVal = mockFeeNotes.reduce((acc, f) => acc + f.totalKES, 0);
-  const totalPaidVal = mockFeeNotes.filter(f => f.status === 'Paid').reduce((acc, f) => acc + f.totalKES, 0);
-  const totalOutstandingVal = mockFeeNotes.filter(f => f.status !== 'Paid').reduce((acc, f) => acc + f.totalKES, 0);
-  const pendingInvoicesCount = mockFeeNotes.filter(f => f.status !== 'Paid').length;
+  // Calculations from dynamic data incorporating fee notes & registered matter fees
+  const actualFeeNotes = feeNotes && feeNotes.length > 0 ? feeNotes : mockFeeNotes;
+  const mattersReceivablesKES = (matters || []).reduce(
+    (acc, m) => acc + Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)),
+    0
+  );
+  const totalBilledVal = actualFeeNotes.reduce((acc, f) => acc + f.totalKES, 0) + mattersReceivablesKES;
+  const totalPaidVal = actualFeeNotes.filter(f => f.status === 'Paid' || (f.amountPaidKES && f.amountPaidKES > 0)).reduce((acc, f) => acc + (f.amountPaidKES !== undefined ? f.amountPaidKES : f.totalKES), 0) + (matters || []).reduce((sum, m) => sum + (m.paidKES || 0), 0);
+  const feeNotesOutstandingVal = actualFeeNotes.filter(f => f.status !== 'Paid').reduce((acc, f) => acc + (f.balanceKES !== undefined ? f.balanceKES : f.totalKES), 0);
+  const totalOutstandingVal = feeNotesOutstandingVal + mattersReceivablesKES;
+  const pendingInvoicesCount = actualFeeNotes.filter(f => f.status !== 'Paid').length;
+  const pendingMattersCount = (matters || []).filter(m => Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)) > 0).length;
 
   // Filter top clients if category is selected
   const filteredClients = clientCategoryFilter === 'All'
@@ -235,7 +249,10 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
           </p>
           <div className="mt-2 flex items-center text-[11px] text-amber-800 font-semibold">
             <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-600" />
-            <span>{pendingInvoicesCount} invoices pending</span>
+            <span>
+              {pendingInvoicesCount} invoices
+              {pendingMattersCount > 0 ? ` + ${pendingMattersCount} matter retainers` : ''} pending
+            </span>
           </div>
         </div>
 

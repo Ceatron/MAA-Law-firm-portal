@@ -35,7 +35,7 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
     name: 'Adv. Costa Kimathi',
     title: 'Managing Advocate & Senior Partner',
     lskRollNo: 'P.105/18492/18',
-    avatar: '/avatars/african_lawyer.jpg',
+    avatar: '/avatars/african_senior_partner_female.jpg',
     email: 'muthoni@muthoniahagolaw.co.ke',
     phone: '+254 722 410 890',
     practiceArea: 'Civil Litigation',
@@ -158,12 +158,12 @@ export const INITIAL_STAFF_ROSTER: Advocate[] = [
   },
 ];
 
-const STAFF_STORAGE_KEY = 'muthoni_ahago_staff_roster_v14';
+const STAFF_STORAGE_KEY = 'muthoni_ahago_staff_roster_v15';
 
 // Default African cartoon avatars mapping for standard accounts
 const DEFAULT_CARTOON_AVATARS: Record<string, string> = {
   'dev-admin': '/avatars/african_lawyer.jpg',
-  'adv-1': '/avatars/african_lawyer.jpg',
+  'adv-1': '/avatars/african_senior_partner_female.jpg',
   'adv-allan': '/avatars/african_consultant.jpg',
   'adv-moraa': '/avatars/african_female_lawyer.jpg',
   'staff-clerk-1': '/avatars/african_clerk.jpg',
@@ -203,7 +203,7 @@ export const loadStaffRoster = (): Advocate[] => {
         const normalized: Advocate[] = parsed.map((m: Advocate): Advocate => {
           const cleanRollNo = (m.lskRollNo === 'SYS/ADM/001' || m.lskRollNo?.includes('SYS/ADM')) ? '' : (m.lskRollNo || '');
           const cleanAvatar =
-            (!m.avatar || m.avatar.includes('images.unsplash.com'))
+            (!m.avatar || m.avatar.includes('images.unsplash.com') || (m.id === 'adv-1' && m.avatar === '/avatars/african_lawyer.jpg'))
               ? (DEFAULT_CARTOON_AVATARS[m.id] || '/avatars/african_lawyer.jpg')
               : m.avatar;
 
