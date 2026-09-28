@@ -1,4 +1,4 @@
-import React, { useState, useId, useEffect } from 'react';
+import React, { useState, useId, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -11,15 +11,17 @@ import {
   DollarSign,
   FileText,
   Send,
-  Printer,
-  Download,
   AlertCircle,
-  Percent,
+  ChevronDown,
+  ChevronUp,
   Sparkles,
   Layers,
-  BookOpen,
   BookmarkPlus,
-  ChevronDown,
+  Eye,
+  ArrowRight,
+  ShieldCheck,
+  Check,
+  Search,
 } from 'lucide-react';
 import {
   Client,
@@ -47,14 +49,68 @@ interface GenerateInvoiceModalProps {
   initialClientId?: string;
 }
 
-const COMMON_ITEM_TEMPLATES = [
-  { description: 'Legal Representation & Counsel Court Appearance', category: 'Professional Fees', unitPriceKES: 25000, isTaxable: true },
-  { description: 'Drafting of Pleadings, Affidavits & Chamber Summons', category: 'Drafting Pleading', unitPriceKES: 35000, isTaxable: true },
-  { description: 'Judiciary CTS e-Filing Fee & Registry Assessments', category: 'Court Filing / CTS', unitPriceKES: 12500, isTaxable: false },
-  { description: 'Legal Research, Opinion & Precedents Analysis', category: 'Legal Research', unitPriceKES: 18000, isTaxable: true },
-  { description: 'Client Consultation & Pre-Trial Conference (Hours)', category: 'Consultation', unitPriceKES: 15000, isTaxable: true },
-  { description: 'Official Ministry of Lands / ArdhiSasa Search & Disbursements', category: 'Disbursement', unitPriceKES: 7500, isTaxable: false },
+// Category to VAT treatment mapping
+const CATEGORY_TAX_MAP: Record<string, boolean> = {
+  'Prof. Fees': true,
+  'Professional Fees': true,
+  'Court Attendance': true,
+  'Drafting Pleading': true,
+  'Legal Research': true,
+  'Consultation': true,
+  'Conveyancing': true,
+  'Commercial Law': true,
+  'CTS Filing': false,
+  'Court Filing / CTS': false,
+  'Disbursement': false,
+};
+
+// Standardized Legal Service Descriptions quick-insert chips
+const QUICK_CHIPS = [
+  {
+    label: 'Legal Representation & Lead Counsel',
+    price: 35000,
+    category: 'Prof. Fees',
+    isTaxable: true,
+  },
+  {
+    label: 'Senior Advocate Hearing Day',
+    price: 50000,
+    category: 'Court Attendance',
+    isTaxable: true,
+  },
+  {
+    label: 'CTS Electronic Filing & Registry',
+    price: 12500,
+    category: 'CTS Filing',
+    isTaxable: false,
+  },
+  {
+    label: 'Drafting Pleadings & Chamber Summons',
+    price: 35000,
+    category: 'Drafting Pleading',
+    isTaxable: true,
+  },
+  {
+    label: 'Official Lands Search & Disbursements',
+    price: 7500,
+    category: 'Disbursement',
+    isTaxable: false,
+  },
 ];
+
+type PaymentTerm = 'Net 14' | 'Net 30' | 'Due on receipt';
+
+const calculateDueDateFromTerms = (issueDateStr: string, terms: PaymentTerm): string => {
+  const date = new Date(issueDateStr);
+  if (isNaN(date.getTime())) return issueDateStr;
+  if (terms === 'Net 14') {
+    date.setDate(date.getDate() + 14);
+  } else if (terms === 'Net 30') {
+    date.setDate(date.getDate() + 30);
+  }
+  // 'Due on receipt' retains issue date
+  return date.toISOString().split('T')[0];
+};
 
 export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   isOpen,
@@ -69,52 +125,74 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const clientIdSelectId = useId();
   const matterIdSelectId = useId();
   const invoiceNumberId = useId();
+  const paymentTermsId = useId();
   const dateIssuedId = useId();
   const dueDateId = useId();
 
-  // Mode: 'create' or 'preview'
-  const [modalView, setModalView] = useState<'form' | 'preview'>('form');
+  // Mode: Full Detailed Invoice vs. Quick Invoice
+  const [isQuickMode, setIsQuickMode] = useState<boolean>(false);
+
+  // Mobile preview view switch ('form' or 'preview')
+  const [mobileActivePane, setMobileActivePane] = useState<'form' | 'preview'>('form');
+
+  // Accordion state for "Details" section
+  const [isDetailsExpanded, setIsDetailsExpanded] = useState<boolean>(true);
+  const [hasManuallyToggledDetails, setHasManuallyToggledDetails] = useState<boolean>(false);
 
   // Client Selection / Creation state
   const [isCreatingNewClient, setIsCreatingNewClient] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string>(
     initialClientId || (clients[0]?.id || '')
   );
+  const [clientSearchQuery, setClientSearchQuery] = useState<string>(() => {
+    const init = clients.find((c) => c.id === (initialClientId || clients[0]?.id));
+    return init ? init.name : '';
+  });
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState<boolean>(false);
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
   const [selectedMatterId, setSelectedMatterId] = useState<string>(
-    initialSelectedMatterId || (matters[0]?.id || '')
+    initialSelectedMatterId || ''
   );
 
-  // New Client quick fields if adding new client
+  // Inline New Client Fields
   const [newClientName, setNewClientName] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
-  const [newClientCategory, setNewClientCategory] = useState<'Corporate' | 'Individual' | 'Government'>('Corporate');
+  const [newClientCategory, setNewClientCategory] = useState<'Corporate' | 'Individual'>('Corporate');
 
   // Invoice Details
   const [invoiceNumber, setInvoiceNumber] = useState<string>(() => {
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     return `MAA-INV-2026-${randomNum}`;
   });
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm>('Net 14');
   const [dateIssued, setDateIssued] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    () => new Date().toISOString().split('T')[0]
   );
   const [dueDate, setDueDate] = useState<string>(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 14); // 14-day terms standard
+    d.setDate(d.getDate() + 14);
     return d.toISOString().split('T')[0];
   });
-  const vatRatePercent = 16; // Standard Kenya 16% VAT rate
+  const [isDueDateOverridden, setIsDueDateOverridden] = useState<boolean>(false);
+  const vatRatePercent = 16;
+
   const [invoiceNotes, setInvoiceNotes] = useState<string>(
     'Payment is due within 14 calendar days. Please quote the invoice number on your RTGS or wire transfer reference.'
   );
 
-  // Line items state with per-item tax configuration
+  // Quick Invoice Fields
+  const [quickDescription, setQuickDescription] = useState('General Legal Counsel & Advisory Services');
+  const [quickAmountKES, setQuickAmountKES] = useState<number>(35000);
+  const [quickIncludeVat, setQuickIncludeVat] = useState<boolean>(true);
+
+  // Detailed Line items state
   const [items, setItems] = useState<InvoiceLineItem[]>([
     {
       id: 'item-1',
       description: 'Professional Legal Counsel & Case Strategy Formulation',
-      category: 'Professional Fees',
+      category: 'Prof. Fees',
       quantity: 1,
       unitPriceKES: 45000,
       totalPriceKES: 45000,
@@ -123,8 +201,8 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     },
     {
       id: 'item-2',
-      description: 'Judiciary CTS Electronic Registry Filing and Court Assessment Fees',
-      category: 'Court Filing / CTS',
+      description: 'Judiciary CTS Electronic Registry Filing & Court Assessment Fees',
+      category: 'CTS Filing',
       quantity: 1,
       unitPriceKES: 12500,
       totalPriceKES: 12500,
@@ -137,12 +215,9 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
 
-  // Fee Note Reusable Templates from Settings
+  // Templates
   const [feeNoteTemplates, setFeeNoteTemplates] = useState<FeeNoteTemplate[]>(() =>
     loadFeeNoteTemplates()
-  );
-  const [standardServices, setStandardServices] = useState<StandardServiceItem[]>(() =>
-    loadStandardServiceSnippets()
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isSaveAsTemplateOpen, setIsSaveAsTemplateOpen] = useState(false);
@@ -153,17 +228,14 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   useEffect(() => {
     const handleTemplatesUpdated = () => {
       setFeeNoteTemplates(loadFeeNoteTemplates());
-      setStandardServices(loadStandardServiceSnippets());
     };
     window.addEventListener('fee-note-templates-updated', handleTemplatesUpdated);
-    window.addEventListener('standard-services-updated', handleTemplatesUpdated);
     return () => {
       window.removeEventListener('fee-note-templates-updated', handleTemplatesUpdated);
-      window.removeEventListener('standard-services-updated', handleTemplatesUpdated);
     };
   }, []);
 
-  // Sync initialSelectedMatterId & initialClientId whenever modal opens or props change
+  // Sync initial selections
   useEffect(() => {
     if (isOpen) {
       if (initialSelectedMatterId) {
@@ -178,7 +250,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               {
                 id: `item-${Date.now()}-1`,
                 description: `Professional Legal Representation: ${targetMatter.title}`,
-                category: 'Professional Fees',
+                category: 'Prof. Fees',
                 quantity: 1,
                 unitPriceKES: targetMatter.estimatedFeeKES,
                 totalPriceKES: targetMatter.estimatedFeeKES,
@@ -186,18 +258,210 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                 vatAmountKES: Math.round(targetMatter.estimatedFeeKES * 0.16),
               },
             ]);
+            setQuickAmountKES(targetMatter.estimatedFeeKES);
+            setQuickDescription(`Professional Legal Representation: ${targetMatter.title}`);
           }
         }
       } else if (initialClientId) {
         setSelectedClientId(initialClientId);
+        const cli = clients.find((c) => c.id === initialClientId);
+        if (cli) setClientSearchQuery(cli.name);
       }
     }
-  }, [isOpen, initialSelectedMatterId, initialClientId, matters]);
+  }, [isOpen, initialSelectedMatterId, initialClientId, matters, clients]);
+
+  // Close client dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
+        setIsClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Sync clientSearchQuery when selectedClientId changes or initial props load
+  useEffect(() => {
+    if (selectedClientId) {
+      const match = clients.find((c) => c.id === selectedClientId);
+      if (match) {
+        setClientSearchQuery(match.name);
+      }
+    }
+  }, [selectedClientId, clients]);
+
+  // When terms or issue date change, automatically compute due date unless overridden
+  useEffect(() => {
+    if (!isDueDateOverridden) {
+      const computed = calculateDueDateFromTerms(dateIssued, paymentTerms);
+      setDueDate(computed);
+    }
+  }, [paymentTerms, dateIssued, isDueDateOverridden]);
+
+  // Auto-collapse accordion when required fields are present and user has not manually opened it
+  useEffect(() => {
+    if (!hasManuallyToggledDetails && (selectedClientId || isCreatingNewClient) && invoiceNumber && dateIssued && dueDate) {
+      // Auto-collapse so line items dominate the view
+      setIsDetailsExpanded(false);
+    }
+  }, [selectedClientId, isCreatingNewClient, invoiceNumber, dateIssued, dueDate, hasManuallyToggledDetails]);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3500);
+  };
+
+  if (!isOpen) return null;
+
+  // Selected client object
+  const activeClient = clients.find((c) => c.id === selectedClientId) || clients[0];
+  const activeMatter = matters.find((m) => m.id === selectedMatterId);
+
+  // Filter matters for the chosen client
+  const clientMatters = matters.filter((m) => !selectedClientId || m.clientId === selectedClientId);
+
+  // Filter clients for searchable combobox: pulls clients dynamically as user types (e.g. first 3 letters)
+  const filteredClients = clients.filter((c) => {
+    if (!clientSearchQuery.trim()) return true;
+    const q = clientSearchQuery.toLowerCase().trim();
+    if (activeClient && activeClient.name.toLowerCase() === q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.kraPin && c.kraPin.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.toLowerCase().includes(q))
+    );
+  });
+
+  const handleSelectClient = (client: Client) => {
+    setSelectedClientId(client.id);
+    setClientSearchQuery(client.name);
+    setIsClientDropdownOpen(false);
+    const firstMatter = matters.find((m) => m.clientId === client.id);
+    if (firstMatter) {
+      setSelectedMatterId(firstMatter.id);
+    } else {
+      setSelectedMatterId('');
+    }
+  };
+
+  // Calculations for Full Detailed Mode
+  const detailedTaxableSubtotalKES = items
+    .filter((it) => it.isTaxable !== false)
+    .reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
+
+  const detailedNonTaxableSubtotalKES = items
+    .filter((it) => it.isTaxable === false)
+    .reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
+
+  const detailedSubtotalKES = items.reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
+  const detailedVatKES = Math.round((detailedTaxableSubtotalKES * vatRatePercent) / 100);
+  const detailedTotalPayableKES = detailedSubtotalKES + detailedVatKES;
+
+  // Calculations for Quick Mode
+  const quickSubtotalKES = quickAmountKES || 0;
+  const quickVatKES = quickIncludeVat ? Math.round((quickSubtotalKES * vatRatePercent) / 100) : 0;
+  const quickTotalPayableKES = quickSubtotalKES + quickVatKES;
+
+  // Active totals depending on mode
+  const currentSubtotalKES = isQuickMode ? quickSubtotalKES : detailedSubtotalKES;
+  const currentTaxableSubtotalKES = isQuickMode
+    ? (quickIncludeVat ? quickSubtotalKES : 0)
+    : detailedTaxableSubtotalKES;
+  const currentNonTaxableSubtotalKES = isQuickMode
+    ? (!quickIncludeVat ? quickSubtotalKES : 0)
+    : detailedNonTaxableSubtotalKES;
+  const currentVatKES = isQuickMode ? quickVatKES : detailedVatKES;
+  const currentTotalPayableKES = isQuickMode ? quickTotalPayableKES : detailedTotalPayableKES;
+
+  // Line item manipulation
+  const handleAddChipItem = (chip: typeof QUICK_CHIPS[0]) => {
+    const isTax = chip.isTaxable;
+    const unitPrice = chip.price;
+    const qty = 1;
+    const total = unitPrice * qty;
+    const vat = isTax ? Math.round(total * (vatRatePercent / 100)) : 0;
+
+    const newItem: InvoiceLineItem = {
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      description: chip.label,
+      category: chip.category as any,
+      quantity: qty,
+      unitPriceKES: unitPrice,
+      totalPriceKES: total,
+      isTaxable: isTax,
+      vatAmountKES: vat,
+    };
+    setItems((prev) => [...prev, newItem]);
+    triggerToast(`Added "${chip.label}"`);
+  };
+
+  const handleAddCustomBlankItem = () => {
+    const defaultCat = 'Prof. Fees';
+    const isTax = CATEGORY_TAX_MAP[defaultCat] ?? true;
+    const newItem: InvoiceLineItem = {
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      description: '',
+      category: defaultCat as any,
+      quantity: 1,
+      unitPriceKES: 0,
+      totalPriceKES: 0,
+      isTaxable: isTax,
+      vatAmountKES: 0,
+    };
+    setItems((prev) => [...prev, newItem]);
+  };
+
+  const handleUpdateItem = (id: string, field: keyof InvoiceLineItem, value: any) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value };
+
+        // Auto-apply VAT by category
+        if (field === 'category') {
+          const autoTax = CATEGORY_TAX_MAP[value] ?? true;
+          updated.isTaxable = autoTax;
+        }
+
+        const qty = field === 'quantity' ? parseFloat(value) || 0 : item.quantity;
+        const rate = field === 'unitPriceKES' ? parseFloat(value) || 0 : item.unitPriceKES;
+        const isTax = field === 'isTaxable' ? Boolean(value) : (updated.isTaxable !== false);
+
+        updated.totalPriceKES = Math.round(qty * rate);
+        updated.isTaxable = isTax;
+        updated.vatAmountKES = isTax ? Math.round(updated.totalPriceKES * (vatRatePercent / 100)) : 0;
+
+        return updated;
+      })
+    );
+  };
+
+  const handleToggleRowTax = (id: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const nextTaxable = item.isTaxable === false;
+        return {
+          ...item,
+          isTaxable: nextTaxable,
+          vatAmountKES: nextTaxable ? Math.round((item.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
+        };
+      })
+    );
+  };
+
+  const handleRemoveItem = (id: string) => {
+    if (items.length <= 1) {
+      alert('An invoice must contain at least one line item.');
+      return;
+    }
+    setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleApplyFeeNoteTemplate = (templateId: string) => {
@@ -209,16 +473,17 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       const qty = it.quantity || 1;
       const rate = it.unitPriceKES || 0;
       const total = qty * rate;
-      const vat = it.isTaxable ? Math.round(total * 0.16) : 0;
+      const autoTax = CATEGORY_TAX_MAP[it.category] ?? (it.isTaxable !== false);
+      const vat = autoTax ? Math.round(total * 0.16) : 0;
 
       return {
         id: `tmpl-item-${Date.now()}-${idx}`,
         description: it.description,
-        category: (it.category as any) || 'Professional Fees',
+        category: (it.category as any) || 'Prof. Fees',
         quantity: qty,
         unitPriceKES: rate,
         totalPriceKES: total,
-        isTaxable: it.isTaxable,
+        isTaxable: autoTax,
         vatAmountKES: vat,
       };
     });
@@ -228,7 +493,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       setInvoiceNotes(tmpl.defaultNotes);
     }
     setSelectedTemplateId(templateId);
-    triggerToast(`Applied Fee Note template: "${tmpl.title}"`);
+    triggerToast(`Applied template: "${tmpl.title}"`);
   };
 
   const handleSaveCurrentAsTemplate = (e: React.FormEvent) => {
@@ -247,12 +512,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       title: saveTemplateTitle.trim(),
       description: saveTemplateDesc.trim() || `Saved from ${invoiceNumber}`,
       practiceArea: (saveTemplatePA as any) || 'Civil Litigation',
-      author: 'Adv. Costa Kimathi',
+      author: 'Managing Advocate',
       defaultNotes: invoiceNotes,
       items: items.map((it, idx) => ({
         id: `item-${Date.now()}-${idx}`,
         description: it.description,
-        category: it.category || 'Professional Fees',
+        category: it.category || 'Prof. Fees',
         quantity: it.quantity || 1,
         unitPriceKES: it.unitPriceKES || 0,
         isTaxable: it.isTaxable !== false,
@@ -268,134 +533,17 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     setIsSaveAsTemplateOpen(false);
     setSaveTemplateTitle('');
     setSaveTemplateDesc('');
-    triggerToast(`Fee note saved to Settings templates as "${newTemplate.title}"!`);
+    triggerToast(`Fee note saved to templates as "${newTemplate.title}"!`);
   };
 
-  if (!isOpen) return null;
-
-  // Selected client object
-  const activeClient = clients.find((c) => c.id === selectedClientId) || clients[0];
-  const activeMatter = matters.find((m) => m.id === selectedMatterId);
-
-  // Calculations per row
-  const taxableSubtotalKES = items
-    .filter((it) => it.isTaxable !== false)
-    .reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
-
-  const nonTaxableSubtotalKES = items
-    .filter((it) => it.isTaxable === false)
-    .reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
-
-  const subtotalKES = items.reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
-  const totalVatAmountKES = Math.round((taxableSubtotalKES * vatRatePercent) / 100);
-  const totalPayableKES = subtotalKES + totalVatAmountKES;
-
-  // Line item manipulation
-  const handleAddItem = (template?: { description: string; category?: string; unitPriceKES: number; isTaxable?: boolean }) => {
-    const isTaxable = template?.isTaxable !== undefined
-      ? template.isTaxable
-      : template?.category === 'Court Filing / CTS' || template?.category === 'Disbursement'
-      ? false
-      : true;
-    const unitPrice = template?.unitPriceKES || 15000;
-    const qty = 1;
-    const total = unitPrice * qty;
-    const vat = isTaxable ? Math.round(total * (vatRatePercent / 100)) : 0;
-
-    const newItem: InvoiceLineItem = {
-      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      description: template?.description || '',
-      category: (template?.category as any) || 'Professional Fees',
-      quantity: qty,
-      unitPriceKES: unitPrice,
-      totalPriceKES: total,
-      isTaxable: isTaxable,
-      vatAmountKES: vat,
-    };
-    setItems((prev) => [...prev, newItem]);
-  };
-
-  const handleUpdateItem = (id: string, field: keyof InvoiceLineItem, value: any) => {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-
-        // If category is changed and isTaxable wasn't manually touched, apply standard default
-        if (field === 'category') {
-          if (value === 'Court Filing / CTS' || value === 'Disbursement') {
-            updated.isTaxable = false;
-          } else {
-            updated.isTaxable = true;
-          }
-        }
-
-        const qty = field === 'quantity' ? parseFloat(value) || 0 : item.quantity;
-        const rate = field === 'unitPriceKES' ? parseFloat(value) || 0 : item.unitPriceKES;
-        const isTax = field === 'isTaxable' ? Boolean(value) : (updated.isTaxable !== false);
-
-        updated.totalPriceKES = Math.round(qty * rate);
-        updated.isTaxable = isTax;
-        updated.vatAmountKES = isTax ? Math.round(updated.totalPriceKES * (vatRatePercent / 100)) : 0;
-
-        return updated;
-      })
-    );
-  };
-
-  const handleToggleItemTax = (id: string) => {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const newTaxable = item.isTaxable === false ? true : false;
-        return {
-          ...item,
-          isTaxable: newTaxable,
-          vatAmountKES: newTaxable ? Math.round((item.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
-        };
-      })
-    );
-  };
-
-  const handleSetAllTaxable = (taxable: boolean) => {
-    setItems((prev) =>
-      prev.map((item) => ({
-        ...item,
-        isTaxable: taxable,
-        vatAmountKES: taxable ? Math.round((item.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
-      }))
-    );
-  };
-
-  const handleApplyDefaultTaxByCategory = () => {
-    setItems((prev) =>
-      prev.map((item) => {
-        const isTax = item.category === 'Court Filing / CTS' || item.category === 'Disbursement' ? false : true;
-        return {
-          ...item,
-          isTaxable: isTax,
-          vatAmountKES: isTax ? Math.round((item.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
-        };
-      })
-    );
-  };
-
-  const handleRemoveItem = (id: string) => {
-    if (items.length <= 1) {
-      alert('An invoice must contain at least one line item.');
-      return;
-    }
-    setItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  // Generate & Save invoice
+  // Generate & Save Invoice Handler
   const handleSaveAndIssueInvoice = (status: 'Pending' | 'Paid' = 'Pending') => {
     let finalClientName = activeClient?.name || 'Walk-in Client';
     let finalClientId = selectedClientId;
     let finalClientAddress = activeClient?.address || 'Nairobi, Kenya';
     let finalClientEmail = activeClient?.email || 'accounts@client.co.ke';
 
-    // If new client is being created
+    // If new client is being created inline
     if (isCreatingNewClient) {
       if (!newClientName.trim()) {
         alert('Please enter a valid Client or Organization Name');
@@ -416,7 +564,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
         phone: newClientPhone.trim() || '+254 700 000 000',
         city: finalClientAddress || 'Nairobi',
         activeMattersCount: 1,
-        totalBilledKES: totalPayableKES,
+        totalBilledKES: currentTotalPayableKES,
       };
 
       if (onAddClient) {
@@ -424,10 +572,37 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       }
     }
 
-    if (items.length === 0 || subtotalKES <= 0) {
-      alert('Please add at least one line item with a valid amount before issuing the invoice.');
-      return;
+    if (isQuickMode) {
+      if (!quickDescription.trim() || quickAmountKES <= 0) {
+        alert('Please enter a service description and a valid amount.');
+        return;
+      }
+    } else {
+      if (items.length === 0 || currentSubtotalKES <= 0) {
+        alert('Please add at least one line item with a valid amount before issuing the invoice.');
+        return;
+      }
     }
+
+    // Construct line items
+    const finalItems: InvoiceLineItem[] = isQuickMode
+      ? [
+          {
+            id: `item-quick-${Date.now()}`,
+            description: quickDescription.trim(),
+            category: 'Prof. Fees',
+            quantity: 1,
+            unitPriceKES: quickAmountKES,
+            totalPriceKES: quickAmountKES,
+            isTaxable: quickIncludeVat,
+            vatAmountKES: quickVatKES,
+          },
+        ]
+      : items.map((it) => ({
+          ...it,
+          isTaxable: it.isTaxable !== false,
+          vatAmountKES: it.isTaxable !== false ? Math.round((it.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
+        }));
 
     const newInvoice: FeeNote = {
       id: `fn-${Date.now()}`,
@@ -444,970 +619,1103 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
         : 'General Legal Counsel & Advisory Services',
       dateIssued: new Date(dateIssued).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       dueDate: new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      items: items.map((it) => ({
-        ...it,
-        isTaxable: it.isTaxable !== false,
-        vatAmountKES: it.isTaxable !== false ? Math.round((it.totalPriceKES || 0) * (vatRatePercent / 100)) : 0,
-      })),
-      subtotalKES: subtotalKES,
-      taxableAmountKES: taxableSubtotalKES,
-      nonTaxableAmountKES: nonTaxableSubtotalKES,
-      amountKES: subtotalKES,
+      items: finalItems,
+      subtotalKES: currentSubtotalKES,
+      taxableAmountKES: currentTaxableSubtotalKES,
+      nonTaxableAmountKES: currentNonTaxableSubtotalKES,
+      amountKES: currentSubtotalKES,
       vatRatePercent: vatRatePercent,
-      vatKES: totalVatAmountKES,
-      totalKES: totalPayableKES,
+      vatKES: currentVatKES,
+      totalKES: currentTotalPayableKES,
       status: status,
       notes: invoiceNotes,
       paymentRef: status === 'Paid' ? `SETTLED-RTGS-${Date.now().toString().slice(-6)}` : 'Pending Remittance',
     };
 
     onAddInvoice(newInvoice);
-    triggerToast(`Invoice ${newInvoice.invoiceNumber} successfully created and added to Fee Note Ledger!`);
+    triggerToast(`Invoice ${newInvoice.invoiceNumber} created and added to Fee Note Ledger!`);
     
     setTimeout(() => {
       onClose();
-    }, 800);
+    }, 700);
   };
 
+  // Summary line for Details section when collapsed
+  const activeClientDisplayName = isCreatingNewClient
+    ? (newClientName.trim() || 'New Client')
+    : (activeClient?.name || 'Select Client');
+  const detailsSummaryLine = `${activeClientDisplayName} · ${invoiceNumber} · Due ${new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
-      <div className="w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col overflow-y-auto border-l border-stone-200">
-        
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-[#132c3f] text-white shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0098db]/20 text-[#0098db] border border-[#0098db]/40">
-              <Receipt className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-serif-title text-base font-bold">
-                {modalView === 'form' ? 'Generate Tax Fee Note & Invoice' : 'Preview Generated Invoice'}
-              </h2>
-              <p className="text-xs text-stone-300">
-                Kenya Law Firm LSK & KRA iTax Compliant Billing Generator
-              </p>
-            </div>
+    <div className="fixed inset-0 z-50 overflow-hidden bg-[#101826]/75 backdrop-blur-xs flex flex-col animate-in fade-in duration-150">
+      
+      {/* Top Bar */}
+      <div className="h-16 shrink-0 bg-[#101826] border-b border-[#DFD9CB]/25 px-4 md:px-6 flex items-center justify-between text-white">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#B8873B]/20 text-[#B8873B] border border-[#B8873B]/40">
+            <Receipt className="h-5 w-5" />
           </div>
-
-          <div className="flex items-center space-x-2">
-            {/* View Switcher Pills */}
-            <div className="flex items-center rounded-md bg-stone-800/80 p-0.5 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setModalView('form')}
-                className={`rounded px-3 py-1 transition-all cursor-pointer ${
-                  modalView === 'form' ? 'bg-[#0098db] text-white font-bold' : 'text-stone-300 hover:text-white'
-                }`}
-              >
-                1. Invoice Form
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalView('preview')}
-                className={`rounded px-3 py-1 transition-all cursor-pointer ${
-                  modalView === 'preview' ? 'bg-[#0098db] text-white font-bold' : 'text-stone-300 hover:text-white'
-                }`}
-              >
-                2. Live Document Preview
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full p-1.5 text-stone-400 hover:bg-stone-800 hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="h-5 w-5" />
-            </button>
+          <div className="min-w-0">
+            <h2 className="font-fraunces text-base md:text-lg font-bold text-white tracking-tight truncate">
+              {isQuickMode ? 'Generate Quick Fee Note' : 'Generate Tax Fee Note & Invoice'}
+            </h2>
+            <p className="text-xs text-[#EFEAE0]/75 truncate">
+              Kenya Law Firm LSK & KRA iTax Compliant Billing Generator
+            </p>
           </div>
         </div>
 
-        {/* Notification Toast */}
-        {showToast && (
-          <div className="m-4 rounded-md bg-emerald-50 border border-emerald-300 p-3 text-xs font-bold text-emerald-900 flex items-center space-x-2 shrink-0">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-            <span>{toastMessage}</span>
+        <div className="flex items-center space-x-3 md:space-x-4 shrink-0">
+          {/* Quick invoice alternate path toggle */}
+          <button
+            type="button"
+            onClick={() => setIsQuickMode(!isQuickMode)}
+            className="text-xs font-medium text-[#B8873B] hover:text-[#d49e49] underline underline-offset-2 transition-colors cursor-pointer py-1 px-1.5 focus:outline-none focus:ring-2 focus:ring-[#B8873B] rounded"
+          >
+            {isQuickMode ? 'Detailed invoice instead' : 'Quick invoice instead'}
+          </button>
+
+          {/* Narrow viewport toggle between Form and Preview */}
+          <div className="lg:hidden flex items-center rounded-md bg-stone-800 p-0.5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setMobileActivePane('form')}
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                mobileActivePane === 'form' ? 'bg-[#B8873B] text-white font-bold' : 'text-stone-300'
+              }`}
+            >
+              Form
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileActivePane('preview')}
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                mobileActivePane === 'preview' ? 'bg-[#B8873B] text-white font-bold' : 'text-stone-300'
+              }`}
+            >
+              Preview
+            </button>
           </div>
-        )}
 
-        {/* View 1: Standard Invoice Creation Form */}
-        {modalView === 'form' && (
-          <div className="p-6 space-y-6 flex-1 overflow-y-auto bg-[#fafafa]">
+          {/* Close Control */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close invoice generator"
+            className="rounded-full p-2 text-stone-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#B8873B]"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Toast Feedback */}
+      {showToast && (
+        <div className="absolute top-18 right-6 z-50 max-w-md rounded-lg bg-emerald-900/95 text-emerald-100 border border-emerald-500/50 p-3 text-xs font-semibold shadow-xl flex items-center space-x-2 animate-in slide-in-from-top-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span className="truncate">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Two-Pane Split View */}
+      <div className="flex-1 flex overflow-hidden bg-[#F6F4EF]">
+        
+        {/* ======================================================== */}
+        {/* LEFT PANE: Form (Scrollable independently with Sticky Footer) */}
+        {/* ======================================================== */}
+        <div
+          className={`w-full lg:w-[54%] xl:w-[52%] flex flex-col h-full border-r border-[#DFD9CB] bg-[#F6F4EF] ${
+            mobileActivePane === 'preview' ? 'hidden lg:flex' : 'flex'
+          }`}
+        >
+          {/* Scrollable Form Content */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
             
-            {/* Section 1: Client Selection or Quick Add */}
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
-                <div className="flex items-center space-x-2 text-stone-900 font-bold text-sm">
-                  <Building className="h-4 w-4 text-[#0098db]" />
-                  <span>Step 1: Select Client & Associated Matter</span>
+            {/* Quick Invoice Mode Banner */}
+            {isQuickMode && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="h-4 w-4 text-[#B8873B] shrink-0" />
+                  <span>
+                    <strong>Quick Mode:</strong> Lightweight 3-field invoice entry without per-line particulars.
+                  </span>
                 </div>
-
                 <button
                   type="button"
-                  onClick={() => setIsCreatingNewClient(!isCreatingNewClient)}
-                  className="flex items-center space-x-1 text-xs font-bold text-[#0098db] hover:text-[#0070ba] cursor-pointer"
+                  onClick={() => setIsQuickMode(false)}
+                  className="font-bold underline text-[#B8873B] hover:text-[#946927] ml-2 shrink-0 cursor-pointer"
                 >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  <span>{isCreatingNewClient ? 'Select Existing Client' : '+ Add / Bill New Client'}</span>
+                  Switch to full KRA breakdown
                 </button>
               </div>
+            )}
 
-              {!isCreatingNewClient ? (
-                /* Select Existing Client Mode */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <label htmlFor={clientIdSelectId} className="block font-bold text-stone-700 mb-1">
-                      Choose Client / Corporate Entity <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      id={clientIdSelectId}
-                      value={selectedClientId}
-                      onChange={(e) => setSelectedClientId(e.target.value)}
-                      className="w-full rounded-md border border-stone-300 bg-white p-2.5 text-xs font-medium text-stone-800 focus:border-[#0098db] focus:ring-1 focus:ring-[#0098db]"
-                    >
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.type || c.category || 'Client'})
-                        </option>
-                      ))}
-                    </select>
-                    {activeClient && (
-                      <p className="mt-1 text-[11px] text-stone-500">
-                        Email: <strong className="text-stone-700">{activeClient.email}</strong> • Address: <strong className="text-stone-700">{activeClient.address}</strong>
-                      </p>
-                    )}
+            {/* ==================================================== */}
+            {/* ACCORDION: Details Section */}
+            {/* ==================================================== */}
+            <div className="rounded-xl border border-[#DFD9CB] bg-white shadow-xs overflow-hidden transition-all">
+              {/* Accordion Header */}
+              <button
+                type="button"
+                onClick={() => {
+                  setHasManuallyToggledDetails(true);
+                  setIsDetailsExpanded(!isDetailsExpanded);
+                }}
+                aria-expanded={isDetailsExpanded}
+                className="w-full flex items-center justify-between p-3.5 bg-white hover:bg-[#F6F4EF]/70 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-[#B8873B]"
+              >
+                <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#101826]/5 text-[#101826]">
+                    <Building className="h-4 w-4 text-[#B8873B]" />
                   </div>
-
-                  <div>
-                    <label htmlFor={matterIdSelectId} className="block font-bold text-stone-700 mb-1">
-                      Link Legal Matter (Optional)
-                    </label>
-                    <select
-                      id={matterIdSelectId}
-                      value={selectedMatterId}
-                      onChange={(e) => {
-                        const newMatterId = e.target.value;
-                        setSelectedMatterId(newMatterId);
-                        const m = matters.find((mat) => mat.id === newMatterId);
-                        if (m) {
-                          if (m.clientId) setSelectedClientId(m.clientId);
-                          if (m.estimatedFeeKES && m.estimatedFeeKES > 0) {
-                            setItems([
-                              {
-                                id: `item-${Date.now()}-1`,
-                                description: `Professional Legal Representation: ${m.title}`,
-                                category: 'Professional Fees',
-                                quantity: 1,
-                                unitPriceKES: m.estimatedFeeKES,
-                                totalPriceKES: m.estimatedFeeKES,
-                                isTaxable: true,
-                                vatAmountKES: Math.round(m.estimatedFeeKES * 0.16),
-                              },
-                            ]);
-                          }
-                        }
-                      }}
-                      className="w-full rounded-md border border-stone-300 bg-white p-2.5 text-xs font-medium text-stone-800 focus:border-[#0098db] focus:ring-1 focus:ring-[#0098db]"
-                    >
-                      <option value="">-- General Firm Workspace Legal Retainer / Non-Litigation --</option>
-                      {matters.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          [{m.referenceNumber}] {m.clientName} - {m.title}
-                        </option>
-                      ))}
-                    </select>
-                    {activeMatter && (
-                      <p className="mt-1 text-[11px] text-[#0070ba] font-medium">
-                        Registry: {activeMatter.courtRegistry} • Advocate: {activeMatter.responsibleAdvocateName}
+                  <div className="min-w-0">
+                    <span className="font-fraunces font-bold text-sm text-[#101826]">Details</span>
+                    {!isDetailsExpanded && (
+                      <p className="text-xs text-[#5B6472] font-mono truncate mt-0.5">
+                        {detailsSummaryLine}
                       </p>
                     )}
                   </div>
                 </div>
-              ) : (
-                /* New Client Quick Creation Sub-form */
-                <div className="rounded-lg bg-blue-50/50 p-4 border border-blue-200/70 space-y-3 text-xs animate-in fade-in">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-stone-800 text-xs">Enter New Client Details</span>
-                    <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono font-bold">New Client Registration</span>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="block font-bold text-stone-700 mb-1">
-                        Client / Company Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Standard Chartered Bank PLC or John Kamau"
-                        value={newClientName}
-                        onChange={(e) => setNewClientName(e.target.value)}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-medium"
-                      />
+                <div className="flex items-center space-x-2 shrink-0">
+                  <span className="text-[11px] font-semibold text-[#5B6472] bg-stone-100 px-2 py-0.5 rounded border border-stone-200">
+                    {paymentTerms}
+                  </span>
+                  <div className="text-stone-400 p-1">
+                    {isDetailsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </div>
+                </div>
+              </button>
+
+              {/* Accordion Expanded Body: Compact 2-Column Grid */}
+              {isDetailsExpanded && (
+                <div className="p-4 pt-1 border-t border-[#DFD9CB]/60 bg-white">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+                    
+                    {/* Field 1: Client / Corporate Entity */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor={clientIdSelectId} className="font-semibold text-[#101826]">
+                          Client / Corporate Entity <span className="text-[#9C3B3B]">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingNewClient(!isCreatingNewClient)}
+                          className="text-[11px] font-semibold text-[#B8873B] hover:text-[#946927] cursor-pointer"
+                        >
+                          {isCreatingNewClient ? '← Select existing' : '+ Add / bill new client'}
+                        </button>
+                      </div>
+
+                      {isCreatingNewClient ? (
+                        <div className="space-y-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                          <input
+                            type="text"
+                            value={newClientName}
+                            onChange={(e) => setNewClientName(e.target.value)}
+                            placeholder="Client or Company Name *"
+                            required
+                            className="w-full rounded border border-[#DFD9CB] bg-white px-2.5 py-1.5 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="email"
+                              value={newClientEmail}
+                              onChange={(e) => setNewClientEmail(e.target.value)}
+                              placeholder="Email address"
+                              className="rounded border border-[#DFD9CB] bg-white px-2 py-1 text-[11px] text-[#101826]"
+                            />
+                            <input
+                              type="tel"
+                              value={newClientPhone}
+                              onChange={(e) => setNewClientPhone(e.target.value)}
+                              placeholder="Phone / Mobile"
+                              className="rounded border border-[#DFD9CB] bg-white px-2 py-1 text-[11px] text-[#101826]"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between pt-1 text-[11px]">
+                            <span className="text-[#5B6472]">Entity Type:</span>
+                            <div className="flex space-x-2">
+                              <label className="flex items-center space-x-1 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="clientType"
+                                  checked={newClientCategory === 'Corporate'}
+                                  onChange={() => setNewClientCategory('Corporate')}
+                                  className="text-[#B8873B] focus:ring-[#B8873B]"
+                                />
+                                <span>Corporate</span>
+                              </label>
+                              <label className="flex items-center space-x-1 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="clientType"
+                                  checked={newClientCategory === 'Individual'}
+                                  onChange={() => setNewClientCategory('Individual')}
+                                  className="text-[#B8873B] focus:ring-[#B8873B]"
+                                />
+                                <span>Individual</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative" ref={clientDropdownRef}>
+                          <div className="relative flex items-center">
+                            <Search className="absolute left-2.5 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
+                            <input
+                              id={clientIdSelectId}
+                              type="text"
+                              value={clientSearchQuery}
+                              onChange={(e) => {
+                                setClientSearchQuery(e.target.value);
+                                setIsClientDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsClientDropdownOpen(true)}
+                              placeholder="Type first 3 letters to search clients..."
+                              autoComplete="off"
+                              className="w-full rounded border border-[#DFD9CB] bg-white pl-8 pr-16 py-1.5 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                            />
+                            <div className="absolute right-1.5 flex items-center space-x-0.5">
+                              {clientSearchQuery && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setClientSearchQuery('');
+                                    setIsClientDropdownOpen(true);
+                                  }}
+                                  className="p-1 text-stone-400 hover:text-stone-600 rounded cursor-pointer"
+                                  title="Clear client search"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
+                                className="p-1 text-stone-400 hover:text-stone-600 rounded cursor-pointer"
+                                title="Show client list"
+                              >
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isClientDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Dropdown list of clients */}
+                          {isClientDropdownOpen && (
+                            <div className="absolute left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-lg border border-[#DFD9CB] bg-white shadow-xl z-50 divide-y divide-stone-100">
+                              {filteredClients.length > 0 ? (
+                                filteredClients.map((c) => {
+                                  const isSelected = c.id === selectedClientId;
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onClick={() => handleSelectClient(c)}
+                                      className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors cursor-pointer hover:bg-[#F6F4EF] ${
+                                        isSelected ? 'bg-amber-50/70 font-semibold text-[#101826]' : 'text-stone-800'
+                                      }`}
+                                    >
+                                      <div className="min-w-0 pr-2">
+                                        <div className="flex items-center space-x-1.5">
+                                          <span className="truncate font-medium">{c.name}</span>
+                                          <span className="rounded bg-stone-100 px-1.5 py-0.2 text-[9px] font-semibold text-stone-500 uppercase shrink-0">
+                                            {c.type}
+                                          </span>
+                                        </div>
+                                        {(c.contactPerson || c.email) && (
+                                          <p className="text-[11px] text-stone-500 truncate mt-0.5">
+                                            {c.contactPerson ? `${c.contactPerson} • ` : ''}{c.email || ''}
+                                          </p>
+                                        )}
+                                      </div>
+                                      {isSelected && <Check className="h-3.5 w-3.5 text-[#B8873B] shrink-0" />}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="p-3 text-center text-xs text-stone-500 space-y-1.5">
+                                  <p>No client found matching "{clientSearchQuery}"</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewClientName(clientSearchQuery);
+                                      setIsCreatingNewClient(true);
+                                      setIsClientDropdownOpen(false);
+                                    }}
+                                    className="inline-flex items-center space-x-1 text-xs font-semibold text-[#B8873B] hover:underline cursor-pointer"
+                                  >
+                                    <UserPlus className="h-3 w-3" />
+                                    <span>Create "{clientSearchQuery}" as new client</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
+                    {/* Field 2: Legal Matter (Optional) */}
                     <div>
-                      <label className="block font-bold text-stone-700 mb-1">Client Type</label>
+                      <label htmlFor={matterIdSelectId} className="block font-semibold text-[#101826] mb-1">
+                        Legal Matter <span className="text-[#5B6472] font-normal">(Optional)</span>
+                      </label>
                       <select
-                        value={newClientCategory}
-                        onChange={(e) => setNewClientCategory(e.target.value as any)}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-medium"
+                        id={matterIdSelectId}
+                        value={selectedMatterId}
+                        onChange={(e) => setSelectedMatterId(e.target.value)}
+                        className="w-full rounded border border-[#DFD9CB] bg-white px-2.5 py-1.5 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
                       >
-                        <option value="Corporate">Corporate / Bank / NGO</option>
-                        <option value="Individual">Individual Client</option>
-                        <option value="Government">Government / Parastatal</option>
+                        <option value="">General Firm Retainer / Non-Litigation</option>
+                        {clientMatters.length > 0 && (
+                          <optgroup label="Client Matters">
+                            {clientMatters.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.referenceNumber}: {m.title}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {matters
+                          .filter((m) => !selectedClientId || m.clientId !== selectedClientId)
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.referenceNumber}: {m.title}
+                            </option>
+                          ))}
                       </select>
                     </div>
 
+                    {/* Field 3: Invoice Number */}
                     <div>
-                      <label className="block font-bold text-stone-700 mb-1">Email Address</label>
+                      <label htmlFor={invoiceNumberId} className="block font-semibold text-[#101826] mb-1">
+                        Invoice / Fee Note Number
+                      </label>
                       <input
-                        type="email"
-                        placeholder="finance@client.co.ke"
-                        value={newClientEmail}
-                        onChange={(e) => setNewClientEmail(e.target.value)}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-stone-700 mb-1">Phone Number</label>
-                      <input
-                        type="tel"
-                        placeholder="+254 7..."
-                        value={newClientPhone}
-                        onChange={(e) => setNewClientPhone(e.target.value)}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-3">
-                      <label className="block font-bold text-stone-700 mb-1">Physical / Postal Address</label>
-                      <input
+                        id={invoiceNumberId}
                         type="text"
-                        placeholder="e.g. Upper Hill, P.O. Box 40192-00100, Nairobi"
-                        value={newClientAddress}
-                        onChange={(e) => setNewClientAddress(e.target.value)}
-                        className="w-full rounded border border-stone-300 bg-white p-2 text-xs"
+                        value={invoiceNumber}
+                        onChange={(e) => setInvoiceNumber(e.target.value)}
+                        className="w-full rounded border border-[#DFD9CB] bg-white px-2.5 py-1.5 text-xs font-mono font-bold text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
                       />
                     </div>
+
+                    {/* Field 4: Payment Terms */}
+                    <div>
+                      <label htmlFor={paymentTermsId} className="block font-semibold text-[#101826] mb-1">
+                        Payment Terms
+                      </label>
+                      <select
+                        id={paymentTermsId}
+                        value={paymentTerms}
+                        onChange={(e) => setPaymentTerms(e.target.value as PaymentTerm)}
+                        className="w-full rounded border border-[#DFD9CB] bg-white px-2.5 py-1.5 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                      >
+                        <option value="Net 14">Net 14 (Due in 14 days)</option>
+                        <option value="Net 30">Net 30 (Due in 30 days)</option>
+                        <option value="Due on receipt">Due on receipt (Immediate)</option>
+                      </select>
+                    </div>
+
+                    {/* Field 5: Date of Issue */}
+                    <div>
+                      <label htmlFor={dateIssuedId} className="block font-semibold text-[#101826] mb-1">
+                        Date of Issue
+                      </label>
+                      <input
+                        id={dateIssuedId}
+                        type="date"
+                        value={dateIssued}
+                        onChange={(e) => setDateIssued(e.target.value)}
+                        className="w-full rounded border border-[#DFD9CB] bg-white px-2.5 py-1.5 text-xs font-mono text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                      />
+                    </div>
+
+                    {/* Field 6: Due Date (Computed with Override option) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor={dueDateId} className="font-semibold text-[#101826]">
+                          Due Date
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsDueDateOverridden(!isDueDateOverridden)}
+                          className="text-[11px] font-semibold text-[#B8873B] hover:text-[#946927] cursor-pointer"
+                        >
+                          {isDueDateOverridden ? 'Reset to auto-term' : 'Override date'}
+                        </button>
+                      </div>
+                      <input
+                        id={dueDateId}
+                        type="date"
+                        value={dueDate}
+                        disabled={!isDueDateOverridden}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className={`w-full rounded border border-[#DFD9CB] px-2.5 py-1.5 text-xs font-mono focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B] ${
+                          isDueDateOverridden ? 'bg-white text-[#101826]' : 'bg-stone-100 text-stone-600 cursor-not-allowed'
+                        }`}
+                      />
+                    </div>
+
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Section 2: Invoice Metadata & Tax Strategy */}
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 text-stone-900 font-bold text-sm border-b border-stone-100 pb-3">
-                <Calendar className="h-4 w-4 text-[#0098db]" />
-                <span>Step 2: Invoice Dates & Tax Reference</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <label htmlFor={invoiceNumberId} className="block font-bold text-stone-700 mb-1">Invoice Number</label>
-                  <input
-                    id={invoiceNumberId}
-                    type="text"
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                    className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono font-bold text-[#0070ba]"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor={dateIssuedId} className="block font-bold text-stone-700 mb-1">Date of Issue</label>
-                  <input
-                    id={dateIssuedId}
-                    type="date"
-                    value={dateIssued}
-                    onChange={(e) => setDateIssued(e.target.value)}
-                    className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor={dueDateId} className="block font-bold text-stone-700 mb-1">Due Date (Payment Terms)</label>
-                  <input
-                    id={dueDateId}
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* VAT Per-Item Policy Note & Batch Controls */}
-              <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div className="space-y-0.5">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="font-bold text-[#132c3f]">Per-Item / Per-Row VAT Control (16% Kenya iTax)</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded font-mono">
-                      Active
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-stone-600">
-                    Apply 16% VAT individually to taxable legal services while keeping statutory CTS court filing fees and registry disbursements tax-exempt.
+            {/* ==================================================== */}
+            {/* QUICK INVOICE MODE FORM */}
+            {/* ==================================================== */}
+            {isQuickMode ? (
+              <div className="rounded-xl border border-[#DFD9CB] bg-white p-4 space-y-4 shadow-xs">
+                <div className="border-b border-[#DFD9CB]/60 pb-2">
+                  <h3 className="font-fraunces font-bold text-sm text-[#101826]">
+                    Quick Fee Note Particulars
+                  </h3>
+                  <p className="text-xs text-[#5B6472]">
+                    Single professional fee entry with immediate calculation.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleApplyDefaultTaxByCategory}
-                    title="Professional fees taxable, CTS & disbursements exempt"
-                    className="rounded bg-white border border-blue-300 px-2.5 py-1 text-[11px] font-semibold text-[#0070ba] hover:bg-blue-100/70 transition-colors cursor-pointer"
-                  >
-                    Auto-Set by Category
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetAllTaxable(true)}
-                    className="rounded bg-white border border-stone-300 px-2 py-1 text-[11px] font-medium text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-                  >
-                    Tax All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetAllTaxable(false)}
-                    className="rounded bg-white border border-stone-300 px-2 py-1 text-[11px] font-medium text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-                  >
-                    Exempt All
-                  </button>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-semibold text-[#101826] mb-1">
+                      Service Description <span className="text-[#9C3B3B]">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={quickDescription}
+                      onChange={(e) => setQuickDescription(e.target.value)}
+                      placeholder="e.g. Legal Advisory Retainer Fee & Counsel Services"
+                      className="w-full rounded border border-[#DFD9CB] bg-white px-3 py-2 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-[#101826] mb-1">
+                        Professional Fee Amount (KES) <span className="text-[#9C3B3B]">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={quickAmountKES}
+                        onChange={(e) => setQuickAmountKES(parseFloat(e.target.value) || 0)}
+                        className="w-full rounded border border-[#DFD9CB] bg-white px-3 py-2 text-xs font-mono font-bold text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                      />
+                    </div>
+
+                    <div className="flex flex-col justify-end">
+                      <label className="flex items-center space-x-2 rounded border border-[#DFD9CB] bg-[#F6F4EF]/50 p-2 cursor-pointer hover:bg-[#F6F4EF] transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={quickIncludeVat}
+                          onChange={(e) => setQuickIncludeVat(e.target.checked)}
+                          className="rounded text-[#3F6B4F] focus:ring-[#3F6B4F]"
+                        />
+                        <span className="text-xs font-medium text-[#101826]">
+                          Apply standard 16% KRA VAT
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#101826] mb-1">
+                      Payment Remittance Notes
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={invoiceNotes}
+                      onChange={(e) => setInvoiceNotes(e.target.value)}
+                      className="w-full rounded border border-[#DFD9CB] bg-white p-2 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* ==================================================== */
+              /* DETAILED LINE ITEMS SECTION */
+              /* ==================================================== */
+              <div className="rounded-xl border border-[#DFD9CB] bg-white p-4 space-y-4 shadow-xs">
+                
+                {/* Section Header */}
+                <div className="flex items-center justify-between gap-2 border-b border-[#DFD9CB]/60 pb-2.5">
+                  <h3 className="font-fraunces font-bold text-sm text-[#101826]">
+                    Line Items
+                  </h3>
 
-            {/* Section 3: Dynamic Items & Descriptions with Per-Item VAT & Reusable Templates */}
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
-                <div>
-                  <div className="flex items-center space-x-2 text-stone-900 font-bold text-sm">
-                    <DollarSign className="h-4 w-4 text-[#0098db]" />
-                    <span>Step 3: Line Items & Standardized Particulars</span>
-                  </div>
-                  <p className="text-[11px] text-stone-500 mt-0.5">
-                    Select a reusable Fee Note Template from Firm Workspace Settings or add standardized legal services.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSaveTemplateTitle(activeMatter ? `${activeMatter.title} Fee Note Package` : '');
-                      setSaveTemplateDesc(`Reusable standard legal services package for ${activeMatter?.practiceArea || 'general matters'}`);
-                      setSaveTemplatePA(activeMatter?.practiceArea || 'Civil Litigation');
-                      setIsSaveAsTemplateOpen(true);
-                    }}
-                    className="flex items-center space-x-1.5 rounded-md border border-stone-300 bg-white hover:bg-stone-50 text-stone-700 px-2.5 py-1.5 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-                    title="Save current line items as a reusable template in Settings"
-                  >
-                    <BookmarkPlus className="h-3.5 w-3.5 text-[#0070ba]" />
-                    <span>Save as Template</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddItem()}
-                    className="flex items-center space-x-1.5 rounded-md bg-[#0098db] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#0087c2] transition-colors cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Item</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Saved Fee Note Template Selector Bar */}
-              <div className="rounded-xl border border-blue-100 bg-[#f0f7fc] p-3.5 space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-[#132c3f]">
-                    <Layers className="h-4 w-4 text-[#0070ba]" />
-                    <span>Apply Saved Fee Note Template:</span>
-                  </div>
-                  <span className="text-[11px] text-stone-500">
-                    Configured in <strong>Settings &gt; Fee Note Templates</strong>
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                  <div className="sm:col-span-8">
+                  {/* Apply Saved Fee Note Template Dropdown */}
+                  <div className="flex items-center space-x-2">
+                    <label htmlFor="template-dropdown" className="text-xs font-medium text-[#5B6472] shrink-0">
+                      Package:
+                    </label>
                     <select
+                      id="template-dropdown"
                       value={selectedTemplateId}
-                      onChange={(e) => {
-                        setSelectedTemplateId(e.target.value);
-                        handleApplyFeeNoteTemplate(e.target.value);
-                      }}
-                      className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-900 focus:border-[#0070ba] focus:ring-1 focus:ring-[#0070ba]"
+                      onChange={(e) => handleApplyFeeNoteTemplate(e.target.value)}
+                      className="rounded border border-[#DFD9CB] bg-[#F6F4EF] px-2 py-1 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B] cursor-pointer"
                     >
-                      <option value="">-- Choose a standard Fee Note package ({feeNoteTemplates.length} available) --</option>
-                      {feeNoteTemplates.map((tmpl) => (
-                        <option key={tmpl.id} value={tmpl.id}>
-                          {tmpl.title} ({tmpl.practiceArea} • {tmpl.items.length} items)
+                      <option value="">Apply Saved Template...</option>
+                      {feeNoteTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title} ({t.items.length} items)
                         </option>
                       ))}
                     </select>
                   </div>
+                </div>
 
-                  <div className="sm:col-span-4 flex items-center gap-2">
-                    {selectedTemplateId && (
+                {/* Standardized Legal Service Descriptions Quick Chips */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-semibold text-[#5B6472] uppercase tracking-wider">
+                      Standardized Legal Service Descriptions (Click to insert):
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_CHIPS.map((chip, idx) => (
                       <button
+                        key={idx}
                         type="button"
-                        onClick={() => handleApplyFeeNoteTemplate(selectedTemplateId)}
-                        className="w-full rounded-lg bg-[#0070ba] hover:bg-[#005a96] text-white px-3 py-2 text-xs font-bold transition cursor-pointer text-center"
+                        onClick={() => handleAddChipItem(chip)}
+                        className="inline-flex items-center space-x-1.5 rounded-full border border-[#DFD9CB] bg-[#F6F4EF] hover:bg-[#EFEAE0] hover:border-[#B8873B] px-2.5 py-1 text-[11px] text-[#101826] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#B8873B]"
                       >
-                        Reload Template Items
+                        <Plus className="h-3 w-3 text-[#B8873B]" />
+                        <span>{chip.label}</span>
+                        <span className="font-mono text-stone-500 font-semibold">
+                          — KES {chip.price.toLocaleString()}
+                        </span>
                       </button>
-                    )}
+                    ))}
                   </div>
+                </div>
+
+                {/* Compact Table */}
+                <div className="overflow-x-auto border border-[#DFD9CB] rounded-lg">
+                  <table className="w-full text-left border-collapse min-w-[580px]">
+                    <thead>
+                      <tr className="border-b border-[#DFD9CB] bg-[#F6F4EF] text-[11px] font-semibold text-[#5B6472]">
+                        <th className="py-2 px-2.5 w-[38%]">Description of Work</th>
+                        <th className="py-2 px-2 w-[22%]">Category</th>
+                        <th className="py-2 px-2 w-[12%] text-center">Qty / Hrs</th>
+                        <th className="py-2 px-2 w-[16%] text-right">Rate (KES)</th>
+                        <th className="py-2 px-2 w-[12%] text-center">VAT</th>
+                        <th className="py-2 px-1.5 w-[5%] text-center"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#DFD9CB]/60 text-xs">
+                      {items.map((item) => {
+                        const isTaxable = item.isTaxable !== false;
+                        return (
+                          <tr key={item.id} className="hover:bg-[#F6F4EF]/40 transition-colors">
+                            {/* Description Input */}
+                            <td className="py-1.5 px-2">
+                              <input
+                                type="text"
+                                value={item.description}
+                                onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
+                                placeholder="Service description..."
+                                className="w-full rounded border border-[#DFD9CB] bg-white px-2 py-1 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                              />
+                            </td>
+
+                            {/* Category Dropdown */}
+                            <td className="py-1.5 px-2">
+                              <select
+                                value={item.category}
+                                onChange={(e) => handleUpdateItem(item.id, 'category', e.target.value)}
+                                className="w-full rounded border border-[#DFD9CB] bg-white px-1.5 py-1 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                              >
+                                <option value="Prof. Fees">Prof. Fees</option>
+                                <option value="Court Attendance">Court Attendance</option>
+                                <option value="Drafting Pleading">Drafting Pleading</option>
+                                <option value="Legal Research">Legal Research</option>
+                                <option value="Consultation">Consultation</option>
+                                <option value="CTS Filing">CTS Filing</option>
+                                <option value="Disbursement">Disbursement</option>
+                              </select>
+                            </td>
+
+                            {/* Qty / Hrs */}
+                            <td className="py-1.5 px-2">
+                              <input
+                                type="number"
+                                min="0.5"
+                                step="0.5"
+                                value={item.quantity}
+                                onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
+                                className="w-full rounded border border-[#DFD9CB] bg-white px-1 py-1 text-xs font-mono font-medium text-center text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                              />
+                            </td>
+
+                            {/* Rate / Unit (KES) */}
+                            <td className="py-1.5 px-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="500"
+                                value={item.unitPriceKES}
+                                onChange={(e) => handleUpdateItem(item.id, 'unitPriceKES', e.target.value)}
+                                className="w-full rounded border border-[#DFD9CB] bg-white px-1.5 py-1 text-xs font-mono font-bold text-right text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                              />
+                            </td>
+
+                            {/* VAT Tag: Auto-applied by category, clickable to override */}
+                            <td className="py-1.5 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleRowTax(item.id)}
+                                title="Click to override tax treatment"
+                                className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
+                                  isTaxable
+                                    ? 'bg-[#3F6B4F]/10 text-[#3F6B4F] border border-[#3F6B4F]/30 hover:bg-[#3F6B4F]/20'
+                                    : 'bg-stone-100 text-stone-600 border border-stone-300 hover:bg-stone-200'
+                                }`}
+                              >
+                                {isTaxable ? '16% VAT' : 'Exempt'}
+                              </button>
+                            </td>
+
+                            {/* Delete Control */}
+                            <td className="py-1.5 px-1.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.id)}
+                                title="Remove line item"
+                                className="p-1 rounded text-stone-400 hover:text-[#9C3B3B] hover:bg-red-50 transition-colors cursor-pointer"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Secondary Actions Row */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={handleAddCustomBlankItem}
+                    className="inline-flex items-center space-x-1 text-xs font-semibold text-[#5B6472] hover:text-[#101826] cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-[#B8873B]" />
+                    <span>+ Add custom item</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSaveAsTemplateOpen(true)}
+                    className="inline-flex items-center space-x-1 text-xs font-medium text-[#B8873B] hover:text-[#946927] cursor-pointer"
+                  >
+                    <BookmarkPlus className="h-3.5 w-3.5" />
+                    <span>Save items as reusable template</span>
+                  </button>
+                </div>
+
+                {/* Remittance Notes */}
+                <div className="pt-2 border-t border-[#DFD9CB]/60">
+                  <label className="block font-semibold text-[#101826] text-xs mb-1">
+                    Payment Remittance Notes & Remarks
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={invoiceNotes}
+                    onChange={(e) => setInvoiceNotes(e.target.value)}
+                    className="w-full rounded border border-[#DFD9CB] bg-white p-2 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                  />
+                </div>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* ======================================================== */}
+          {/* STICKY FOOTER: Pinned to bottom of Form Pane */}
+          {/* ======================================================== */}
+          <div className="shrink-0 bg-white border-t border-[#DFD9CB] p-3.5 md:p-4 shadow-lg z-10 space-y-3">
+            {/* Totals Summary Breakdown */}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#5B6472]">
+                <div>
+                  Taxable Legal: <strong className="font-mono text-[#101826]">KES {currentTaxableSubtotalKES.toLocaleString()}</strong>
+                </div>
+                {currentNonTaxableSubtotalKES > 0 && (
+                  <div>
+                    Exempt / CTS: <strong className="font-mono text-[#101826]">KES {currentNonTaxableSubtotalKES.toLocaleString()}</strong>
+                  </div>
+                )}
+                <div>
+                  16% VAT: <strong className="font-mono text-[#3F6B4F]">KES {currentVatKES.toLocaleString()}</strong>
                 </div>
               </div>
 
-              {/* Standard Legal Service Snippet Chips */}
-              <div className="space-y-1.5 pt-1 pb-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-stone-600 flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5 text-[#0070ba]" />
-                    <span>Insert Standardized Legal Service Descriptions:</span>
-                  </span>
-                  <span className="text-[10px] text-stone-400">Click to append item</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto pr-1">
-                  {standardServices.map((svc) => (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      onClick={() =>
-                        handleAddItem({
-                          description: svc.description,
-                          category: svc.category,
-                          unitPriceKES: svc.unitPriceKES,
-                          isTaxable: svc.isTaxable,
-                        })
-                      }
-                      className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700 hover:border-[#0098db] hover:bg-blue-50/50 hover:text-[#0070ba] transition-all cursor-pointer text-left"
-                    >
-                      + {svc.description.slice(0, 36)}... (KES {svc.unitPriceKES.toLocaleString()})
-                      <span
-                        className={`ml-1 text-[9px] px-1 py-0.2 rounded font-bold ${
-                          svc.isTaxable ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'
-                        }`}
-                      >
-                        {svc.isTaxable ? '+16% VAT' : 'Exempt'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Items List Table / Form Inputs */}
-              <div className="space-y-3">
-                {items.map((item, index) => {
-                  const isItemTaxable = item.isTaxable !== false;
-                  const itemVat = isItemTaxable ? Math.round((item.totalPriceKES || 0) * (vatRatePercent / 100)) : 0;
-                  const itemGross = (item.totalPriceKES || 0) + itemVat;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`rounded-lg border p-3.5 space-y-3 text-xs transition-colors ${
-                        isItemTaxable
-                          ? 'border-blue-200 bg-blue-50/20'
-                          : 'border-stone-200 bg-stone-50/60'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200/60 pb-2">
-                        <div className="flex items-center space-x-2">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#132c3f] text-white text-[10px] font-mono font-bold">
-                            {index + 1}
-                          </span>
-                          <span className="font-bold text-stone-800">Particulars of Service / Disbursement</span>
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                              isItemTaxable
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-stone-200 text-stone-700'
-                            }`}
-                          >
-                            {isItemTaxable ? 'Taxable (16% VAT)' : 'Exempt / Zero-Rated'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-3">
-                          <span className="text-[11px] text-stone-600 font-mono">
-                            Net: <strong>KES {(item.totalPriceKES || 0).toLocaleString()}</strong>
-                            {isItemTaxable && (
-                              <span className="text-stone-500 font-normal"> + VAT KES {itemVat.toLocaleString()} = <strong className="text-[#0070ba]">KES {itemGross.toLocaleString()}</strong></span>
-                            )}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(item.id)}
-                            title="Remove item"
-                            className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                        {/* Description (5 cols) */}
-                        <div className="md:col-span-5">
-                          <label className="block text-[11px] font-bold text-stone-600 mb-1">
-                            Item Description <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
-                            placeholder="e.g. Drafting Replying Affidavit, Court Appearance, Registry Searches"
-                            className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-medium text-stone-800"
-                          />
-                        </div>
-
-                        {/* Category (2 cols) */}
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-bold text-stone-600 mb-1">Category</label>
-                          <select
-                            value={item.category || 'Professional Fees'}
-                            onChange={(e) => handleUpdateItem(item.id, 'category', e.target.value)}
-                            className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-medium text-stone-800"
-                          >
-                            <option value="Professional Fees">Prof. Fees</option>
-                            <option value="Drafting Pleading">Drafting</option>
-                            <option value="Court Filing / CTS">CTS Filing</option>
-                            <option value="Disbursement">Disbursement</option>
-                            <option value="Legal Research">Research</option>
-                            <option value="Consultation">Consultation</option>
-                          </select>
-                        </div>
-
-                        {/* Quantity / Hours (1 col) */}
-                        <div className="md:col-span-1">
-                          <label className="block text-[11px] font-bold text-stone-600 mb-1">Qty / Hrs</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0.5"
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
-                            className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono font-bold text-stone-800"
-                          />
-                        </div>
-
-                        {/* Unit Rate KES (2 cols) */}
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-bold text-stone-600 mb-1">Rate / Unit (KES)</label>
-                          <input
-                            type="number"
-                            step="500"
-                            min="0"
-                            value={item.unitPriceKES}
-                            onChange={(e) => handleUpdateItem(item.id, 'unitPriceKES', e.target.value)}
-                            className="w-full rounded border border-stone-300 bg-white p-2 text-xs font-mono font-bold text-stone-800"
-                          />
-                        </div>
-
-                        {/* Per-Item VAT Control Toggle (2 cols) */}
-                        <div className="md:col-span-2 flex flex-col justify-end">
-                          <label className="block text-[11px] font-bold text-stone-600 mb-1">VAT (16%)</label>
-                          <label className="flex items-center space-x-1.5 rounded border border-stone-300 bg-white px-2.5 py-1.5 cursor-pointer hover:bg-stone-50 transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={isItemTaxable}
-                              onChange={() => handleToggleItemTax(item.id)}
-                              className="rounded border-stone-300 text-[#0098db] focus:ring-[#0098db]"
-                            />
-                            <span className="font-semibold text-stone-800 text-[11px]">
-                              {isItemTaxable ? 'Add 16% Tax' : 'No Tax / Exempt'}
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Invoice Notes / Payment instructions */}
-              <div className="pt-2">
-                <label className="block font-bold text-stone-700 text-xs mb-1">
-                  Payment Remittance Notes & Remarks
-                </label>
-                <textarea
-                  rows={2}
-                  value={invoiceNotes}
-                  onChange={(e) => setInvoiceNotes(e.target.value)}
-                  className="w-full rounded border border-stone-300 bg-white p-2 text-xs text-stone-700"
-                />
-              </div>
-
-              {/* Total Calculation Card with Itemized Tax Breakdown */}
-              <div className="rounded-lg bg-stone-100 p-4 border border-stone-300/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="text-xs text-stone-600 space-y-1">
-                  <p>
-                    <strong className="text-stone-900">Total Line Items:</strong> {items.length} particulars entered
-                  </p>
-                  <p className="text-[11px] text-stone-500">
-                    Taxable Items: <span className="font-semibold text-stone-800">{items.filter(i => i.isTaxable !== false).length}</span> | Exempt / Zero-Rated: <span className="font-semibold text-stone-800">{items.filter(i => i.isTaxable === false).length}</span>
-                  </p>
-                </div>
-
-                <div className="w-full sm:w-80 space-y-1.5 text-xs text-right sm:text-left">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Taxable Legal Services:</span>
-                    <span className="font-mono font-bold text-stone-800">
-                      KES {taxableSubtotalKES.toLocaleString()}
-                    </span>
-                  </div>
-
-                  {nonTaxableSubtotalKES > 0 && (
-                    <div className="flex justify-between text-stone-600">
-                      <span>Exempt CTS & Disbursements:</span>
-                      <span className="font-mono font-bold text-stone-800">
-                        KES {nonTaxableSubtotalKES.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between text-stone-600">
-                    <span>Total Net Amount:</span>
-                    <span className="font-mono font-bold text-stone-800">
-                      KES {subtotalKES.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between text-stone-600">
-                    <span>16% VAT (Calculated on Taxable Rows):</span>
-                    <span className="font-mono font-bold text-stone-800">
-                      KES {totalVatAmountKES.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between pt-1 border-t border-stone-300 text-sm font-bold text-stone-900">
-                    <span>Total Amount Payable:</span>
-                    <span className="font-mono text-[#0070ba] text-base font-extrabold">
-                      KES {totalPayableKES.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-semibold text-[#5B6472]">Total Payable:</span>
+                <span className="font-mono font-bold text-base md:text-lg text-[#101826] bg-[#EFEAE0] px-2.5 py-0.5 rounded border border-[#DFD9CB]">
+                  KES {currentTotalPayableKES.toLocaleString()}
+                </span>
               </div>
             </div>
 
+            {/* Bottom Action Buttons */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-[#DFD9CB] bg-white px-3.5 py-2 text-xs font-semibold text-[#5B6472] hover:bg-stone-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#B8873B]"
+              >
+                Cancel
+              </button>
+
+              <div className="flex items-center space-x-2">
+                {/* Mobile Preview Button */}
+                <button
+                  type="button"
+                  onClick={() => setMobileActivePane('preview')}
+                  className="lg:hidden rounded border border-[#DFD9CB] bg-[#F6F4EF] px-3 py-2 text-xs font-semibold text-[#101826] hover:bg-[#EFEAE0] cursor-pointer"
+                >
+                  View Preview
+                </button>
+
+                {/* Primary Generate Button */}
+                <button
+                  type="button"
+                  onClick={() => handleSaveAndIssueInvoice('Pending')}
+                  className="inline-flex items-center space-x-1.5 rounded bg-[#101826] hover:bg-[#1a2538] border border-[#B8873B]/50 px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#B8873B]"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-[#B8873B]" />
+                  <span>Generate & Issue Invoice</span>
+                </button>
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* View 2: Live Document Printable Tax Fee Note Preview */}
-        {modalView === 'preview' && (
-          <div className="p-6 md:p-8 flex-1 bg-stone-100 overflow-y-auto">
-            <div className="bg-white rounded-lg border border-stone-300 shadow-md p-8 text-stone-800 space-y-6 text-xs max-w-2xl mx-auto">
-              
-              {/* Firm Header */}
-              <div className="border-b-2 border-[#0098db] pb-5 flex flex-col sm:flex-row justify-between gap-4">
-                <div>
-                  <CompanyLogo variant="horizontal" size="md" darkBg={false} />
-                  <div className="mt-3 text-[11px] text-stone-600 leading-tight space-y-0.5">
-                    <p className="font-semibold text-stone-800">Muthoni Ahago Advocates</p>
-                    <p>1st Floor, The Triple Two Address, Along the Eastern Bypass</p>
-                    <p>Ruiru, Kenya</p>
-                    <p>Tel: +254 (0)20 271 9900 | Email: billing@muthoniahago.co.ke</p>
-                  </div>
-                </div>
+        </div>
 
-                <div className="text-right sm:self-start space-y-1 text-[11px]">
-                  <div className="inline-block rounded bg-blue-50 border border-blue-200 px-3 py-1 font-mono font-extrabold text-[#0070ba]">
-                    TAX FEE NOTE / INVOICE
-                  </div>
-                  <p className="font-mono text-stone-700 font-bold mt-1">NO: {invoiceNumber}</p>
-                  <p className="text-stone-500">Date: {new Date(dateIssued).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                  <p className="text-stone-500">Due: {new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                </div>
-              </div>
+        {/* ======================================================== */}
+        {/* RIGHT PANE: Live Document Preview (Persistent split view) */}
+        {/* ======================================================== */}
+        <div
+          className={`flex-1 lg:w-[46%] xl:w-[48%] flex-col h-full bg-[#EFEAE0] overflow-y-auto p-4 md:p-6 items-center justify-start ${
+            mobileActivePane === 'form' ? 'hidden lg:flex' : 'flex'
+          }`}
+        >
+          {/* Mobile Back to Form button if active on mobile */}
+          <div className="w-full max-w-xl lg:hidden mb-3 flex justify-between items-center">
+            <button
+              type="button"
+              onClick={() => setMobileActivePane('form')}
+              className="rounded bg-white border border-[#DFD9CB] px-3 py-1.5 text-xs font-semibold text-[#101826]"
+            >
+              ← Back to Invoice Form
+            </button>
+            <span className="text-xs text-[#5B6472] font-medium">Live Document Preview</span>
+          </div>
 
-              {/* Client & Matter Info Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-stone-50 p-4 rounded-md border border-stone-200">
-                <div>
-                  <p className="text-[10px] font-bold text-stone-400 tracking-wider">Bill To Client:</p>
-                  <p className="font-bold text-stone-900 text-sm mt-0.5">
-                    {isCreatingNewClient ? newClientName || 'New Client' : activeClient?.name}
-                  </p>
-                  <p className="text-stone-600 mt-0.5">
-                    {isCreatingNewClient ? newClientAddress : activeClient?.address || 'Nairobi, Kenya'}
-                  </p>
-                  <p className="text-stone-500 text-[11px]">
-                    {isCreatingNewClient ? newClientEmail : activeClient?.email}
-                  </p>
-                </div>
-
-                <div className="sm:text-right space-y-1">
-                  <p className="text-[10px] font-bold text-stone-400 tracking-wider">Matter Details:</p>
-                  {activeMatter ? (
-                    <>
-                      <p className="font-mono font-bold text-[#0070ba] text-xs">{activeMatter.referenceNumber}</p>
-                      <p className="font-semibold text-stone-800 text-xs">{activeMatter.title}</p>
-                      <p className="text-stone-500 text-[11px]">{activeMatter.courtRegistry}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-mono font-bold text-[#0070ba] text-xs">MAA/GEN/2026/001</p>
-                      <p className="font-semibold text-stone-800 text-xs">General Legal Advisory & Retainer Representation</p>
-                    </>
-                  )}
-                  <p className="font-mono text-[10px] text-stone-500 mt-1">Firm KRA PIN: P0512839401Z</p>
-                </div>
-              </div>
-
-              {/* Items Table with VAT column */}
+          {/* Authentic Printed Invoice Sheet */}
+          <div className="w-full max-w-xl bg-white shadow-lg rounded-lg border border-[#DFD9CB] p-6 md:p-8 text-xs text-[#101826] space-y-5 animate-in fade-in duration-100">
+            
+            {/* Document Header */}
+            <div className="border-b-2 border-[#101826] pb-4 flex flex-col sm:flex-row justify-between gap-4">
               <div>
-                <p className="font-bold text-stone-900 mb-2 text-[11px] tracking-wider">
-                  Particulars of Professional Services & Disbursements Rendered
+                <CompanyLogo variant="horizontal" size="md" darkBg={false} />
+                <div className="mt-2.5 text-[11px] text-[#5B6472] leading-tight space-y-0.5">
+                  <p className="font-semibold text-[#101826]">Muthoni Ahago Advocates</p>
+                  <p>1st Floor, The Triple Two Address, Along the Eastern Bypass</p>
+                  <p>Ruiru, Kenya</p>
+                  <p>Tel: +254 (0)20 271 9900 | Email: billing@muthoniahago.co.ke</p>
+                </div>
+              </div>
+
+              <div className="text-right sm:self-start space-y-1 text-[11px]">
+                <div className="inline-block rounded bg-[#EFEAE0] border border-[#DFD9CB] px-2.5 py-1 font-mono font-extrabold text-[#101826]">
+                  TAX FEE NOTE / INVOICE
+                </div>
+                <p className="font-mono text-[#101826] font-bold mt-1">NO: {invoiceNumber}</p>
+                <p className="text-[#5B6472]">
+                  Date: {new Date(dateIssued).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </p>
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-stone-300 bg-stone-100 text-[10px] font-bold text-stone-600">
-                      <th className="py-2 px-3">Description of Work</th>
-                      <th className="py-2 px-3">Category</th>
-                      <th className="py-2 px-3 text-center">Qty / Hrs</th>
-                      <th className="py-2 px-3 text-right">Rate (KES)</th>
-                      <th className="py-2 px-3 text-center">VAT Rate</th>
-                      <th className="py-2 px-3 text-right">Amount (KES)</th>
+                <p className="text-[#5B6472]">
+                  Due: {new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+                <p className="text-[10px] text-[#B8873B] font-semibold">{paymentTerms}</p>
+              </div>
+            </div>
+
+            {/* Bill To & Matter Information Card */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#F6F4EF] p-3.5 rounded-md border border-[#DFD9CB]">
+              <div>
+                <p className="text-[10px] font-bold text-[#5B6472] uppercase tracking-wider">Bill To Client:</p>
+                <p className="font-bold text-[#101826] text-sm mt-0.5">
+                  {isCreatingNewClient ? (newClientName || 'New Client') : (activeClient?.name || 'Selected Client')}
+                </p>
+                <p className="text-[#5B6472] text-[11px] mt-0.5">
+                  {isCreatingNewClient ? newClientAddress : (activeClient?.address || 'Nairobi, Kenya')}
+                </p>
+                <p className="text-[#5B6472] text-[11px]">
+                  {isCreatingNewClient ? newClientEmail : activeClient?.email}
+                </p>
+                {activeClient?.kraPin && (
+                  <p className="font-mono text-[10px] text-[#5B6472] mt-0.5">
+                    Client KRA PIN: {activeClient.kraPin}
+                  </p>
+                )}
+              </div>
+
+              <div className="sm:text-right space-y-0.5">
+                <p className="text-[10px] font-bold text-[#5B6472] uppercase tracking-wider">Legal Matter Reference:</p>
+                {activeMatter ? (
+                  <>
+                    <p className="font-mono font-bold text-[#B8873B] text-xs">{activeMatter.referenceNumber}</p>
+                    <p className="font-semibold text-[#101826] text-xs">{activeMatter.title}</p>
+                    <p className="text-[#5B6472] text-[11px]">{activeMatter.courtRegistry}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-mono font-bold text-[#B8873B] text-xs">MAA/GEN/2026/001</p>
+                    <p className="font-semibold text-[#101826] text-xs">General Legal Advisory & Retainer</p>
+                  </>
+                )}
+                <p className="font-mono text-[10px] text-[#5B6472] pt-1">Firm KRA PIN: P0512839401Z</p>
+              </div>
+            </div>
+
+            {/* Line Items Table */}
+            <div>
+              <p className="font-bold text-[#101826] mb-2 text-[11px] tracking-wider uppercase">
+                Particulars of Professional Legal Services Rendered
+              </p>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#DFD9CB] bg-[#F6F4EF] text-[10px] font-bold text-[#5B6472]">
+                    <th className="py-2 px-2.5">Description</th>
+                    <th className="py-2 px-2">Category</th>
+                    <th className="py-2 px-2 text-center">Qty</th>
+                    <th className="py-2 px-2 text-right">Rate (KES)</th>
+                    <th className="py-2 px-2 text-center">VAT</th>
+                    <th className="py-2 px-2.5 text-right">Amount (KES)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#DFD9CB]/60 text-[11px]">
+                  {isQuickMode ? (
+                    <tr>
+                      <td className="py-2.5 px-2.5 font-bold text-[#101826]">
+                        {quickDescription || 'General Legal Representation'}
+                      </td>
+                      <td className="py-2.5 px-2 text-[#5B6472]">Prof. Fees</td>
+                      <td className="py-2.5 px-2 text-center font-mono">1</td>
+                      <td className="py-2.5 px-2 text-right font-mono">{quickAmountKES.toLocaleString()}</td>
+                      <td className="py-2.5 px-2 text-center">
+                        <span
+                          className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-bold font-mono ${
+                            quickIncludeVat
+                              ? 'bg-[#3F6B4F]/10 text-[#3F6B4F]'
+                              : 'bg-stone-100 text-stone-600'
+                          }`}
+                        >
+                          {quickIncludeVat ? '16%' : 'Exempt'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right font-mono font-bold text-[#101826]">
+                        {quickAmountKES.toLocaleString()}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-200 text-[11px]">
-                    {items.map((it) => {
+                  ) : (
+                    items.map((it) => {
                       const isItemTaxable = it.isTaxable !== false;
                       return (
                         <tr key={it.id}>
-                          <td className="py-2.5 px-3">
-                            <p className="font-bold text-stone-900">{it.description || 'Legal Representation'}</p>
+                          <td className="py-2 px-2.5">
+                            <p className="font-bold text-[#101826]">{it.description || 'Legal Representation'}</p>
                           </td>
-                          <td className="py-2.5 px-3 text-stone-500 text-[10px]">{it.category || 'Professional Fees'}</td>
-                          <td className="py-2.5 px-3 text-center font-mono font-bold">{it.quantity}</td>
-                          <td className="py-2.5 px-3 text-right font-mono">{it.unitPriceKES.toLocaleString()}</td>
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-2 px-2 text-[#5B6472] text-[10px]">{it.category || 'Prof. Fees'}</td>
+                          <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
+                          <td className="py-2 px-2 text-right font-mono">{it.unitPriceKES.toLocaleString()}</td>
+                          <td className="py-2 px-2 text-center">
                             <span
                               className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-bold font-mono ${
                                 isItemTaxable
-                                  ? 'bg-blue-100 text-blue-800'
+                                  ? 'bg-[#3F6B4F]/10 text-[#3F6B4F]'
                                   : 'bg-stone-100 text-stone-600'
                               }`}
                             >
                               {isItemTaxable ? '16%' : 'Exempt'}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-stone-900">
+                          <td className="py-2 px-2.5 text-right font-mono font-bold text-[#101826]">
                             {it.totalPriceKES.toLocaleString()}
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Financial Summary */}
-              <div className="flex justify-end pt-2 border-t border-stone-200">
-                <div className="w-full sm:w-72 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Taxable Legal Services:</span>
-                    <span className="font-mono font-bold">KES {taxableSubtotalKES.toLocaleString()}</span>
-                  </div>
-                  {nonTaxableSubtotalKES > 0 && (
-                    <div className="flex justify-between text-stone-600">
-                      <span>Exempt Disbursements:</span>
-                      <span className="font-mono font-bold">KES {nonTaxableSubtotalKES.toLocaleString()}</span>
-                    </div>
+                    })
                   )}
-                  <div className="flex justify-between text-stone-600">
-                    <span>Net Subtotal:</span>
-                    <span className="font-mono font-bold">KES {subtotalKES.toLocaleString()}</span>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Totals Breakdown in Document */}
+            <div className="flex justify-end pt-2 border-t border-[#DFD9CB]">
+              <div className="w-full sm:w-72 space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#5B6472]">
+                  <span>Taxable Legal Services:</span>
+                  <span className="font-mono font-bold text-[#101826]">
+                    KES {currentTaxableSubtotalKES.toLocaleString()}
+                  </span>
+                </div>
+                {currentNonTaxableSubtotalKES > 0 && (
+                  <div className="flex justify-between text-[#5B6472]">
+                    <span>Exempt CTS & Disbursements:</span>
+                    <span className="font-mono font-bold text-[#101826]">
+                      KES {currentNonTaxableSubtotalKES.toLocaleString()}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>16% VAT (KRA iTax):</span>
-                    <span className="font-mono font-bold text-stone-800">KES {totalVatAmountKES.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between bg-[#132c3f] text-white p-2.5 rounded font-bold text-sm mt-2">
-                    <span>TOTAL PAYABLE:</span>
-                    <span className="font-mono text-[#00c0ef]">KES {totalPayableKES.toLocaleString()}</span>
-                  </div>
+                )}
+                <div className="flex justify-between text-[#5B6472]">
+                  <span>Net Subtotal:</span>
+                  <span className="font-mono font-bold text-[#101826]">
+                    KES {currentSubtotalKES.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#5B6472]">
+                  <span>16% VAT (KRA iTax):</span>
+                  <span className="font-mono font-bold text-[#3F6B4F]">
+                    KES {currentVatKES.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between bg-[#101826] text-white p-2.5 rounded font-bold text-sm mt-2 border border-[#B8873B]/40">
+                  <span>TOTAL PAYABLE:</span>
+                  <span className="font-mono text-[#B8873B] text-base font-extrabold">
+                    KES {currentTotalPayableKES.toLocaleString()}
+                  </span>
                 </div>
               </div>
-
-              {/* Bank Remittance Instructions */}
-              <div className="rounded border border-blue-200 bg-blue-50/60 p-3 text-[11px] text-blue-950 space-y-1">
-                <p className="font-bold text-stone-900">Bank Remittance Instructions (Client Trust Account)</p>
-                <p>Bank: <strong className="text-stone-900">Stanbic Bank Kenya Ltd</strong> • Branch: <strong className="text-stone-900">Upper Hill Nairobi</strong></p>
-                <p>Account Name: <strong className="text-stone-900">Muthoni Ahago Advocates Client Acc</strong></p>
-                <p>Account No: <strong className="font-mono text-stone-900">0100004918239</strong> | Swift: <strong className="font-mono text-stone-900">SBKENXNA</strong></p>
-              </div>
-
-              {/* Footer */}
-              <div className="border-t border-stone-200 pt-3 flex items-center justify-end text-[10px] text-stone-400">
-                <p className="font-mono">Computer Generated Tax Invoice</p>
-              </div>
             </div>
-          </div>
-        )}
 
-        {/* Modal Bottom Actions */}
-        <div className="border-t border-stone-200 p-4 bg-white flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-stone-600">
-            Total Payable: <strong className="font-mono text-stone-900 text-sm font-bold">KES {totalPayableKES.toLocaleString()}</strong> ({items.length} items)
-          </div>
+            {/* Bank Remittance Instructions */}
+            <div className="rounded border border-[#DFD9CB] bg-[#F6F4EF] p-3 text-[11px] text-[#101826] space-y-0.5">
+              <p className="font-bold text-[#101826]">Bank Remittance Instructions (Client Trust Account)</p>
+              <p>Bank: <strong>Stanbic Bank Kenya Ltd</strong> • Branch: <strong>Upper Hill Nairobi</strong></p>
+              <p>Account Name: <strong>Muthoni Ahago Advocates Client Acc</strong></p>
+              <p>Account No: <strong className="font-mono">0100004918239</strong> | Swift: <strong className="font-mono">SBKENXNA</strong></p>
+            </div>
 
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
-            >
-              Cancel
-            </button>
+            {/* Footer */}
+            <div className="border-t border-[#DFD9CB] pt-2 flex items-center justify-between text-[10px] text-[#5B6472]">
+              <span>LSK Electronic Fee Note Specification</span>
+              <span className="font-mono">Computer Generated Tax Invoice</span>
+            </div>
 
-            {modalView === 'form' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setModalView('preview')}
-                  className="flex items-center space-x-1.5 rounded border border-[#0098db] text-[#0098db] bg-blue-50/50 px-3.5 py-2 text-xs font-bold hover:bg-blue-100/60 transition-colors cursor-pointer"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Preview Invoice</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSaveAndIssueInvoice('Pending')}
-                  className="flex items-center space-x-1.5 rounded bg-[#0098db] px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#0087c2] transition-colors cursor-pointer"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Generate & Issue Invoice</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setModalView('form')}
-                  className="rounded border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
-                >
-                  Back to Edit Form
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSaveAndIssueInvoice('Pending')}
-                  className="flex items-center space-x-1.5 rounded bg-[#0098db] px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#0087c2] transition-colors cursor-pointer"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>Confirm & Save to Ledger</span>
-                </button>
-              </>
-            )}
           </div>
         </div>
 
-        {/* Save as Reusable Template Modal Dialog */}
-        {isSaveAsTemplateOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-xs">
-            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-stone-200 overflow-hidden">
-              <div className="flex items-center justify-between border-b border-stone-200 bg-[#132c3f] px-5 py-3.5 text-white">
-                <div className="flex items-center space-x-2">
-                  <BookmarkPlus className="h-4 w-4 text-amber-400" />
-                  <h4 className="text-sm font-bold">Save Current Items as Reusable Fee Note Template</h4>
-                </div>
+      </div>
+
+      {/* Save as Reusable Template Modal Dialog */}
+      {isSaveAsTemplateOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-[#101826]/75 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#DFD9CB] overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#DFD9CB] bg-[#101826] px-5 py-3.5 text-white">
+              <div className="flex items-center space-x-2">
+                <BookmarkPlus className="h-4 w-4 text-[#B8873B]" />
+                <h4 className="font-fraunces text-sm font-bold">Save as Reusable Fee Note Template</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSaveAsTemplateOpen(false)}
+                className="text-stone-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCurrentAsTemplate} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-[#101826] mb-1">
+                  Template Title <span className="text-[#9C3B3B]">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={saveTemplateTitle}
+                  onChange={(e) => setSaveTemplateTitle(e.target.value)}
+                  placeholder="e.g. Standard High Court Litigation Package"
+                  required
+                  className="w-full rounded-lg border border-[#DFD9CB] bg-white px-3 py-2 text-xs text-[#101826] focus:border-[#B8873B] focus:ring-1 focus:ring-[#B8873B]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#101826] mb-1">
+                  Practice Area
+                </label>
+                <select
+                  value={saveTemplatePA}
+                  onChange={(e) => setSaveTemplatePA(e.target.value)}
+                  className="w-full rounded-lg border border-[#DFD9CB] bg-white px-3 py-2 text-xs text-[#101826]"
+                >
+                  <option value="Civil Litigation">Civil Litigation</option>
+                  <option value="Commercial Law">Commercial Law</option>
+                  <option value="Conveyancing Law">Conveyancing Law</option>
+                  <option value="Corporate & Tax">Corporate & Tax</option>
+                  <option value="Family & Succession">Family & Succession</option>
+                  <option value="Criminal Law">Criminal Law</option>
+                  <option value="IP & ICT Law">IP & ICT Law</option>
+                  <option value="Land & Environment">Land & Environment</option>
+                  <option value="All Practice Areas">All Practice Areas</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#101826] mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows={2}
+                  value={saveTemplateDesc}
+                  onChange={(e) => setSaveTemplateDesc(e.target.value)}
+                  placeholder="Brief description of the legal service scope and applicable scale..."
+                  className="w-full rounded-lg border border-[#DFD9CB] bg-white px-3 py-2 text-xs text-[#101826]"
+                />
+              </div>
+
+              <div className="rounded-lg bg-[#F6F4EF] border border-[#DFD9CB] p-2.5 text-[11px] text-[#5B6472] space-y-1">
+                <span className="font-bold text-[#101826]">Items to be saved ({items.length}):</span>
+                <ul className="list-disc pl-4 space-y-0.5 max-h-24 overflow-y-auto">
+                  {items.map((it, idx) => (
+                    <li key={idx} className="truncate">
+                      {it.description || 'Untitled Item'} (KES {(it.unitPriceKES || 0).toLocaleString()})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="border-t border-[#DFD9CB] pt-3 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => setIsSaveAsTemplateOpen(false)}
-                  className="text-stone-400 hover:text-white cursor-pointer"
+                  className="rounded-lg border border-[#DFD9CB] bg-white px-3 py-1.5 text-xs font-semibold text-[#5B6472] hover:bg-stone-50 cursor-pointer"
                 >
-                  ✕
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="rounded-lg bg-[#101826] hover:bg-[#1a2538] border border-[#B8873B]/50 px-4 py-1.5 text-xs font-bold text-white cursor-pointer"
+                >
+                  Save to Settings
                 </button>
               </div>
-
-              <form onSubmit={handleSaveCurrentAsTemplate} className="p-5 space-y-4 text-xs">
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">
-                    Template Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={saveTemplateTitle}
-                    onChange={(e) => setSaveTemplateTitle(e.target.value)}
-                    placeholder="e.g. Standard High Court Litigation Package"
-                    required
-                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-[#0070ba] focus:ring-1 focus:ring-[#0070ba]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">
-                    Practice Area
-                  </label>
-                  <select
-                    value={saveTemplatePA}
-                    onChange={(e) => setSaveTemplatePA(e.target.value)}
-                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900"
-                  >
-                    <option value="Civil Litigation">Civil Litigation</option>
-                    <option value="Commercial Law">Commercial Law</option>
-                    <option value="Conveyancing Law">Conveyancing Law</option>
-                    <option value="Corporate & Tax">Corporate & Tax</option>
-                    <option value="Family & Succession">Family & Succession</option>
-                    <option value="Criminal Law">Criminal Law</option>
-                    <option value="IP & ICT Law">IP & ICT Law</option>
-                    <option value="Land & Environment">Land & Environment</option>
-                    <option value="All Practice Areas">All Practice Areas</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={saveTemplateDesc}
-                    onChange={(e) => setSaveTemplateDesc(e.target.value)}
-                    placeholder="Brief description of the legal service scope and applicable scale..."
-                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900"
-                  />
-                </div>
-
-                <div className="rounded-lg bg-stone-50 border border-stone-200 p-2.5 text-[11px] text-stone-600 space-y-1">
-                  <span className="font-bold text-stone-800">Items to be saved ({items.length}):</span>
-                  <ul className="list-disc pl-4 space-y-0.5 max-h-24 overflow-y-auto">
-                    {items.map((it, idx) => (
-                      <li key={idx} className="truncate">
-                        {it.description || 'Untitled Item'} (KES {(it.unitPriceKES || 0).toLocaleString()})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="border-t border-stone-200 pt-3 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setIsSaveAsTemplateOpen(false)}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-[#0070ba] hover:bg-[#005a96] px-4 py-1.5 text-xs font-bold text-white cursor-pointer"
-                  >
-                    Save to Settings
-                  </button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
     </div>
   );
 };

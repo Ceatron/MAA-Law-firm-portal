@@ -63,9 +63,13 @@
   font-weight: 600;
 }
 
+.font-fraunces {
+  font-family: 'Fraunces', Georgia, serif;
+}
+
 .font-serif-title,
 .font-serif {
-  font-family: var(--font-heading);
+  font-family: 'Fraunces', Georgia, serif;
   font-weight: 600;
 }
 
