@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   CheckSquare,
   Plus,
@@ -115,6 +115,34 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus search input when '/' is pressed, or clear with 'Escape'
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
+      if (e.key === '/' && !isInput) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        if (searchQuery) {
+          setSearchQuery('');
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchQuery]);
+
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [selectedAssignee, setSelectedAssignee] = useState<string>('all');
@@ -332,12 +360,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
       const normStat = normalizeStatus(t.status);
       const normPrio = normalizePriority(t.priority);
 
+      const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.matterRef.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.assignedTo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        !query ||
+        t.title?.toLowerCase().includes(query) ||
+        t.matterRef?.toLowerCase().includes(query) ||
+        t.clientName?.toLowerCase().includes(query) ||
+        t.assignedTo?.toLowerCase().includes(query) ||
+        t.description?.toLowerCase().includes(query) ||
+        t.priority?.toLowerCase().includes(query) ||
+        t.status?.toLowerCase().includes(query) ||
+        t.subtasks?.some((st) => st.title?.toLowerCase().includes(query));
 
       const matchesStatus =
         selectedStatus === 'all' || normStat === selectedStatus;
@@ -574,55 +607,172 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </button>
       </div>
 
-      {/* Search, More Filters, & Sort Bar */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-          <div className="flex items-center gap-4 flex-wrap">
-            {/* Search Input Box */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search tasks"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white pl-8.5 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:border-slate-400 focus:outline-none w-56 shadow-2xs"
-              />
+      {/* Search, Filters & Quick Actions Toolbar */}
+      <div className="space-y-2.5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
+          {/* Prominent Search Bar */}
+          <div className="relative flex-1 max-w-xl group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400 group-focus-within:text-amber-600 transition-colors" />
             </div>
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search tasks by title, matter ref, client, advocate, or checklist item..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-14 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 focus:outline-none shadow-2xs transition"
+            />
+            {/* Clear button or shortcut hint */}
+            <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center gap-1.5">
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  className="rounded-md p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  title="Clear search query"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-100 rounded border border-slate-200 select-none">
+                  /
+                </kbd>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Filter Buttons & Sort Control */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Quick 'My Tasks' shortcut if current user has an advocate identity */}
+            {currentAdvocate?.name && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedAssignee === currentAdvocate.name) {
+                    setSelectedAssignee('all');
+                  } else {
+                    setSelectedAssignee(currentAdvocate.name);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-2xs transition cursor-pointer ${
+                  selectedAssignee === currentAdvocate.name
+                    ? 'bg-[#121c2b] border-[#121c2b] text-white'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <User className="h-3.5 w-3.5" />
+                <span>My Tasks</span>
+              </button>
+            )}
 
             {/* More Filters Toggle */}
             <button
               type="button"
               onClick={() => setIsFiltersOpen(!isFiltersOpen)}
-              className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 font-medium cursor-pointer"
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-2xs transition cursor-pointer ${
+                isFiltersOpen || activeFilterCount > (selectedPriority !== 'all' ? 1 : 0)
+                  ? 'bg-amber-50 border-amber-300 text-amber-900'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
             >
-              <span>{isFiltersOpen ? '▴ Less filters' : '▾ More filters'}</span>
+              <SlidersHorizontal className="h-3.5 w-3.5 text-amber-600" />
+              <span>Filters</span>
               {activeFilterCount > (selectedPriority !== 'all' ? 1 : 0) && (
                 <span className="rounded-full bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[10px] font-bold">
                   {activeFilterCount - (selectedPriority !== 'all' ? 1 : 0)}
                 </span>
               )}
             </button>
-          </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-1 text-xs text-slate-500">
-            <span>Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as TaskSortOption)}
-              className="bg-transparent border-0 py-1 pl-1 pr-6 text-xs text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer"
-            >
-              <option value="priority-desc">Priority, high → low</option>
-              <option value="priority-asc">Priority, low → high</option>
-              <option value="due-asc">Due date, soonest</option>
-              <option value="due-desc">Due date, latest</option>
-              <option value="status-open">Open & in progress first</option>
-              <option value="title-asc">Title, A to Z</option>
-              <option value="created-desc">Newest created</option>
-            </select>
+            {/* Sort Selector */}
+            <div className="flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-2xs text-xs text-slate-700">
+              <span className="text-slate-400 mr-1.5 hidden sm:inline">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as TaskSortOption)}
+                aria-label="Sort tasks by"
+                className="bg-transparent border-0 text-xs text-slate-800 font-medium focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="priority-desc">Priority (High → Low)</option>
+                <option value="priority-asc">Priority (Low → High)</option>
+                <option value="due-asc">Due Date (Soonest)</option>
+                <option value="due-desc">Due Date (Latest)</option>
+                <option value="status-open">Open & In Progress First</option>
+                <option value="title-asc">Title (A to Z)</option>
+                <option value="created-desc">Newest Created</option>
+              </select>
+            </div>
           </div>
         </div>
+
+        {/* Active Search & Filters Info Bar */}
+        {(searchQuery.trim() !== '' || activeFilterCount > 0) && (
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200/80 text-xs text-slate-700 flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-900">
+                {filteredAndSortedTasks.length} {filteredAndSortedTasks.length === 1 ? 'task' : 'tasks'} found
+              </span>
+              {searchQuery.trim() !== '' && (
+                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 px-2 py-0.5 rounded-md text-[11px] text-slate-700 font-medium shadow-2xs">
+                  matching &ldquo;<span className="font-bold text-amber-700">{searchQuery.trim()}</span>&rdquo;
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                    title="Remove search query"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {selectedAssignee !== 'all' && (
+                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 px-2 py-0.5 rounded-md text-[11px] text-slate-700 font-medium shadow-2xs">
+                  Assigned to: <strong className="text-slate-900">{selectedAssignee}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAssignee('all')}
+                    className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                    title="Clear assignee filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {selectedMatterFilter !== 'all' && (
+                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 px-2 py-0.5 rounded-md text-[11px] text-slate-700 font-medium shadow-2xs">
+                  Matter filtered
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMatterFilter('all')}
+                    className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                    title="Clear matter filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedStatus('all');
+                setSelectedPriority('all');
+                setSelectedAssignee('all');
+                setSelectedMatterFilter('all');
+              }}
+              className="text-xs text-amber-700 hover:text-amber-800 font-semibold underline cursor-pointer ml-auto shrink-0"
+            >
+              Reset all filters
+            </button>
+          </div>
+        )}
 
         {/* Collapsible More Filters panel */}
         {isFiltersOpen && (
@@ -691,31 +841,59 @@ export const TasksView: React.FC<TasksViewProps> = ({
       {filteredAndSortedTasks.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white p-16 sm:p-20 text-center space-y-4 shadow-2xs">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100/70 text-amber-600">
-            <Check className="h-6 w-6 stroke-[2.5]" />
+            {searchQuery.trim() ? (
+              <Search className="h-6 w-6 stroke-[2.5]" />
+            ) : (
+              <Check className="h-6 w-6 stroke-[2.5]" />
+            )}
           </div>
           <div className="space-y-1.5">
             <h3 className="font-heading font-bold text-slate-900 text-base">
-              {tasks.length === 0 ? 'No tasks assigned yet' : 'No matching tasks found'}
+              {tasks.length === 0
+                ? 'No tasks assigned yet'
+                : searchQuery.trim()
+                ? `No tasks matching "${searchQuery.trim()}"`
+                : 'No matching tasks found'}
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
               {tasks.length === 0
                 ? "Create a task and connect it to a matter, research file, or client instruction to get your chamber's board moving."
-                : 'No task records match your active search keywords or filter criteria.'}
+                : searchQuery.trim()
+                ? 'No task records matched your search query across titles, matters, clients, assignees, or subtasks.'
+                : 'No task records match your active filter criteria.'}
             </p>
           </div>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (matters.length > 0 && !newMatterId) {
-                  setNewMatterId(matters[0].id);
-                }
-                setIsAssignModalOpen(true);
-              }}
-              className="rounded-lg bg-[#121c2b] hover:bg-slate-800 px-4 py-2 text-xs font-semibold text-white shadow-2xs transition cursor-pointer"
-            >
-              Assign new task
-            </button>
+            {searchQuery.trim() || activeFilterCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedStatus('all');
+                  setSelectedPriority('all');
+                  setSelectedAssignee('all');
+                  setSelectedMatterFilter('all');
+                  searchInputRef.current?.focus();
+                }}
+                className="rounded-lg bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-semibold text-white shadow-2xs transition cursor-pointer"
+              >
+                Clear search & filters
+              </button>
+            ) : null}
+            {canAssignTasks && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (matters.length > 0 && !newMatterId) {
+                    setNewMatterId(matters[0].id);
+                  }
+                  setIsAssignModalOpen(true);
+                }}
+                className="rounded-lg bg-[#121c2b] hover:bg-slate-800 px-4 py-2 text-xs font-semibold text-white shadow-2xs transition cursor-pointer"
+              >
+                Assign new task
+              </button>
+            )}
           </div>
         </div>
       ) : (
