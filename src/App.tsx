@@ -762,6 +762,7 @@ export default function App() {
               tasks={tasks}
               onUpdateTasks={handleUpdateTasks}
               matters={matters}
+              clients={clients}
               onOpenNewMatter={canAssignMatters ? () => setIsNewMatterOpen(true) : undefined}
               onSelectMatter={(m) => setSelectedMatter(m)}
               onAddNotification={(newNotif) => setNotifications((prev) => [newNotif, ...prev])}

@@ -395,7 +395,10 @@ export interface TaskItem {
   description: string;
   matterId: string;
   matterRef: string;
+  matterTitle?: string;
+  transactionTitle?: string;
   clientName: string;
+  clientId?: string;
   assignedTo: string;
   assignedToId?: string;
   assignedToEmail?: string;

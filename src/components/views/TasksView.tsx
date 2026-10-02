@@ -25,8 +25,14 @@ import {
   ChevronUp,
   Circle,
   ListTodo,
+  Building2,
+  Phone,
+  MapPin,
+  Shield,
+  FileText,
+  Info,
 } from 'lucide-react';
-import { TaskItem, Advocate, LegalMatter, NotificationItem } from '../../types';
+import { TaskItem, Advocate, LegalMatter, NotificationItem, Client } from '../../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../../utils/staffStorage';
 import {
   generateTaskEmailPayload,
@@ -38,7 +44,7 @@ import {
 import { TaskEmailNotificationModal } from '../TaskEmailNotificationModal';
 import { TaskPerformanceCard } from '../TaskPerformanceCard';
 import { isTaskVisibleToUser, canUserViewAll, namesMatch } from '../../utils/visibilityRules';
-import { deleteStoredTask } from '../../utils/chambersDataStorage';
+import { deleteStoredTask, loadSavedClients } from '../../utils/chambersDataStorage';
 
 // Priority Level Definition (High, Medium, Low)
 export type TaskPriorityLevel = 'High' | 'Medium' | 'Low';
@@ -77,6 +83,7 @@ interface TasksViewProps {
   currentAdvocate?: Advocate;
   isManagingAdvocate?: boolean;
   matters?: LegalMatter[];
+  clients?: Client[];
   onOpenNewMatter?: () => void;
   tasks?: TaskItem[];
   onUpdateTasks?: (tasks: TaskItem[]) => void;
@@ -88,6 +95,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   currentAdvocate,
   isManagingAdvocate = true,
   matters = [],
+  clients: propClients = [],
   onOpenNewMatter,
   tasks: propTasks,
   onUpdateTasks,
@@ -95,6 +103,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onAddNotification,
 }) => {
   const staffList = loadVisibleStaffRoster();
+  const [internalClients] = useState<Client[]>(() => loadSavedClients());
+  const clients = propClients.length > 0 ? propClients : internalClients;
   const isSysAdmin = isSysAdminUser(currentAdvocate);
   const isManagingUser =
     isSysAdmin ||
@@ -170,9 +180,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [selectedEmailPayload, setSelectedEmailPayload] = useState<TaskEmailPayload | null>(null);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
+  // Sanitize matters across Chambers tasks
+  const sanitizedMatters = useMemo(() => {
+    return (matters || []).filter(
+      (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+    );
+  }, [matters]);
+
   // New task form state
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newClientId, setNewClientId] = useState('');
   const [newMatterId, setNewMatterId] = useState('');
   const [newAssignedTo, setNewAssignedTo] = useState(
     currentAdvocate?.name || staffList[0]?.name || 'Advocate'
@@ -184,15 +202,90 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [newSubtaskInput, setNewSubtaskInput] = useState('');
   const [newSubtasks, setNewSubtasks] = useState<string[]>([]);
 
-  // When matters change or modal opens, default newMatterId if needed
-  useEffect(() => {
-    if (matters.length > 0 && !newMatterId) {
-      setNewMatterId(matters[0].id);
-      if (matters[0].responsibleAdvocateName) {
-        setNewAssignedTo(matters[0].responsibleAdvocateName);
+  // Interactive Client Details Modal state
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
+
+  // Deletion Confirmation Dialog States
+  const [taskToDelete, setTaskToDelete] = useState<TaskItem | null>(null);
+  const [subtaskToDelete, setSubtaskToDelete] = useState<{
+    taskId: string;
+    subtaskId: string;
+    text: string;
+  } | null>(null);
+  const [formSubtaskIndexToRemove, setFormSubtaskIndexToRemove] = useState<number | null>(null);
+
+  // Available transactions for currently selected client in Task Assignment Modal
+  const availableTransactionsForClient = useMemo(() => {
+    if (!newClientId) return sanitizedMatters;
+    const selClient = clients.find((c) => c.id === newClientId);
+    const clientNameNorm = selClient?.name.toLowerCase() || '';
+    return sanitizedMatters.filter(
+      (m) =>
+        (m.clientId && m.clientId === newClientId) ||
+        (clientNameNorm && m.clientName.toLowerCase() === clientNameNorm)
+    );
+  }, [newClientId, clients, sanitizedMatters]);
+
+  // When client changes in the task assignment modal
+  const handleClientSelectionChange = (clientId: string) => {
+    setNewClientId(clientId);
+    if (!clientId) return;
+    const selClient = clients.find((c) => c.id === clientId);
+    const clientNameNorm = selClient?.name.toLowerCase() || '';
+    const clientMatters = sanitizedMatters.filter(
+      (m) =>
+        (m.clientId && m.clientId === clientId) ||
+        (clientNameNorm && m.clientName.toLowerCase() === clientNameNorm)
+    );
+    if (clientMatters.length > 0) {
+      setNewMatterId(clientMatters[0].id);
+      if (clientMatters[0].responsibleAdvocateName) {
+        setNewAssignedTo(clientMatters[0].responsibleAdvocateName);
+      }
+    } else {
+      setNewMatterId('');
+    }
+  };
+
+  // When transaction/matter changes in the task assignment modal
+  const handleMatterSelectionChange = (matterId: string) => {
+    setNewMatterId(matterId);
+    if (!matterId) return;
+    const m = sanitizedMatters.find((item) => item.id === matterId);
+    if (m) {
+      if (m.responsibleAdvocateName) {
+        setNewAssignedTo(m.responsibleAdvocateName);
+      }
+      const matchedClient = clients.find(
+        (c) =>
+          (m.clientId && c.id === m.clientId) ||
+          c.name.toLowerCase() === m.clientName.toLowerCase()
+      );
+      if (matchedClient) {
+        setNewClientId(matchedClient.id);
       }
     }
-  }, [matters, newMatterId]);
+  };
+
+  // Default initial matter and client when modal opens or matters change
+  useEffect(() => {
+    if (sanitizedMatters.length > 0 && !newMatterId) {
+      setNewMatterId(sanitizedMatters[0].id);
+      if (sanitizedMatters[0].responsibleAdvocateName) {
+        setNewAssignedTo(sanitizedMatters[0].responsibleAdvocateName);
+      }
+      if (sanitizedMatters[0].clientId) {
+        setNewClientId(sanitizedMatters[0].clientId);
+      } else {
+        const matchingClient = clients.find(
+          (c) => c.name.toLowerCase() === sanitizedMatters[0].clientName.toLowerCase()
+        );
+        if (matchingClient) {
+          setNewClientId(matchingClient.id);
+        }
+      }
+    }
+  }, [sanitizedMatters, newMatterId, clients]);
 
   const triggerToast = (text: string, actionLabel?: string, actionPayload?: TaskEmailPayload) => {
     setToastMessage({ text, actionLabel, actionPayload });
@@ -249,11 +342,125 @@ export const TasksView: React.FC<TasksViewProps> = ({
     updateTasksList(updated);
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    deleteStoredTask(taskId);
-    const updated = tasks.filter((t) => t.id !== taskId);
+  // Delete task initiating confirmation dialogue
+  const handleDeleteTask = (taskOrId: TaskItem | string) => {
+    const task = typeof taskOrId === 'string' ? tasks.find((t) => t.id === taskOrId) : taskOrId;
+    if (task) {
+      setTaskToDelete(task);
+    }
+  };
+
+  // Confirmed task deletion
+  const handleConfirmDelete = () => {
+    if (!taskToDelete) return;
+    deleteStoredTask(taskToDelete.id);
+    const updated = tasks.filter((t) => t.id !== taskToDelete.id);
     updateTasksList(updated);
-    triggerToast('Task deleted from assignment board.');
+    triggerToast(`Task "${taskToDelete.title}" deleted.`);
+    setTaskToDelete(null);
+  };
+
+  // Confirmed subtask deletion
+  const handleConfirmDeleteSubtask = () => {
+    if (!subtaskToDelete) return;
+    const updated = tasks.map((t) => {
+      if (t.id === subtaskToDelete.taskId) {
+        return {
+          ...t,
+          subtasks: t.subtasks.filter((s) => s.id !== subtaskToDelete.subtaskId),
+        };
+      }
+      return t;
+    });
+    updateTasksList(updated);
+    triggerToast(`Checklist step deleted.`);
+    setSubtaskToDelete(null);
+  };
+
+  // Confirmed removal of subtask from creation form
+  const handleConfirmRemoveFormSubtask = () => {
+    if (formSubtaskIndexToRemove === null) return;
+    setNewSubtasks(newSubtasks.filter((_, i) => i !== formSubtaskIndexToRemove));
+    setFormSubtaskIndexToRemove(null);
+  };
+
+  // Open Client Details Modal
+  const handleOpenClientDetails = (clientName?: string, clientId?: string) => {
+    if (!clientName && !clientId) return;
+    let found = clients.find(
+      (c) => (clientId && c.id === clientId) || (clientName && c.name.toLowerCase() === clientName.toLowerCase())
+    );
+    if (!found && clientName) {
+      found = {
+        id: clientId || `client-ref-${Date.now()}`,
+        name: clientName,
+        type: clientName.toLowerCase().includes('ltd') ||
+              clientName.toLowerCase().includes('bank') ||
+              clientName.toLowerCase().includes('properties') ||
+              clientName.toLowerCase().includes('limited')
+                ? 'Corporate'
+                : 'Individual',
+        industry: 'Commercial Practice / Retainer Client',
+        contactPerson: clientName,
+        email: `info@${clientName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}.co.ke`,
+        phone: '+254 700 000 000',
+        city: 'Nairobi, Kenya',
+        activeMattersCount: sanitizedMatters.filter((m) => m.clientName.toLowerCase() === clientName.toLowerCase()).length || 1,
+        totalBilledKES: 0,
+      };
+    }
+    if (found) {
+      setViewingClient(found);
+    }
+  };
+
+  // Open Transaction / Legal Matter Details Drawer
+  const handleOpenTransactionDetails = (matter?: LegalMatter, task?: TaskItem) => {
+    let targetMatter =
+      matter ||
+      (task
+        ? sanitizedMatters.find(
+            (m) =>
+              (task.matterId && m.id === task.matterId) ||
+              (task.matterRef && m.referenceNumber === task.matterRef) ||
+              (task.matterTitle && m.title.toLowerCase() === task.matterTitle.toLowerCase()) ||
+              (task.transactionTitle && m.title.toLowerCase() === task.transactionTitle.toLowerCase())
+          )
+        : undefined);
+
+    if (!targetMatter && task) {
+      targetMatter = sanitizedMatters.find(
+        (m) => task.clientName && m.clientName.toLowerCase() === task.clientName.toLowerCase()
+      );
+    }
+
+    if (!targetMatter && task) {
+      targetMatter = {
+        id: task.matterId || `matter-trx-${task.id}`,
+        referenceNumber: task.matterRef || `MAA/TRX/2026/${task.id.slice(-3)}`,
+        title: task.matterTitle || task.transactionTitle || `${task.title} (Transaction File)`,
+        clientName: task.clientName || 'General Client',
+        practiceArea: 'Commercial Practice & Advisory',
+        status: 'Active',
+        description: task.description || `Transaction workspace file for ${task.title}. Client: ${task.clientName}.`,
+        responsibleAdvocateId: task.assignedToId || currentAdvocate?.id || 'adv-1',
+        responsibleAdvocateName: task.assignedTo || currentAdvocate?.name || 'Adv. Paul Ahago',
+        createdDate: task.startDate || new Date().toISOString().split('T')[0],
+        nextDeadlineDate: task.dueDate || new Date().toISOString().split('T')[0],
+        nextDeadlineDescription: task.title,
+        priority: (task.priority === 'Critical' ? 'Critical' : task.priority === 'High' ? 'High' : 'Medium') as any,
+        documentsCount: 0,
+        billedKES: 0,
+        paidKES: 0,
+        estimatedFeeKES: 0,
+      };
+    }
+
+    if (targetMatter && onSelectMatter) {
+      onSelectMatter(targetMatter);
+    } else if (task) {
+      triggerToast(`Transaction: ${task.matterTitle || task.matterRef} (${task.clientName})`);
+    }
   };
 
   const handleAddSubtaskItem = () => {
@@ -262,12 +469,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setNewSubtaskInput('');
   };
 
-  const handleRemoveSubtaskItem = (index: number) => {
-    setNewSubtasks(newSubtasks.filter((_, i) => i !== index));
-  };
-
   const handleOpenEmailPreviewForTask = (task: TaskItem) => {
-    const connectedMatter = matters.find((m) => m.id === task.matterId);
+    const connectedMatter = sanitizedMatters.find(
+      (m) => (task.matterId && m.id === task.matterId) || (task.matterRef && m.referenceNumber === task.matterRef)
+    );
     const payload = generateTaskEmailPayload(task, staffList, connectedMatter);
     setSelectedEmailPayload(payload);
     setIsEmailModalOpen(true);
@@ -277,18 +482,38 @@ export const TasksView: React.FC<TasksViewProps> = ({
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    const selectedMatter = matters.find((m) => m.id === newMatterId);
+    const selectedMatter = sanitizedMatters.find((m) => m.id === newMatterId);
+    const chosenClient =
+      clients.find((c) => c.id === newClientId) ||
+      (selectedMatter?.clientName
+        ? clients.find((c) => c.name.toLowerCase() === selectedMatter.clientName.toLowerCase())
+        : undefined);
+
+    const clientDisplayName =
+      chosenClient?.name ||
+      selectedMatter?.clientName ||
+      (newClientId ? clients.find((c) => c.id === newClientId)?.name : '') ||
+      'General Chambers Client';
+
+    const matterReference =
+      selectedMatter?.referenceNumber ||
+      (chosenClient ? `TRX-${chosenClient.name.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}` : 'General Task');
+
+    const matterTitle = selectedMatter?.title || (newMatterId ? 'Matter Action' : undefined);
 
     const mappedStatus =
       newStatus === 'running' ? 'In Progress' : newStatus === 'closed' ? 'Completed' : 'Not Started';
 
     const newTask: TaskItem = {
       id: `tsk-${Date.now()}`,
-      title: newTitle,
-      description: newDescription,
-      matterId: selectedMatter?.id || 'general-task',
-      matterRef: selectedMatter?.referenceNumber || 'General Chambers Task',
-      clientName: selectedMatter?.clientName || 'General Administration',
+      title: newTitle.trim(),
+      description: newDescription.trim(),
+      matterId: selectedMatter?.id || (newMatterId ? newMatterId : 'general-task'),
+      matterRef: matterReference,
+      matterTitle: matterTitle,
+      transactionTitle: matterTitle,
+      clientName: clientDisplayName,
+      clientId: chosenClient?.id || selectedMatter?.clientId || (newClientId || undefined),
       assignedTo: newAssignedTo,
       assignedToId: staffList.find((a) => namesMatch(a.name, newAssignedTo))?.id,
       assignedToEmail: getAdvocateEmailByName(newAssignedTo, staffList).email,
@@ -329,18 +554,33 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setIsAssignModalOpen(false);
     setNewTitle('');
     setNewDescription('');
+    setNewSubtasks([]);
+    setNewSubtaskInput('');
 
-    triggerToast(`Task assigned to ${newAssignedTo}.`);
+    triggerToast(`Task assigned to ${newAssignedTo} under transaction ${matterReference}.`);
   };
+
+  // Matters and Tasks for the currently viewed client in Client Details modal
+  const clientMattersForViewing = useMemo(() => {
+    if (!viewingClient) return [];
+    return (sanitizedMatters || []).filter(
+      (m) =>
+        m.clientId === viewingClient.id ||
+        m.clientName.toLowerCase() === viewingClient.name.toLowerCase()
+    );
+  }, [viewingClient, sanitizedMatters]);
+
+  const clientTasksForViewing = useMemo(() => {
+    if (!viewingClient) return [];
+    return (tasks || []).filter(
+      (t) =>
+        t.clientId === viewingClient.id ||
+        t.clientName.toLowerCase() === viewingClient.name.toLowerCase()
+    );
+  }, [viewingClient, tasks]);
 
   // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
   const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
-
-  const sanitizedMatters = useMemo(() => {
-    return (matters || []).filter(
-      (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
-    );
-  }, [matters]);
 
   const scopedTasks = (effectiveCanViewAll
     ? tasks
@@ -968,7 +1208,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         {/* Mobile-only delete button */}
                         <button
                           type="button"
-                          onClick={() => handleDeleteTask(task.id)}
+                          onClick={() => handleDeleteTask(task)}
                           className="lg:hidden rounded-lg p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                           title="Delete task"
                         >
@@ -977,7 +1217,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       </div>
 
                       {/* 2. Task Details, Badges & Matter (Col 4) */}
-                      <div className="lg:col-span-4 min-w-0 space-y-1">
+                      <div className="lg:col-span-4 min-w-0 space-y-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {/* Priority Pill */}
                           <span
@@ -1021,34 +1261,21 @@ export const TasksView: React.FC<TasksViewProps> = ({
                             <span>{isClosed ? 'Closed' : isRunning ? 'Running' : 'Open'}</span>
                           </span>
 
-                          {/* Matter Ref Badge */}
-                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 border border-slate-200">
-                            <Briefcase className="h-2.5 w-2.5 text-slate-500" />
-                            <span>{task.matterRef}</span>
-                          </span>
-
-                          {connectedMatter && onSelectMatter && (
-                            <button
-                              type="button"
-                              onClick={() => onSelectMatter(connectedMatter)}
-                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-800 hover:underline cursor-pointer"
-                              title="Open matter workspace file"
-                            >
-                              <span>Open File</span>
-                              <ExternalLink className="h-2.5 w-2.5" />
-                            </button>
-                          )}
                         </div>
 
-                        {/* Title & Description */}
+                        {/* Title & Description - Task title is clickable to open transaction details */}
                         <div>
-                          <h4
-                            className={`text-sm font-bold text-slate-900 leading-snug ${
-                              isClosed ? 'line-through text-slate-400' : ''
-                            }`}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTransactionDetails(connectedMatter, task)}
+                            className="text-left font-bold text-slate-900 leading-snug hover:text-amber-800 hover:underline cursor-pointer group inline-flex items-start gap-1.5 text-sm"
+                            title="Click task title to open transaction details"
                           >
-                            {task.title}
-                          </h4>
+                            <span className={isClosed ? 'line-through text-slate-400' : ''}>
+                              {task.title}
+                            </span>
+                            <ExternalLink className="h-3 w-3 text-slate-400 opacity-60 group-hover:opacity-100 group-hover:text-amber-800 shrink-0 mt-0.5" />
+                          </button>
                           {task.description && (
                             <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
                               {task.description}
@@ -1056,9 +1283,43 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           )}
                         </div>
 
-                        {/* Client context */}
-                        <div className="text-[11px] text-slate-500">
-                          Client: <span className="font-semibold text-slate-700">{task.clientName}</span>
+                        {/* Linked Client & Linked Transaction Context */}
+                        <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[11px]">
+                          {/* Clickable Client Badge */}
+                          <div className="inline-flex items-center gap-1 text-slate-500">
+                            <span className="text-slate-400 font-medium text-[10px]">Client:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenClientDetails(task.clientName, task.clientId)}
+                              className="font-semibold text-slate-800 hover:text-amber-800 hover:underline cursor-pointer inline-flex items-center gap-1 group bg-slate-100/80 hover:bg-amber-50 px-2 py-0.5 rounded-md transition border border-slate-200/70"
+                              title={`Click to view client details for ${task.clientName}`}
+                            >
+                              <Building2 className="h-2.5 w-2.5 text-slate-500 group-hover:text-amber-700" />
+                              <span>{task.clientName}</span>
+                            </button>
+                          </div>
+
+                          <span className="text-slate-300">•</span>
+
+                          {/* Clickable Transaction Badge */}
+                          <div className="inline-flex items-center gap-1 text-slate-500">
+                            <span className="text-slate-400 font-medium text-[10px]">Transaction:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTransactionDetails(connectedMatter, task)}
+                              className="font-semibold text-amber-900 hover:text-amber-950 hover:underline cursor-pointer inline-flex items-center gap-1 group bg-amber-50/90 hover:bg-amber-100 px-2 py-0.5 rounded-md transition border border-amber-200/80 max-w-full"
+                              title={`Click to open transaction details: ${task.matterRef} - ${task.matterTitle || task.transactionTitle || connectedMatter?.title || ''}`}
+                            >
+                              <Briefcase className="h-2.5 w-2.5 text-amber-700 shrink-0" />
+                              <span className="font-mono text-[10px] font-bold shrink-0">{task.matterRef}</span>
+                              {(task.matterTitle || task.transactionTitle || connectedMatter?.title) && (
+                                <span className="truncate max-w-[190px] text-slate-700 font-medium text-[11px]">
+                                  — {task.matterTitle || task.transactionTitle || connectedMatter?.title}
+                                </span>
+                              )}
+                              <ExternalLink className="h-2.5 w-2.5 text-amber-700 opacity-60 group-hover:opacity-100 shrink-0" />
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -1140,19 +1401,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
                       {/* 6. Inline Selectors & Actions (Col 2) */}
                       <div className="lg:col-span-2 flex items-center lg:justify-end gap-1.5 flex-wrap">
-                        {/* Priority Selector */}
-                        <select
-                          value={currentNormPriority}
-                          onChange={(e) =>
-                            handlePriorityChange(task.id, e.target.value as TaskPriorityLevel)
-                          }
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer focus:outline-none shadow-2xs"
-                          title="Change Priority Level"
-                        >
-                          <option value="High">High</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Low">Low</option>
-                        </select>
 
                         {/* Status Setter */}
                         <select
@@ -1169,7 +1417,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         {/* Delete Button (desktop) */}
                         <button
                           type="button"
-                          onClick={() => handleDeleteTask(task.id)}
+                          onClick={() => handleDeleteTask(task)}
                           className="hidden lg:inline-flex rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition"
                           title="Delete task"
                         >
@@ -1195,22 +1443,42 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                           {task.subtasks.map((st) => (
-                            <label
+                            <div
                               key={st.id}
-                              className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-2 rounded-lg border border-slate-200/70 transition bg-white/70"
+                              className="flex items-center justify-between gap-2 text-xs text-slate-700 hover:bg-white p-2 rounded-lg border border-slate-200/70 transition bg-white/70 group"
                             >
-                              <input
-                                type="checkbox"
-                                checked={st.completed}
-                                onChange={() => handleToggleSubtask(task.id, st.id)}
-                                className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer"
-                              />
-                              <span
-                                className={st.completed ? 'line-through text-slate-400' : 'font-medium'}
+                              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={st.completed}
+                                  onChange={() => handleToggleSubtask(task.id, st.id)}
+                                  className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer shrink-0"
+                                />
+                                <span
+                                  className={
+                                    st.completed
+                                      ? 'line-through text-slate-400 truncate'
+                                      : 'font-medium truncate'
+                                  }
+                                >
+                                  {st.text}
+                                </span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSubtaskToDelete({
+                                    taskId: task.id,
+                                    subtaskId: st.id,
+                                    text: st.text,
+                                  })
+                                }
+                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer shrink-0"
+                                title="Delete checklist step"
                               >
-                                {st.text}
-                              </span>
-                            </label>
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -1257,48 +1525,89 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 />
               </div>
 
-              {/* Associated Legal Matter Selector */}
+              {/* Client Selection (First step of linking) */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-[11px] font-semibold text-slate-700">
-                    Attach to Legal Matter / Case File *
+                    Client / Corporate Entity *
                   </label>
-                  {matters.length > 0 && (
-                    <span className="text-[10px] font-semibold text-amber-800">
-                      {matters.length} active cases available
-                    </span>
-                  )}
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Select client to filter transactions
+                  </span>
+                </div>
+                <select
+                  value={newClientId}
+                  onChange={(e) => handleClientSelectionChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-slate-400 focus:outline-none cursor-pointer shadow-2xs"
+                >
+                  <option value="">-- All Clients / Chambers General --</option>
+                  {clients.map((c) => {
+                    const clientMattersCount = sanitizedMatters.filter(
+                      (m) =>
+                        (m.clientId && m.clientId === c.id) ||
+                        m.clientName.toLowerCase() === c.name.toLowerCase()
+                    ).length;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.type}) — {clientMattersCount} {clientMattersCount === 1 ? 'transaction' : 'transactions'}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Transaction / Legal Matter Selector (Linked to Client) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-700">
+                    Linked Transaction / Case File *
+                  </label>
+                  <span className="text-[10px] font-semibold text-amber-800">
+                    {newClientId
+                      ? `${availableTransactionsForClient.length} transaction(s) for this client`
+                      : `${sanitizedMatters.length} transactions available firm-wide`}
+                  </span>
                 </div>
 
                 <select
                   value={newMatterId}
-                  onChange={(e) => {
-                    const mid = e.target.value;
-                    setNewMatterId(mid);
-                    const matched = matters.find((m) => m.id === mid);
-                    if (matched?.responsibleAdvocateName) {
-                      setNewAssignedTo(matched.responsibleAdvocateName);
-                    }
-                  }}
+                  onChange={(e) => handleMatterSelectionChange(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-slate-400 focus:outline-none cursor-pointer shadow-2xs"
                 >
-                  {sanitizedMatters.length === 0 ? (
-                    <option value="">General Chambers Task (No Active Cases)</option>
+                  {availableTransactionsForClient.length === 0 ? (
+                    <option value="">-- No active transactions for this client (General Task) --</option>
                   ) : (
                     <>
-                      <option value="">-- General Administrative Task (No Matter Attached) --</option>
-                      {sanitizedMatters.map((m) => (
+                      <option value="">-- Select Transaction / Legal Matter --</option>
+                      {availableTransactionsForClient.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.referenceNumber} — {m.title} ({m.clientName})
+                          {m.referenceNumber} — {m.title} [{m.practiceArea}]
                         </option>
                       ))}
                     </>
                   )}
                 </select>
 
+                <p className="text-[10px] text-slate-500 mt-1">
+                  A client can have multiple active transactions (e.g. conveyancing, litigation, corporate advisory). Linking the task to the exact transaction ensures seamless workspace tracking and billing.
+                </p>
+
+                {newClientId && availableTransactionsForClient.length === 0 && (
+                  <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 text-[11px] text-amber-800 flex items-center justify-between">
+                    <span>This client currently has no active transactions registered.</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewClientId('')}
+                      className="text-amber-900 font-bold hover:underline ml-2 cursor-pointer"
+                    >
+                      Show all firm transactions
+                    </button>
+                  </div>
+                )}
+
                 {/* Selected Matter Preview Information Card */}
                 {currentSelectedMatterObj && (
-                  <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs space-y-1.5">
+                  <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs space-y-1.5 animate-in fade-in duration-100">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Briefcase className="h-4 w-4 text-slate-600" />
@@ -1498,8 +1807,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         <span className="text-slate-800">{st}</span>
                         <button
                           type="button"
-                          onClick={() => handleRemoveSubtaskItem(idx)}
+                          onClick={() => setFormSubtaskIndexToRemove(idx)}
                           className="text-slate-400 hover:text-rose-600 cursor-pointer transition"
+                          title="Remove checklist item"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -1526,6 +1836,420 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Client Details Modal */}
+      {viewingClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between bg-slate-950 px-6 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-base">{viewingClient.name}</h3>
+                    <span className="rounded-md bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/30">
+                      {viewingClient.type}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {viewingClient.industry || 'Chambers Retainer & Advisory Client'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingClient(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:text-white transition cursor-pointer"
+                title="Close client details"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 text-xs overflow-y-auto flex-1">
+              {/* Contact & Profile Information Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                <div>
+                  <span className="text-[10px] font-medium text-slate-400 block">Contact Person</span>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-slate-800 font-semibold">
+                    <User className="h-3 w-3 text-slate-400" />
+                    <span className="truncate">{viewingClient.contactPerson || 'Managing Officer'}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-medium text-slate-400 block">Email Address</span>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-slate-800 font-semibold">
+                    <Mail className="h-3 w-3 text-slate-400" />
+                    <a href={`mailto:${viewingClient.email}`} className="text-blue-700 hover:underline truncate">
+                      {viewingClient.email}
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-medium text-slate-400 block">Phone Contact</span>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-slate-800 font-semibold">
+                    <Phone className="h-3 w-3 text-slate-400" />
+                    <span>{viewingClient.phone || '+254 700 000 000'}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-medium text-slate-400 block">Location / City</span>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-slate-800 font-semibold">
+                    <MapPin className="h-3 w-3 text-slate-400" />
+                    <span className="truncate">{viewingClient.city || 'Nairobi, Kenya'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transactions Section */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-heading font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <Briefcase className="h-4 w-4 text-amber-700" />
+                    <span>Transactions & Matters for this Client ({clientMattersForViewing.length})</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Client's individual case files
+                  </span>
+                </div>
+
+                {clientMattersForViewing.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-500 bg-slate-50/50">
+                    <p className="font-medium text-xs">No active transactions registered for this client yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {clientMattersForViewing.map((matter) => (
+                      <div
+                        key={matter.id}
+                        className="rounded-xl border border-slate-200 bg-white p-3.5 hover:border-amber-400 hover:shadow-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {matter.referenceNumber}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                              {matter.practiceArea}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                matter.status === 'Active'
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {matter.status}
+                            </span>
+                          </div>
+                          <p className="font-bold text-xs text-slate-900 leading-snug">
+                            {matter.title}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Lead Counsel: <strong className="text-slate-700">{matter.responsibleAdvocateName}</strong>
+                          </p>
+                        </div>
+
+                        {onSelectMatter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectMatter(matter);
+                              setViewingClient(null);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400 transition cursor-pointer shadow-2xs shrink-0 self-start sm:self-center"
+                          >
+                            <span>Open Transaction</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Tasks for this Client */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-heading font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <CheckSquare className="h-4 w-4 text-slate-700" />
+                    <span>Tasks Linked to this Client ({clientTasksForViewing.length})</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Click any task to view its transaction file
+                  </span>
+                </div>
+
+                {clientTasksForViewing.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-500 bg-slate-50/50">
+                    <p className="font-medium text-xs">No active tasks recorded for this client.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {clientTasksForViewing.map((t) => (
+                      <div
+                        key={t.id}
+                        className="rounded-xl border border-slate-200/80 bg-white p-3 hover:bg-slate-50 transition flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleOpenTransactionDetails(undefined, t);
+                              setViewingClient(null);
+                            }}
+                            className="text-left font-bold text-slate-900 hover:text-amber-800 hover:underline cursor-pointer flex items-center gap-1"
+                            title="Open transaction file"
+                          >
+                            <span>{t.title}</span>
+                            <ExternalLink className="h-2.5 w-2.5 text-slate-400" />
+                          </button>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                            <span className="font-mono font-semibold text-slate-700">
+                              {t.matterRef}
+                            </span>
+                            <span>•</span>
+                            <span>Assigned to: <strong className="text-slate-700">{t.assignedTo}</strong></span>
+                            <span>•</span>
+                            <span>Due: {t.dueDate || 'No due date'}</span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${
+                            t.status === 'Completed'
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : t.status === 'In Progress'
+                              ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-slate-100 bg-slate-50 px-6 py-3.5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewClientId(viewingClient.id);
+                  const clientMatters = sanitizedMatters.filter(
+                    (m) =>
+                      (m.clientId && m.clientId === viewingClient.id) ||
+                      m.clientName.toLowerCase() === viewingClient.name.toLowerCase()
+                  );
+                  if (clientMatters.length > 0) {
+                    setNewMatterId(clientMatters[0].id);
+                  }
+                  setIsAssignModalOpen(true);
+                  setViewingClient(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 px-3.5 py-2 text-xs font-bold text-white hover:bg-slate-800 cursor-pointer transition shadow-2xs"
+              >
+                <Plus className="h-3.5 w-3.5 text-amber-400" />
+                <span>Assign Task for this Client</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewingClient(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-xs text-slate-700 hover:bg-slate-100 cursor-pointer transition shadow-2xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmed Task Deletion Dialogue Modal */}
+      {taskToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-6">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <h3 className="font-heading font-bold text-base text-slate-900">
+                    Confirm Task Deletion
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Are you sure you want to permanently delete this task from Chambers records? This action cannot be reversed.
+                  </p>
+                </div>
+              </div>
+
+              {/* Task summary details */}
+              <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50/50 p-3.5 text-xs space-y-2">
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                    Task Title
+                  </span>
+                  <p className="font-bold text-slate-900 text-sm mt-0.5">
+                    {taskToDelete.title}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-rose-100/80 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 font-medium block text-[10px]">Client</span>
+                    <span className="font-semibold text-slate-800 truncate block">
+                      {taskToDelete.clientName}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block text-[10px]">Transaction File</span>
+                    <span className="font-mono font-semibold text-slate-800 truncate block">
+                      {taskToDelete.matterRef}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block text-[10px]">Assigned Advocate</span>
+                    <span className="font-semibold text-slate-800 truncate block">
+                      {taskToDelete.assignedTo}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block text-[10px]">Due Date</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {taskToDelete.dueDate || 'No due date'}
+                    </span>
+                  </div>
+                </div>
+
+                {taskToDelete.subtasks && taskToDelete.subtasks.length > 0 && (
+                  <p className="text-[11px] text-rose-700 font-medium pt-1">
+                    Note: {taskToDelete.subtasks.length} action checklist subtask(s) will also be deleted.
+                  </p>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTaskToDelete(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-xs text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs"
+                >
+                  Cancel, Keep Task
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 font-semibold text-xs text-white hover:bg-rose-700 transition cursor-pointer shadow-xs"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Task Permanently</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmed Subtask Deletion Dialogue Modal */}
+      {subtaskToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="font-heading font-bold text-sm text-slate-900">
+                    Delete Checklist Item?
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Are you sure you want to remove this checklist step from the task?
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800">
+                "{subtaskToDelete.text}"
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSubtaskToDelete(null)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-xs text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteSubtask}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-xs text-white hover:bg-rose-700 cursor-pointer"
+                >
+                  Delete Item
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmed Form Subtask Removal Dialogue Modal */}
+      {formSubtaskIndexToRemove !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="font-heading font-bold text-sm text-slate-900">
+                    Remove Checklist Step?
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Are you sure you want to remove this checklist step from the new task?
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800">
+                "{newSubtasks[formSubtaskIndexToRemove]}"
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setFormSubtaskIndexToRemove(null)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-xs text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  Keep Step
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmRemoveFormSubtask}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-xs text-white hover:bg-rose-700 cursor-pointer"
+                >
+                  Remove Step
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
