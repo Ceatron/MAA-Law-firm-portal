@@ -374,6 +374,9 @@ export interface DocumentItem {
   currentVersion?: string;
   versions?: DocumentVersion[];
   folderId?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 export interface NotificationItem {

@@ -29,22 +29,6 @@ import {
   LeaveBalance,
   Advocate,
 } from '../types';
-import {
-  mockMatters,
-  mockClients,
-  mockTasks,
-  mockDeadlines,
-  mockActivities,
-  mockNotifications,
-  mockFeeNotes,
-  mockPayments,
-  mockQuotes,
-  mockDocuments,
-  mockFolders,
-  mockDrafts,
-  mockOnboardingSubmissions,
-  mockTimeEntries,
-} from '../data/mockData';
 import ChambersCloudService from '../services/chambersCloudService';
 
 // Storage Keys
@@ -93,7 +77,7 @@ function safeSet<T>(key: string, data: T): void {
 // 1. MATTERS
 // ============================================================================
 export const loadSavedMatters = (): LegalMatter[] => {
-  const loaded = safeGet<LegalMatter[]>(STORAGE_KEYS.MATTERS, mockMatters);
+  const loaded = safeGet<LegalMatter[]>(STORAGE_KEYS.MATTERS, []);
   const filtered = (loaded || []).filter(
     (m) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
   );
@@ -140,7 +124,7 @@ export const deleteStoredMatter = async (matterId: string): Promise<void> => {
 // 2. CLIENTS
 // ============================================================================
 export const loadSavedClients = (): Client[] => {
-  return safeGet<Client[]>(STORAGE_KEYS.CLIENTS, mockClients);
+  return safeGet<Client[]>(STORAGE_KEYS.CLIENTS, []);
 };
 
 export const saveStoredClientsCache = (clients: Client[]): void => {
@@ -175,7 +159,7 @@ export const deleteStoredClient = async (clientId: string): Promise<void> => {
 // 3. TASKS
 // ============================================================================
 export const loadSavedTasks = (): TaskItem[] => {
-  const loaded = safeGet<TaskItem[]>(STORAGE_KEYS.TASKS, mockTasks);
+  const loaded = safeGet<TaskItem[]>(STORAGE_KEYS.TASKS, []);
   const filtered = (loaded || []).filter(
     (t) =>
       t &&
@@ -222,7 +206,7 @@ export const deleteStoredTask = async (taskId: string): Promise<void> => {
 // 4. DEADLINES
 // ============================================================================
 export const loadSavedDeadlines = (): DeadlineItem[] => {
-  return safeGet<DeadlineItem[]>(STORAGE_KEYS.DEADLINES, mockDeadlines);
+  return safeGet<DeadlineItem[]>(STORAGE_KEYS.DEADLINES, []);
 };
 
 export const saveStoredDeadlinesCache = (deadlines: DeadlineItem[]): void => {
@@ -257,7 +241,7 @@ export const deleteStoredDeadline = async (deadlineId: string): Promise<void> =>
 // 5. ACTIVITIES
 // ============================================================================
 export const loadSavedActivities = (): ActivityLog[] => {
-  const loaded = safeGet<ActivityLog[]>(STORAGE_KEYS.ACTIVITIES, mockActivities);
+  const loaded = safeGet<ActivityLog[]>(STORAGE_KEYS.ACTIVITIES, []);
   const filtered = (loaded || []).filter(
     (a) =>
       a &&
@@ -298,7 +282,7 @@ export const deleteStoredActivity = async (activityId: string): Promise<void> =>
 // 6. NOTIFICATIONS
 // ============================================================================
 export const loadSavedNotifications = (): NotificationItem[] => {
-  return safeGet<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, mockNotifications);
+  return safeGet<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
 };
 
 export const saveStoredNotificationsCache = (notifications: NotificationItem[]): void => {
@@ -328,7 +312,7 @@ export const deleteStoredNotification = async (notificationId: string): Promise<
 // 7. BILLING: FEE NOTES (INVOICES)
 // ============================================================================
 export const loadSavedFeeNotes = (): FeeNote[] => {
-  return safeGet<FeeNote[]>(STORAGE_KEYS.FEE_NOTES, mockFeeNotes);
+  return safeGet<FeeNote[]>(STORAGE_KEYS.FEE_NOTES, []);
 };
 
 export const saveStoredFeeNotesCache = (feeNotes: FeeNote[]): void => {
@@ -363,7 +347,7 @@ export const deleteStoredFeeNote = async (feeNoteId: string): Promise<void> => {
 // 8. BILLING: PAYMENTS
 // ============================================================================
 export const loadSavedPayments = (): PaymentRecord[] => {
-  return safeGet<PaymentRecord[]>(STORAGE_KEYS.PAYMENTS, mockPayments);
+  return safeGet<PaymentRecord[]>(STORAGE_KEYS.PAYMENTS, []);
 };
 
 export const saveStoredPaymentsCache = (payments: PaymentRecord[]): void => {
@@ -398,7 +382,7 @@ export const deleteStoredPayment = async (paymentId: string): Promise<void> => {
 // 9. BILLING: QUOTATIONS
 // ============================================================================
 export const loadSavedQuotes = (): Quotation[] => {
-  return safeGet<Quotation[]>(STORAGE_KEYS.QUOTES, mockQuotes);
+  return safeGet<Quotation[]>(STORAGE_KEYS.QUOTES, []);
 };
 
 export const saveStoredQuotesCache = (quotes: Quotation[]): void => {
@@ -433,7 +417,7 @@ export const deleteStoredQuote = async (quoteId: string): Promise<void> => {
 // 10. DOCUMENTS & FOLDERS & DRAFTS
 // ============================================================================
 export const loadSavedDocumentItems = (): DocumentItem[] => {
-  return safeGet<DocumentItem[]>(STORAGE_KEYS.DOCUMENTS, mockDocuments);
+  return safeGet<DocumentItem[]>(STORAGE_KEYS.DOCUMENTS, []);
 };
 
 export const saveStoredDocumentItemsCache = (docs: DocumentItem[]): void => {
@@ -465,7 +449,7 @@ export const deleteStoredDocumentItem = async (docId: string): Promise<void> => 
 };
 
 export const loadSavedDocumentFolders = (): DocumentFolder[] => {
-  return safeGet<DocumentFolder[]>(STORAGE_KEYS.FOLDERS, mockFolders);
+  return safeGet<DocumentFolder[]>(STORAGE_KEYS.FOLDERS, []);
 };
 
 export const saveStoredDocumentFoldersCache = (folders: DocumentFolder[]): void => {
@@ -497,7 +481,7 @@ export const deleteStoredDocumentFolder = async (folderId: string): Promise<void
 };
 
 export const loadSavedDocumentDrafts = (): DocumentDraft[] => {
-  return safeGet<DocumentDraft[]>(STORAGE_KEYS.DRAFTS, mockDrafts);
+  return safeGet<DocumentDraft[]>(STORAGE_KEYS.DRAFTS, []);
 };
 
 export const saveStoredDocumentDraftsCache = (drafts: DocumentDraft[]): void => {
@@ -532,7 +516,7 @@ export const deleteStoredDocumentDraft = async (draftId: string): Promise<void> 
 // 11. CLIENT ONBOARDINGS
 // ============================================================================
 export const loadSavedOnboardings = (): ClientOnboardingSubmission[] => {
-  return safeGet<ClientOnboardingSubmission[]>(STORAGE_KEYS.ONBOARDINGS, mockOnboardingSubmissions);
+  return safeGet<ClientOnboardingSubmission[]>(STORAGE_KEYS.ONBOARDINGS, []);
 };
 
 export const saveStoredOnboardingsCache = (onboardings: ClientOnboardingSubmission[]): void => {
@@ -567,7 +551,7 @@ export const deleteStoredOnboarding = async (onboardingId: string): Promise<void
 // 12. TIME ENTRIES
 // ============================================================================
 export const loadSavedTimeEntries = (): TimeEntry[] => {
-  return safeGet<TimeEntry[]>(STORAGE_KEYS.TIME_ENTRIES, mockTimeEntries);
+  return safeGet<TimeEntry[]>(STORAGE_KEYS.TIME_ENTRIES, []);
 };
 
 export const saveStoredTimeEntriesCache = (entries: TimeEntry[]): void => {
@@ -724,40 +708,40 @@ export async function syncAllChambersDataFromCloud(user: Advocate): Promise<{
     ChambersCloudService.fetchLeaveBalances(),
   ]);
 
-  if (matters) saveStoredMattersCache(matters);
-  if (tasks) saveStoredTasksCache(tasks);
-  if (clients) saveStoredClientsCache(clients);
-  if (deadlines) saveStoredDeadlinesCache(deadlines);
-  if (activities) saveStoredActivitiesCache(activities);
-  if (notifications) saveStoredNotificationsCache(notifications);
-  if (feeNotes) saveStoredFeeNotesCache(feeNotes);
-  if (payments) saveStoredPaymentsCache(payments);
-  if (quotes) saveStoredQuotesCache(quotes);
-  if (documents) saveStoredDocumentItemsCache(documents);
-  if (folders) saveStoredDocumentFoldersCache(folders);
-  if (drafts) saveStoredDocumentDraftsCache(drafts);
-  if (onboardings) saveStoredOnboardingsCache(onboardings);
-  if (timeEntries) saveStoredTimeEntriesCache(timeEntries);
-  if (leaveRequests) saveStoredLeaveRequestsCache(leaveRequests);
-  if (leaveBalances) saveStoredLeaveBalancesCache(leaveBalances);
+  if (matters !== null && matters !== undefined) saveStoredMattersCache(matters);
+  if (tasks !== null && tasks !== undefined) saveStoredTasksCache(tasks);
+  if (clients !== null && clients !== undefined) saveStoredClientsCache(clients);
+  if (deadlines !== null && deadlines !== undefined) saveStoredDeadlinesCache(deadlines);
+  if (activities !== null && activities !== undefined) saveStoredActivitiesCache(activities);
+  if (notifications !== null && notifications !== undefined) saveStoredNotificationsCache(notifications);
+  if (feeNotes !== null && feeNotes !== undefined) saveStoredFeeNotesCache(feeNotes);
+  if (payments !== null && payments !== undefined) saveStoredPaymentsCache(payments);
+  if (quotes !== null && quotes !== undefined) saveStoredQuotesCache(quotes);
+  if (documents !== null && documents !== undefined) saveStoredDocumentItemsCache(documents);
+  if (folders !== null && folders !== undefined) saveStoredDocumentFoldersCache(folders);
+  if (drafts !== null && drafts !== undefined) saveStoredDocumentDraftsCache(drafts);
+  if (onboardings !== null && onboardings !== undefined) saveStoredOnboardingsCache(onboardings);
+  if (timeEntries !== null && timeEntries !== undefined) saveStoredTimeEntriesCache(timeEntries);
+  if (leaveRequests !== null && leaveRequests !== undefined) saveStoredLeaveRequestsCache(leaveRequests);
+  if (leaveBalances !== null && leaveBalances !== undefined) saveStoredLeaveBalancesCache(leaveBalances);
 
   return {
-    matters: matters || loadSavedMatters(),
-    tasks: tasks || loadSavedTasks(),
-    clients: clients || loadSavedClients(),
-    deadlines: deadlines || loadSavedDeadlines(),
-    activities: activities || loadSavedActivities(),
-    notifications: notifications || loadSavedNotifications(),
-    feeNotes: feeNotes || loadSavedFeeNotes(),
-    payments: payments || loadSavedPayments(),
-    quotes: quotes || loadSavedQuotes(),
-    documents: documents || loadSavedDocumentItems(),
-    folders: folders || loadSavedDocumentFolders(),
-    drafts: drafts || loadSavedDocumentDrafts(),
-    onboardings: onboardings || loadSavedOnboardings(),
-    timeEntries: timeEntries || loadSavedTimeEntries(),
-    leaveRequests: leaveRequests || loadSavedLeaveRequests(),
-    leaveBalances: leaveBalances || loadSavedLeaveBalances(),
+    matters: matters !== null && matters !== undefined ? matters : loadSavedMatters(),
+    tasks: tasks !== null && tasks !== undefined ? tasks : loadSavedTasks(),
+    clients: clients !== null && clients !== undefined ? clients : loadSavedClients(),
+    deadlines: deadlines !== null && deadlines !== undefined ? deadlines : loadSavedDeadlines(),
+    activities: activities !== null && activities !== undefined ? activities : loadSavedActivities(),
+    notifications: notifications !== null && notifications !== undefined ? notifications : loadSavedNotifications(),
+    feeNotes: feeNotes !== null && feeNotes !== undefined ? feeNotes : loadSavedFeeNotes(),
+    payments: payments !== null && payments !== undefined ? payments : loadSavedPayments(),
+    quotes: quotes !== null && quotes !== undefined ? quotes : loadSavedQuotes(),
+    documents: documents !== null && documents !== undefined ? documents : loadSavedDocumentItems(),
+    folders: folders !== null && folders !== undefined ? folders : loadSavedDocumentFolders(),
+    drafts: drafts !== null && drafts !== undefined ? drafts : loadSavedDocumentDrafts(),
+    onboardings: onboardings !== null && onboardings !== undefined ? onboardings : loadSavedOnboardings(),
+    timeEntries: timeEntries !== null && timeEntries !== undefined ? timeEntries : loadSavedTimeEntries(),
+    leaveRequests: leaveRequests !== null && leaveRequests !== undefined ? leaveRequests : loadSavedLeaveRequests(),
+    leaveBalances: leaveBalances !== null && leaveBalances !== undefined ? leaveBalances : loadSavedLeaveBalances(),
   };
 }
 

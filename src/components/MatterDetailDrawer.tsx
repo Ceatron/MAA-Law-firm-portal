@@ -56,6 +56,7 @@ import {
   dispatchAssignmentEmail,
   resolveStaffEmail,
 } from '../utils/assignmentNotificationService';
+import { persistSingleTask, deleteStoredTask } from '../utils/chambersDataStorage';
 
 interface MatterDetailDrawerProps {
   matter: LegalMatter | null;
@@ -172,6 +173,10 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
       commentsCount: 0,
     };
 
+    persistSingleTask(newTask).catch((err) =>
+      console.error('[MatterDetailDrawer] Failed to persist new assigned task:', err)
+    );
+
     if (onUpdateTasks) {
       onUpdateTasks([newTask, ...(tasks || [])]);
     }
@@ -197,16 +202,23 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
 
   const handleToggleMatterSubtask = (taskId: string, subtaskId: string) => {
     if (!onUpdateTasks || !tasks) return;
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
         const updatedSubtasks = t.subtasks.map((s) =>
           s.id === subtaskId ? { ...s, completed: !s.completed } : s
         );
-        return { ...t, subtasks: updatedSubtasks };
+        targetTask = { ...t, subtasks: updatedSubtasks };
+        return targetTask;
       }
       return t;
     });
     onUpdateTasks(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[MatterDetailDrawer] Failed to persist subtask toggle:', err)
+      );
+    }
   };
 
   const handleMatterTaskStatusChange = (taskId: string, newStatusVal: 'open' | 'running' | 'closed') => {
@@ -217,13 +229,20 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
         : newStatusVal === 'closed'
         ? 'Completed'
         : 'Not Started';
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
-        return { ...t, status: statusText as any };
+        targetTask = { ...t, status: statusText as any };
+        return targetTask;
       }
       return t;
     });
     onUpdateTasks(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[MatterDetailDrawer] Failed to persist task status change:', err)
+      );
+    }
     setTaskToast(`Task status updated to ${newStatusVal === 'running' ? 'In Progress' : newStatusVal === 'closed' ? 'Completed' : 'Open'}`);
     setTimeout(() => setTaskToast(null), 3000);
   };
@@ -232,6 +251,9 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     if (!onUpdateTasks || !tasks) return;
     const updated = tasks.filter((t) => t.id !== taskId);
     onUpdateTasks(updated);
+    deleteStoredTask(taskId).catch((err) =>
+      console.error('[MatterDetailDrawer] Failed to delete task:', err)
+    );
     setTaskToast('Task removed from matter workload.');
     setTimeout(() => setTaskToast(null), 3000);
   };
@@ -652,7 +674,18 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
                     <button
                       onClick={() => {
                         setShowMoreActionsMenu(false);
-                        onUpdateStatus(matter.id, 'Completed');
+                        const restoredMatter: LegalMatter = {
+                          ...matter,
+                          status: 'Active - In Court',
+                          archivedAt: undefined,
+                          archivedBy: undefined,
+                          archiveReason: undefined,
+                        };
+                        if (onUpdateMatter) {
+                          onUpdateMatter(restoredMatter);
+                        } else {
+                          onUpdateStatus(matter.id, 'Active - In Court');
+                        }
                         setArchiveToast('Matter restored from Archive to Active Workspace');
                         setTimeout(() => setArchiveToast(null), 3000);
                       }}
@@ -2401,7 +2434,18 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
               </button>
               <button
                 onClick={() => {
-                  onUpdateStatus(matter.id, 'Archived');
+                  const archivedMatter: LegalMatter = {
+                    ...matter,
+                    status: 'Archived',
+                    archivedAt: new Date().toISOString(),
+                    archivedBy: matter.responsibleAdvocateName || currentAdvocate?.name || 'Advocate',
+                    archiveReason: archiveReasonInput.trim() || 'Moved to statutory archived case register',
+                  };
+                  if (onUpdateMatter) {
+                    onUpdateMatter(archivedMatter);
+                  } else {
+                    onUpdateStatus(matter.id, 'Archived');
+                  }
                   setShowArchiveModal(false);
                   setArchiveReasonInput('');
                   setArchiveToast(`Matter ${matter.referenceNumber} archived and moved to Archived Register.`);

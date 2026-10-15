@@ -545,6 +545,12 @@ export function mapClientQuoteToSupabase(q: Quotation): any {
 
 // --- 10. DOCUMENTS & FOLDERS & DRAFTS ---
 export function mapSupabaseDocumentToClient(row: any): DocumentItem {
+  const versions = Array.isArray(row.versions) ? row.versions : [];
+  const firstVer = versions[0];
+  const isArchived = Boolean(row.is_archived || firstVer?.isArchived || row.archived_at);
+  const archivedAt = row.archived_at || firstVer?.archivedAt || undefined;
+  const archivedBy = row.archived_by || firstVer?.archivedBy || undefined;
+
   return {
     id: String(row.id),
     title: row.title || 'Untitled Document',
@@ -555,12 +561,33 @@ export function mapSupabaseDocumentToClient(row: any): DocumentItem {
     uploadedDate: row.uploaded_date || new Date().toISOString().split('T')[0],
     ctsReceiptNo: row.cts_receipt_no || undefined,
     currentVersion: row.current_version || 'v1.0',
-    versions: Array.isArray(row.versions) ? row.versions : [],
+    versions: versions,
     folderId: row.folder_id || null,
+    isArchived,
+    archivedAt,
+    archivedBy,
   };
 }
 
 export function mapClientDocumentToSupabase(doc: DocumentItem): any {
+  const versions = Array.isArray(doc.versions) && doc.versions.length > 0
+    ? doc.versions.map((v, i) => (i === 0 ? { ...v, isArchived: Boolean(doc.isArchived), archivedAt: doc.archivedAt, archivedBy: doc.archivedBy } : v))
+    : [
+        {
+          id: `ver-${doc.id}`,
+          versionNumber: doc.currentVersion || 'v1.0',
+          title: doc.title,
+          uploadedBy: doc.uploadedBy,
+          uploadedDate: doc.uploadedDate,
+          fileSize: doc.fileSize,
+          changeSummary: 'Document version',
+          isCurrent: true,
+          isArchived: Boolean(doc.isArchived),
+          archivedAt: doc.archivedAt,
+          archivedBy: doc.archivedBy,
+        },
+      ];
+
   return {
     id: String(doc.id),
     title: String(doc.title || 'Untitled Document'),
@@ -571,7 +598,7 @@ export function mapClientDocumentToSupabase(doc: DocumentItem): any {
     uploaded_date: sanitizeDate(doc.uploadedDate) || new Date().toISOString().split('T')[0],
     cts_receipt_no: doc.ctsReceiptNo || null,
     current_version: doc.currentVersion || 'v1.0',
-    versions: Array.isArray(doc.versions) ? doc.versions : [],
+    versions: versions,
     folder_id: doc.folderId ? String(doc.folderId) : null,
     updated_at: new Date().toISOString(),
   };
@@ -1184,24 +1211,20 @@ export class ChambersCloudService {
       let query = supabase.from('tasks').select('*');
 
       if (!canUserViewAll(user)) {
-        let filterStr = `assigned_to_id.eq.${user.id},created_by_id.eq.${user.id},assigned_to.ilike.%${user.name}%`;
-        
-        if (userMatters && userMatters.length > 0) {
-          const matterIds = userMatters.map((m) => m.id).filter(Boolean);
-          if (matterIds.length > 0) {
-            const matterIdClause = matterIds.map((id) => `matter_id.eq.${id}`).join(',');
-            filterStr += `,${matterIdClause}`;
-          }
-        }
-
-        query = query.or(filterStr);
+        const safeName = (user.name || '').replace(/[%,()]/g, '').trim();
+        query = query.or(`assigned_to.ilike.%${safeName}%,created_by.ilike.%${safeName}%`);
       }
 
       const { data, error } = await query.order('due_date', { ascending: true });
 
       if (error) {
-        console.warn('[ChambersCloudService] fetchTasks query error:', error.message);
-        return null;
+        console.warn('[ChambersCloudService] fetchTasks query notice, falling back to base select:', error.message);
+        const { data: allData, error: allErr } = await supabase.from('tasks').select('*').order('due_date', { ascending: true });
+        if (allErr) {
+          console.error('[ChambersCloudService] fetchTasks fallback failed:', allErr.message);
+          return null;
+        }
+        return (allData || []).map(mapSupabaseTaskToClient);
       }
 
       return (data || []).map(mapSupabaseTaskToClient);
@@ -1220,8 +1243,31 @@ export class ChambersCloudService {
       const { error } = await supabase.from('tasks').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertTask error:', error.message);
-        return false;
+        console.warn('[ChambersCloudService] upsertTask notice, retrying with core payload:', error.message);
+        const corePayload: any = {
+          id: payload.id,
+          title: payload.title,
+          description: payload.description,
+          matter_id: payload.matter_id,
+          matter_ref: payload.matter_ref,
+          client_name: payload.client_name,
+          assigned_to: payload.assigned_to,
+          created_by: payload.created_by,
+          priority: payload.priority,
+          status: payload.status,
+          start_date: payload.start_date,
+          due_date: payload.due_date,
+          estimated_hours: payload.estimated_hours,
+          actual_hours: payload.actual_hours,
+          subtasks: payload.subtasks,
+          comments_count: payload.comments_count,
+          updated_at: payload.updated_at,
+        };
+        const { error: retryError } = await supabase.from('tasks').upsert(corePayload, { onConflict: 'id' });
+        if (retryError) {
+          console.error('[ChambersCloudService] upsertTask core retry error:', retryError.message);
+          return false;
+        }
       }
       return true;
     } catch (err) {

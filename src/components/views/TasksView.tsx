@@ -44,7 +44,7 @@ import {
 import { TaskEmailNotificationModal } from '../TaskEmailNotificationModal';
 import { TaskPerformanceCard } from '../TaskPerformanceCard';
 import { isTaskVisibleToUser, canUserViewAll, namesMatch } from '../../utils/visibilityRules';
-import { deleteStoredTask, loadSavedClients } from '../../utils/chambersDataStorage';
+import { deleteStoredTask, persistSingleTask, loadSavedClients } from '../../utils/chambersDataStorage';
 
 // Priority Level Definition (High, Medium, Low)
 export type TaskPriorityLevel = 'High' | 'Medium' | 'Low';
@@ -170,6 +170,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
   
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isSavingTask, setIsSavingTask] = useState(false);
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     actionLabel?: string;
@@ -293,7 +294,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   // Status transition handler
-  const handleStatusChange = (taskId: string, newStatusVal: 'open' | 'running' | 'closed') => {
+  const handleStatusChange = async (taskId: string, newStatusVal: 'open' | 'running' | 'closed') => {
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
         const statusText =
@@ -302,11 +304,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
             : newStatusVal === 'closed'
             ? 'Completed'
             : 'Not Started';
-        return { ...t, status: statusText as any };
+        targetTask = { ...t, status: statusText as any };
+        return targetTask;
       }
       return t;
     });
     updateTasksList(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[TasksView] Error persisting status change:', err)
+      );
+    }
     const label =
       newStatusVal === 'running'
         ? 'In Progress'
@@ -317,29 +325,43 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   // Priority quick change handler
-  const handlePriorityChange = (taskId: string, newPrio: TaskPriorityLevel) => {
+  const handlePriorityChange = async (taskId: string, newPrio: TaskPriorityLevel) => {
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
-        return { ...t, priority: newPrio as any };
+        targetTask = { ...t, priority: newPrio as any };
+        return targetTask;
       }
       return t;
     });
     updateTasksList(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[TasksView] Error persisting priority change:', err)
+      );
+    }
     triggerToast(`Priority changed to ${newPrio} for task.`);
   };
 
   // Subtask completion toggle
-  const handleToggleSubtask = (taskId: string, subtaskId: string) => {
+  const handleToggleSubtask = async (taskId: string, subtaskId: string) => {
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
         const updatedSubtasks = t.subtasks.map((s) =>
           s.id === subtaskId ? { ...s, completed: !s.completed } : s
         );
-        return { ...t, subtasks: updatedSubtasks };
+        targetTask = { ...t, subtasks: updatedSubtasks };
+        return targetTask;
       }
       return t;
     });
     updateTasksList(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[TasksView] Error persisting subtask toggle:', err)
+      );
+    }
   };
 
   // Delete task initiating confirmation dialogue
@@ -351,28 +373,41 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   // Confirmed task deletion
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!taskToDelete) return;
-    deleteStoredTask(taskToDelete.id);
-    const updated = tasks.filter((t) => t.id !== taskToDelete.id);
+    const deletedId = taskToDelete.id;
+    const deletedTitle = taskToDelete.title;
+    const updated = tasks.filter((t) => t.id !== deletedId);
     updateTasksList(updated);
-    triggerToast(`Task "${taskToDelete.title}" deleted.`);
+    try {
+      await deleteStoredTask(deletedId);
+      triggerToast(`Task "${deletedTitle}" deleted.`);
+    } catch (err) {
+      console.error('[TasksView] Error deleting task:', err);
+    }
     setTaskToDelete(null);
   };
 
   // Confirmed subtask deletion
-  const handleConfirmDeleteSubtask = () => {
+  const handleConfirmDeleteSubtask = async () => {
     if (!subtaskToDelete) return;
+    let targetTask: TaskItem | undefined;
     const updated = tasks.map((t) => {
       if (t.id === subtaskToDelete.taskId) {
-        return {
+        targetTask = {
           ...t,
           subtasks: t.subtasks.filter((s) => s.id !== subtaskToDelete.subtaskId),
         };
+        return targetTask;
       }
       return t;
     });
     updateTasksList(updated);
+    if (targetTask) {
+      persistSingleTask(targetTask).catch((err) =>
+        console.error('[TasksView] Error persisting subtask deletion:', err)
+      );
+    }
     triggerToast(`Checklist step deleted.`);
     setSubtaskToDelete(null);
   };
@@ -478,7 +513,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setIsEmailModalOpen(true);
   };
 
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
@@ -533,31 +568,40 @@ export const TasksView: React.FC<TasksViewProps> = ({
       commentsCount: 0,
     };
 
-    updateTasksList([newTask, ...tasks]);
-
-    // Record in-app notification
-    const inAppNotif = createTaskAssignmentNotification(newTask, staffList);
-    if (onAddNotification) {
-      onAddNotification(inAppNotif);
-    }
-
-    // Dispatch automated assignment email via server gateway
+    setIsSavingTask(true);
     try {
-      const emailPayload = generateTaskEmailPayload(newTask, staffList, selectedMatter);
-      dispatchAssignmentEmail(emailPayload).catch((err) => {
-        console.warn('[TasksView] Task assignment email dispatch notice:', err);
-      });
+      await persistSingleTask(newTask);
+      updateTasksList([newTask, ...tasks]);
+
+      // Record in-app notification
+      const inAppNotif = createTaskAssignmentNotification(newTask, staffList);
+      if (onAddNotification) {
+        onAddNotification(inAppNotif);
+      }
+
+      // Dispatch automated assignment email via server gateway
+      try {
+        const emailPayload = generateTaskEmailPayload(newTask, staffList, selectedMatter);
+        dispatchAssignmentEmail(emailPayload).catch((err) => {
+          console.warn('[TasksView] Task assignment email dispatch notice:', err);
+        });
+      } catch (err) {
+        console.warn('[TasksView] Failed to generate task assignment email payload:', err);
+      }
+
+      setIsAssignModalOpen(false);
+      setNewTitle('');
+      setNewDescription('');
+      setNewSubtasks([]);
+      setNewSubtaskInput('');
+
+      triggerToast(`Task assigned to ${newAssignedTo} under transaction ${matterReference}.`);
     } catch (err) {
-      console.warn('[TasksView] Failed to generate task assignment email payload:', err);
+      console.error('[TasksView] Error creating task:', err);
+      triggerToast('Error saving task to database. Please try again.');
+    } finally {
+      setIsSavingTask(false);
     }
-
-    setIsAssignModalOpen(false);
-    setNewTitle('');
-    setNewDescription('');
-    setNewSubtasks([]);
-    setNewSubtaskInput('');
-
-    triggerToast(`Task assigned to ${newAssignedTo} under transaction ${matterReference}.`);
   };
 
   // Matters and Tasks for the currently viewed client in Client Details modal
@@ -1829,10 +1873,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center space-x-1.5 rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 cursor-pointer transition shadow-sm"
+                  disabled={isSavingTask}
+                  className="flex items-center space-x-1.5 rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition shadow-sm"
                 >
-                  <Send className="h-3.5 w-3.5 text-amber-400" />
-                  <span>Confirm, Assign & Dispatch Email</span>
+                  <Send className={`h-3.5 w-3.5 text-amber-400 ${isSavingTask ? 'animate-pulse' : ''}`} />
+                  <span>{isSavingTask ? 'Saving & Dispatching...' : 'Confirm, Assign & Dispatch Email'}</span>
                 </button>
               </div>
             </form>
