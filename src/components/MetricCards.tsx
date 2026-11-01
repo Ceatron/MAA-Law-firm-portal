@@ -7,8 +7,8 @@ import {
   Receipt,
   TrendingUp,
 } from 'lucide-react';
-import { Advocate, LegalMatter, DeadlineItem, Client, FeeNote } from '../types';
-import { canUserViewAll, isMatterVisibleToUser, isDeadlineVisibleToUser } from '../utils/visibilityRules';
+import { Advocate, LegalMatter, DeadlineItem, Client, FeeNote, TaskItem } from '../types';
+import { canUserViewAll, isMatterVisibleToUser, isDeadlineVisibleToUser, isTaskVisibleToUser } from '../utils/visibilityRules';
 
 interface MetricCardsProps {
   onNavigateTab: (tab: string) => void;
@@ -19,6 +19,7 @@ interface MetricCardsProps {
   deadlines?: DeadlineItem[];
   clients?: Client[];
   feeNotes?: FeeNote[];
+  tasks?: TaskItem[];
   onOpenNewMatter?: () => void;
 }
 
@@ -31,6 +32,8 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
   deadlines = [],
   clients = [],
   feeNotes = [],
+  tasks = [],
+  onOpenNewMatter,
 }) => {
   const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
 
@@ -40,6 +43,25 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
     : matters.filter(
         (m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate)
       );
+
+  // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
+  const userTasks = (effectiveCanViewAll
+    ? tasks
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters))
+  ).filter(
+    (t) =>
+      t &&
+      t.id !== 'tsk-1' &&
+      t.id !== 'tsk-4' &&
+      !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+      !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry')
+  );
+
+  // Open / Pending tasks (matching sidebar count by excluding Completed and closed)
+  const openTasks = userTasks.filter((t) => {
+    const s = (t.status || '').toLowerCase();
+    return s !== 'completed' && s !== 'closed';
+  });
 
   // Scoped deadlines
   const userDeadlines = effectiveCanViewAll
@@ -78,7 +100,14 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
   };
 
   const highPriorityMattersCount = userMatters.filter((m) => m.priority === 'High').length;
-  const dueTodayDeadlinesCount = userDeadlines.filter((d) => d.dueDate?.toLowerCase().includes('today') || false).length;
+  
+  // Calculate tasks due today
+  const todayIso = new Date().toISOString().split('T')[0];
+  const dueTodayTasksCount = openTasks.filter((t) => {
+    if (!t.dueDate) return false;
+    const cleanDue = t.dueDate.split('T')[0];
+    return cleanDue === todayIso || t.dueDate.toLowerCase().includes('today');
+  }).length;
 
   const kpis = [
     {
@@ -94,8 +123,8 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
     {
       id: 'open-tasks',
       title: 'Open tasks',
-      value: userDeadlines.length,
-      subtext: `${dueTodayDeadlinesCount} due today`,
+      value: openTasks.length,
+      subtext: `${dueTodayTasksCount} due today`,
       icon: Clock,
       iconBg: 'bg-amber-50 text-amber-700',
       dotColor: 'bg-amber-500',
@@ -155,4 +184,3 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
     </div>
   );
 };
-

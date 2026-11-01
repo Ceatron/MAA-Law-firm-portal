@@ -4,8 +4,13 @@ import {
   Plus,
   ArrowRight,
   User,
+  CheckSquare,
+  Clock,
+  Calendar,
+  AlertCircle,
 } from 'lucide-react';
 import { LegalMatter, DeadlineItem, Advocate, ActivityLog, Client, FeeNote, TaskItem } from '../types';
+import { canUserViewAll, isMatterVisibleToUser, isTaskVisibleToUser } from '../utils/visibilityRules';
 import { MetricCards } from './MetricCards';
 import { UpcomingDeadlines } from './UpcomingDeadlines';
 import { ActivityFeed } from './ActivityFeed';
@@ -22,7 +27,7 @@ interface OverviewDashboardProps {
   currentAdvocate?: Advocate;
   isManagingAdvocate?: boolean;
   canAccessBilling?: boolean;
-  onOpenNewMatter: () => void;
+  onOpenNewMatter?: () => void;
   onToggleDeadline: (id: string) => void;
   onSelectMatter?: (matter: LegalMatter) => void;
 }
@@ -42,7 +47,35 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
   onToggleDeadline,
   onSelectMatter,
 }) => {
-  const activeMatters = matters.filter((m) => m.status !== 'Archived');
+  const effectiveCanViewAll = isManagingAdvocate || canUserViewAll(currentAdvocate);
+
+  // Scoped matters based on role
+  const userMatters = effectiveCanViewAll
+    ? matters.filter((m) => m.status !== 'Archived')
+    : matters.filter(
+        (m) => m.status !== 'Archived' && isMatterVisibleToUser(m, currentAdvocate)
+      );
+
+  const activeMatters = userMatters;
+
+  // Scoped tasks based on role (Managing Advocate & System Admin see ALL tasks)
+  const userTasks = (effectiveCanViewAll
+    ? tasks
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters))
+  ).filter(
+    (t) =>
+      t &&
+      t.id !== 'tsk-1' &&
+      t.id !== 'tsk-4' &&
+      !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+      !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry')
+  );
+
+  // Open / Pending tasks (matching sidebar count by excluding Completed and closed)
+  const openTasks = userTasks.filter((t) => {
+    const s = (t.status || '').toLowerCase();
+    return s !== 'completed' && s !== 'closed';
+  });
 
   const getTimeGreeting = () => {
     const hour = new Date().getHours();
@@ -53,7 +86,6 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
 
   const getFirstName = () => {
     if (!currentAdvocate?.name) return 'Counsel';
-    // Clean titles like "Adv.", "Dr.", "Mr.", "Mrs.", "Ms." etc.
     const cleaned = currentAdvocate.name
       .replace(/^(Adv\.?|Advocate|Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Miss|Senior\s+Counsel|SC|Hon\.?)\s+/i, '')
       .trim();
@@ -98,16 +130,18 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onOpenNewMatter}
-            className="flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>New matter</span>
-          </button>
-        </div>
+        {onOpenNewMatter && (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onOpenNewMatter}
+              className="flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              <span>New matter</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 4 Metric KPI Cards */}
@@ -120,13 +154,15 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
         deadlines={deadlines}
         clients={clients}
         feeNotes={feeNotes}
+        tasks={tasks}
         onOpenNewMatter={onOpenNewMatter}
       />
 
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Active Matters Preview Table (7 cols) */}
+        {/* Left Column: Active Matters Preview Table & Open Tasks List (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
+          {/* Active Matters Card */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.03)]">
             <div className="flex items-center justify-between">
               <div>
@@ -158,14 +194,16 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                   <Briefcase className="mx-auto h-8 w-8 text-slate-300 mb-2" />
                   <p className="text-xs font-semibold text-slate-700">No active matters registered</p>
                   <p className="text-[11px] text-slate-400 mt-0.5 mb-3">Open a new case file to start tracking matters, filings, and deadlines.</p>
-                  <button
-                    type="button"
-                    onClick={onOpenNewMatter}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-900 shadow-2xs cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Lodge New Matter</span>
-                  </button>
+                  {onOpenNewMatter && (
+                    <button
+                      type="button"
+                      onClick={onOpenNewMatter}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-900 shadow-2xs cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Lodge New Matter</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <table className="w-full text-left text-xs">
@@ -190,7 +228,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                             {matter.title}
                           </p>
                           <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                            {matter.matterNumber}
+                            {matter.referenceNumber || (matter as any).matterNumber}
                           </p>
                         </td>
                         <td className="py-3.5 pr-4 text-slate-600 font-medium">
@@ -200,7 +238,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                           <div className="flex items-center gap-1.5">
                             <User className="h-3.5 w-3.5 text-slate-400" />
                             <span className="truncate max-w-[120px]">
-                              {matter.responsibleAdvocateName.replace('Adv. ', '')}
+                              {(matter.responsibleAdvocateName || '').replace('Adv. ', '')}
                             </span>
                           </div>
                         </td>
@@ -229,6 +267,99 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               )}
             </div>
           </div>
+
+          {/* Open Tasks Preview Card */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.03)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h3 className="font-heading text-lg font-bold text-slate-900">
+                    Open tasks
+                  </h3>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">
+                    {openTasks.length} pending
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">Assigned work and pending deliverables across matters</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('Tasks')}
+                className="flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 transition cursor-pointer"
+              >
+                <span>View all ({openTasks.length})</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              {openTasks.length === 0 ? (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                  <CheckSquare className="mx-auto h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-xs font-semibold text-slate-700">No open tasks pending</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">All assigned chambers tasks are up to date.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {openTasks.slice(0, 5).map((task) => (
+                    <div
+                      key={task.id}
+                      onClick={() => onNavigateTab('Tasks')}
+                      className="group flex items-start justify-between py-3.5 transition hover:bg-slate-50/70 cursor-pointer rounded-xl px-2.5 -mx-2.5"
+                    >
+                      <div className="min-w-0 flex-1 pr-4">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-slate-900 group-hover:text-amber-700 transition truncate">
+                            {task.title}
+                          </p>
+                          <span
+                            className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold shrink-0 ${
+                              (task.priority || '').toLowerCase() === 'high' || (task.priority || '').toLowerCase() === 'critical'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : (task.priority || '').toLowerCase() === 'medium'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {task.priority || 'Normal'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                          {task.matterRef && (
+                            <span className="font-mono text-slate-500 font-medium">
+                              {task.matterRef}
+                            </span>
+                          )}
+                          {task.clientName && (
+                            <span className="truncate max-w-[160px] text-slate-600">
+                              {task.clientName}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 text-slate-400">
+                            <User className="h-3 w-3" />
+                            <span className="truncate max-w-[130px]">{task.assignedTo || 'Unassigned'}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        {task.dueDate && (
+                          <div className="flex items-center justify-end gap-1 text-[11px] font-medium text-slate-500">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            <span>{task.dueDate}</span>
+                          </div>
+                        )}
+                        <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {task.status || 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Task Performance, Upcoming Deadlines & Activity Feed (5 cols) */}
@@ -241,7 +372,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
           <UpcomingDeadlines
             deadlines={deadlines}
             onToggleComplete={onToggleDeadline}
-            onOpenNewDeadlineModal={onOpenNewMatter}
+            onOpenNewDeadlineModal={onOpenNewMatter || (() => {})}
             currentAdvocate={currentAdvocate}
             isManagingAdvocate={isManagingAdvocate}
           />
@@ -255,4 +386,3 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
     </div>
   );
 };
-

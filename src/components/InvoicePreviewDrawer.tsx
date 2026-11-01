@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Download, Printer, Send, FileText, CheckCircle2, Calculator, ShieldCheck, CreditCard } from 'lucide-react';
-import { mockMatters } from '../data/mockData';
-import { CompanyLogo } from './CompanyLogo';
+import { X, Download, Printer, Send, FileText, CheckCircle2, ShieldCheck, CreditCard } from 'lucide-react';
 import { FeeNote } from '../types';
+import { loadChambersSettings } from '../utils/settingsStorage';
+import { generateInvoicePdf } from '../utils/invoicePdfGenerator';
 
 interface InvoicePreviewDrawerProps {
   isOpen: boolean;
@@ -17,374 +17,301 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
   feeNote,
   onReceivePayment,
 }) => {
-  const [selectedMatterId, setSelectedMatterId] = useState(mockMatters[0]?.id || '1');
-  const [hours, setHours] = useState(14.5);
-  const [hourlyRate, setHourlyRate] = useState(18000);
-  const [disbursements, setDisbursements] = useState(25000);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   if (!isOpen) return null;
 
-  // Use feeNote if provided, otherwise fallback to calculated interactive matter
-  const currentMatter = mockMatters.find((m) => m.id === selectedMatterId) || mockMatters[0] || {
-    id: 'mat-gen',
-    referenceNumber: 'MAA/HC/COM/2026/0001',
-    title: 'General Commercial Legal Representation',
-    clientName: 'Safaricom PLC',
-    courtRegistry: 'High Court Commercial Division - Milimani',
+  if (!feeNote) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full text-center space-y-3">
+          <p className="text-sm font-semibold text-slate-800">No invoice selected to preview.</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const settings = loadChambersSettings();
+  const feeNoteToUse = feeNote;
+
+  const invoiceNumber = feeNoteToUse.invoiceNumber || 'INV-000000';
+  const clientName = feeNoteToUse.clientName || 'Client';
+  const projectOrSubject = feeNoteToUse.subject || feeNoteToUse.matterTitle || 'Invoice Services';
+  const dateIssued = feeNoteToUse.dateIssued || '';
+  const terms = feeNoteToUse.terms || 'Due on Receipt';
+  const dueDate = feeNoteToUse.dueDate || '';
+
+  const items = feeNoteToUse.items || [];
+  const subTotal = feeNoteToUse.subtotalKES || items.reduce((acc, it) => acc + (it.totalPriceKES || 0), 0);
+  const shipping = feeNoteToUse.shippingChargesKES || feeNoteToUse.disbursementsKES || 0;
+  const adjustment = feeNoteToUse.adjustmentKES || 0;
+  const totalAmount = feeNoteToUse.totalKES || subTotal + shipping + adjustment;
+  const balanceDue = feeNoteToUse.balanceKES !== undefined ? feeNoteToUse.balanceKES : totalAmount;
+
+  const handleDownloadPdf = () => {
+    try {
+      const doc = generateInvoicePdf(feeNoteToUse, settings);
+      doc.save(`${invoiceNumber}.pdf`);
+      setToastMessage(`Downloaded ${invoiceNumber}.pdf successfully!`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err) {
+      alert('Failed to generate PDF.');
+    }
   };
 
-  // If viewing a real feeNote from the ledger
-  const isCustomFeeNote = Boolean(feeNote);
-  const invoiceNumber = feeNote?.invoiceNumber || 'MAA-INV-2026-0892';
-  const clientName = feeNote?.clientName || currentMatter.clientName;
-  const clientAddress = feeNote?.clientAddress || 'Legal Department, Corporate Headquarters\nNairobi, Kenya';
-  const clientKraPin = feeNote?.clientKraPin || 'P051189201A';
-  const matterTitle = feeNote?.matterTitle || currentMatter.title;
-  const dateIssued = feeNote?.dateIssued || '12 Aug 2026';
-  const dueDate = feeNote?.dueDate || '26 Aug 2026';
-  const invoiceStatus = feeNote?.status || 'Unpaid';
-  const amountPaid = feeNote?.amountPaidKES !== undefined
-    ? feeNote.amountPaidKES
-    : feeNote?.status === 'Paid' ? (feeNote.totalKES || 0) : 0;
+  const handlePrint = () => {
+    try {
+      const doc = generateInvoicePdf(feeNoteToUse, settings);
+      const blobUrl = URL.createObjectURL(doc.output('blob'));
+      const printWindow = window.open(blobUrl, '_blank');
+      if (printWindow) {
+        printWindow.focus();
+      }
+    } catch (err) {
+      window.print();
+    }
+  };
 
-  // Calculations
-  const hasCustomItems = Boolean(isCustomFeeNote && feeNote?.items && feeNote.items.length > 0);
-  const taxableSubtotal = hasCustomItems
-    ? feeNote!.items!.filter((it) => it.isTaxable !== false).reduce((sum, it) => sum + (it.totalPriceKES || 0), 0)
-    : feeNote?.taxableAmountKES || (isCustomFeeNote ? (feeNote?.vatKES ? Math.round((feeNote.vatKES / 16) * 100) : (feeNote?.amountKES || 0)) : hours * hourlyRate);
-
-  const nonTaxableSubtotal = hasCustomItems
-    ? feeNote!.items!.filter((it) => it.isTaxable === false).reduce((sum, it) => sum + (it.totalPriceKES || 0), 0)
-    : feeNote?.nonTaxableAmountKES || (isCustomFeeNote ? Math.max(0, (feeNote?.amountKES || 0) - taxableSubtotal) : disbursements);
-
-  const billableFees = isCustomFeeNote && feeNote?.items ? (feeNote.subtotalKES || feeNote.amountKES) : hours * hourlyRate;
-  const netAmount = isCustomFeeNote ? (feeNote?.amountKES || billableFees) : billableFees + disbursements;
-  const vatAmount = isCustomFeeNote ? (feeNote?.vatKES !== undefined ? feeNote.vatKES : Math.round(taxableSubtotal * 0.16)) : Math.round(billableFees * 0.16);
-  const totalAmount = isCustomFeeNote ? (feeNote?.totalKES || netAmount + vatAmount) : netAmount + vatAmount;
-  const balanceDue = feeNote?.balanceKES !== undefined ? feeNote.balanceKES : Math.max(0, totalAmount - amountPaid);
-
-  const handleAction = (msg: string) => {
-    setToastMessage(msg);
+  const handleSendEmail = () => {
+    setToastMessage(`Invoice ${invoiceNumber} emailed to ${clientName}.`);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3500);
   };
 
+  const companyName = settings.firmName || 'Ceatron Technologies Ltd';
+  const phone = settings.phone || '+254 786 652 032 / +254 724833192';
+  const email = settings.email || settings.billingEmail || 'info@ceatrontechnologies.com';
+  const paybill = settings.bankDetails?.paybillNumber || '603685';
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
-      <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col overflow-y-auto border-l border-stone-200">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
+      <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col overflow-y-auto border-l border-slate-200">
         
         {/* Drawer Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-[#132c3f] text-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-900 text-white">
           <div className="flex items-center space-x-2">
             <FileText className="h-5 w-5 text-[#0098db]" />
-            <h2 className="font-serif-title text-base font-bold">
-              {isCustomFeeNote ? `Invoice ${invoiceNumber} - ${clientName}` : 'Kenyan Law Firm Tax Fee Note Generator'}
+            <h2 className="font-heading text-base font-bold text-white">
+              Invoice {invoiceNumber} - {clientName}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-1 text-stone-400 hover:bg-stone-800 hover:text-white transition-colors cursor-pointer"
+            className="rounded-full p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Form Controls if not custom feeNote */}
-        {!isCustomFeeNote && (
-          <div className="bg-[#f8f6f0] p-6 border-b border-stone-200 space-y-4 text-xs">
-            <div className="flex items-center space-x-2 text-stone-800 font-bold">
-              <Calculator className="h-4 w-4 text-[#0098db]" />
-              <span>Billable Hours & Fee Calculations</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700">Select Client Matter</label>
-                <select
-                  value={selectedMatterId}
-                  onChange={(e) => setSelectedMatterId(e.target.value)}
-                  className="mt-1 w-full rounded border border-stone-300 bg-white p-2 text-xs font-medium text-stone-800"
-                >
-                  {mockMatters.length === 0 && (
-                    <option value="">General Billing (No Active Matters)</option>
-                  )}
-                  {mockMatters.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.clientName} - {m.referenceNumber}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700">Billable Hours</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={hours}
-                  onChange={(e) => setHours(parseFloat(e.target.value) || 0)}
-                  className="mt-1 w-full rounded border border-stone-300 bg-white p-2 text-xs font-bold font-mono text-stone-800"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700">Rate / Hour (KES)</label>
-                <input
-                  type="number"
-                  step="1000"
-                  min="0"
-                  value={hourlyRate}
-                  onChange={(e) => setHourlyRate(parseFloat(e.target.value) || 0)}
-                  className="mt-1 w-full rounded border border-stone-300 bg-white p-2 text-xs font-bold font-mono text-stone-800"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700">Court Disbursements (KES)</label>
-                <input
-                  type="number"
-                  step="1000"
-                  min="0"
-                  value={disbursements}
-                  onChange={(e) => setDisbursements(parseFloat(e.target.value) || 0)}
-                  className="mt-1 w-full rounded border border-stone-300 bg-white p-2 text-xs font-bold font-mono text-stone-800"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Notification Toast */}
         {showToast && (
           <div className="m-4 rounded-md bg-emerald-50 border border-emerald-300 p-3 text-xs font-bold text-emerald-900 flex items-center space-x-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
             <span>{toastMessage}</span>
           </div>
         )}
 
-        {/* Invoice Preview Document */}
-        <div className="p-6 md:p-8 flex-1 bg-stone-100 overflow-y-auto">
-          <div className="bg-white rounded-lg border border-stone-300 shadow-md p-8 text-stone-800 space-y-6 text-xs max-w-2xl mx-auto">
+        {/* Invoice Preview Document matching attached PDF */}
+        <div className="p-6 md:p-8 flex-1 bg-slate-100 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-md p-8 md:p-12 text-slate-800 space-y-6 text-xs max-w-2xl mx-auto min-h-[750px] flex flex-col justify-between">
             
-            {/* Firm Header */}
-            <div className="border-b-2 border-[#0098db] pb-5 flex flex-col sm:flex-row justify-between gap-4">
-              <div>
-                <CompanyLogo variant="horizontal" size="md" darkBg={false} />
-                <div className="mt-3 text-[11px] text-stone-600 leading-tight space-y-0.5">
-                  <p className="font-semibold text-stone-800">Muthoni Ahago Advocates</p>
-                  <p>1st Floor, The Triple Two Address, Along the Eastern Bypass</p>
-                  <p>Ruiru, Kenya</p>
-                  <p>Tel: +254 (0)20 271 9900 | Email: billing@muthoniahago.co.ke</p>
+            <div className="space-y-6">
+              {/* Top Header Grid */}
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                {/* Left: Logo & Company Address */}
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="relative h-10 w-10 shrink-0">
+                      <div className="absolute inset-0 rounded-full bg-[#0098db] opacity-90"></div>
+                      <div className="absolute right-0 bottom-0 h-7 w-7 rounded-full bg-slate-900"></div>
+                      <div className="absolute inset-2 rounded-full bg-white"></div>
+                    </div>
+                    <span className="font-heading font-bold text-sm text-slate-900">{companyName}</span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-600 leading-tight space-y-0.5">
+                    <p className="font-bold text-slate-900">{companyName}</p>
+                    <p>The Triple Two Address,</p>
+                    <p>Block B, 1st Floor</p>
+                    <p>Phone {phone}</p>
+                    <p>Email: {email}</p>
+                  </div>
+                </div>
+
+                {/* Right: Invoice Title, Number & Balance Due */}
+                <div className="text-right sm:self-start space-y-1">
+                  <h1 className="text-3xl font-extrabold text-[#0098db] leading-none">
+                    Invoice
+                  </h1>
+                  <p className="font-bold text-slate-900 text-xs mt-1"># {invoiceNumber}</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Balance Due</p>
+                  <p className="font-heading text-lg font-bold text-slate-900">
+                    KES{balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+
+                  <div className="pt-2 text-[11px] space-y-0.5">
+                    <div className="flex justify-end space-x-4">
+                      <span className="text-slate-500">Invoice Date :</span>
+                      <span className="font-medium text-slate-800">{dateIssued}</span>
+                    </div>
+                    <div className="flex justify-end space-x-4">
+                      <span className="text-slate-500">Terms :</span>
+                      <span className="font-medium text-slate-800">{terms}</span>
+                    </div>
+                    <div className="flex justify-end space-x-4">
+                      <span className="text-slate-500">Due Date :</span>
+                      <span className="font-medium text-slate-800">{dueDate}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="text-right sm:self-start space-y-1 text-[11px]">
-                <div className="inline-block rounded bg-blue-50 border border-blue-200 px-3 py-1 font-mono font-extrabold text-[#0098db]">
-                  TAX FEE NOTE / INVOICE
+              {/* Bill To & Project Section */}
+              <div className="space-y-4 pt-2">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-900 uppercase">BILL TO:</p>
+                  <p className="text-xs font-bold text-slate-900 mt-0.5">{clientName}</p>
                 </div>
-                <p className="font-mono text-stone-700 font-bold mt-1">NO: {invoiceNumber}</p>
-                <p className="text-stone-500">Date: {dateIssued}</p>
-                <p className="text-stone-500">Due: {dueDate}</p>
-              </div>
-            </div>
 
-            {/* KRA PIN & Client Info Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-stone-50 p-4 rounded-md border border-stone-200">
-              <div>
-                <p className="text-[10px] font-bold text-stone-400 tracking-wider">Bill To Client:</p>
-                <p className="font-bold text-stone-900 text-sm mt-0.5">{clientName}</p>
-                <p className="text-stone-600 mt-0.5 whitespace-pre-line">{clientAddress}</p>
-                <p className="font-mono text-[10px] text-stone-500 mt-1">Client KRA PIN: {clientKraPin}</p>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-900">Project :</p>
+                  <p className="text-xs text-slate-800 mt-0.5">{projectOrSubject}</p>
+                </div>
               </div>
 
-              <div className="sm:text-right space-y-1">
-                <p className="text-[10px] font-bold text-stone-400 tracking-wider">Matter Details:</p>
-                {feeNote?.matterRef ? (
-                  <p className="font-mono font-bold text-[#0098db] text-xs">{feeNote.matterRef}</p>
-                ) : (
-                  <p className="font-mono font-bold text-[#0098db] text-xs">{currentMatter.referenceNumber}</p>
-                )}
-                <p className="font-semibold text-stone-800 text-xs">{matterTitle}</p>
-                <p className="text-stone-500 text-[11px]">{currentMatter.courtRegistry}</p>
-                <p className="font-mono text-[10px] text-stone-500 mt-1">Firm KRA PIN: P0512839401Z</p>
-              </div>
-            </div>
-
-            {/* Particulars Table */}
-            <div>
-              <p className="font-bold text-stone-900 mb-2 text-[11px] tracking-wider">
-                Particulars of Professional Services Rendered & Statutory Disbursements
-              </p>
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-stone-300 bg-stone-100 text-[10px] font-bold text-stone-600">
-                    <th className="py-2 px-3">Description of Work</th>
-                    <th className="py-2 px-3 text-center">Qty / Hours</th>
-                    <th className="py-2 px-3 text-right">Rate (KES)</th>
-                    <th className="py-2 px-3 text-center">VAT Rate</th>
-                    <th className="py-2 px-3 text-right">Amount (KES)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200 text-[11px]">
-                  {feeNote?.items && feeNote.items.length > 0 ? (
-                    feeNote.items.map((it) => {
-                      const isItemTaxable = it.isTaxable !== false;
-                      return (
-                        <tr key={it.id}>
-                          <td className="py-2.5 px-3">
-                            <p className="font-bold text-stone-900">{it.description}</p>
-                            {it.category && (
-                              <p className="text-stone-500 text-[10px]">{it.category}</p>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono font-bold">{it.quantity}</td>
-                          <td className="py-2.5 px-3 text-right font-mono">{it.unitPriceKES.toLocaleString()}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span
-                              className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-bold font-mono ${
-                                isItemTaxable
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-stone-100 text-stone-600'
-                              }`}
-                            >
-                              {isItemTaxable ? '16%' : 'Exempt'}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-stone-900">
-                            {it.totalPriceKES.toLocaleString()}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <>
-                      <tr>
+              {/* Items Table matching Cyan Bar style */}
+              <div className="overflow-x-auto pt-2">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#0098db] text-white font-bold text-[11px]">
+                      <th className="py-2 px-3 w-8 text-center">#</th>
+                      <th className="py-2 px-3">Description</th>
+                      <th className="py-2 px-3 text-right w-16">Qty</th>
+                      <th className="py-2 px-3 text-right w-24">Rate</th>
+                      <th className="py-2 px-3 text-right w-20">Discount</th>
+                      <th className="py-2 px-3 text-right w-28">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {items.map((it, idx) => (
+                      <tr key={it.id || idx} className="hover:bg-slate-50">
+                        <td className="py-3 px-3 text-center text-slate-700">{idx + 1}</td>
                         <td className="py-3 px-3">
-                          <p className="font-bold text-stone-900">Legal Representation & Counsel Billing</p>
-                          <p className="text-stone-500 text-[10px]">
-                            Pleadings drafting, legal research, e-filing submissions, and court appearances.
-                          </p>
+                          <p className="font-bold text-slate-900">{it.description}</p>
+                          {it.subDescription && (
+                            <p className="text-[10px] text-slate-500 mt-0.5">{it.subDescription}</p>
+                          )}
                         </td>
-                        <td className="py-3 px-3 text-center font-mono font-bold">{hours}</td>
-                        <td className="py-3 px-3 text-right font-mono">{hourlyRate.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="inline-block rounded bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[9px] font-bold font-mono">
-                            16%
-                          </span>
+                        <td className="py-3 px-3 text-right font-medium">
+                          {(it.quantity || 1).toFixed(2)}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-stone-900">
-                          {billableFees.toLocaleString()}
+                        <td className="py-3 px-3 text-right font-mono">
+                          {(it.unitPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono">
+                          {it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold font-mono text-slate-900">
+                          {(it.totalPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                      {disbursements > 0 && (
-                        <tr>
-                          <td className="py-3 px-3">
-                            <p className="font-bold text-stone-900">Judiciary CTS e-Filing Disbursements</p>
-                            <p className="text-stone-500 text-[10px]">Official High Court filing fees and statutory registry charges.</p>
-                          </td>
-                          <td className="py-3 px-3 text-center font-mono text-stone-400">—</td>
-                          <td className="py-3 px-3 text-right font-mono text-stone-400">—</td>
-                          <td className="py-3 px-3 text-center">
-                            <span className="inline-block rounded bg-stone-100 text-stone-600 px-1.5 py-0.5 text-[9px] font-bold font-mono">
-                              Exempt
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold text-stone-900">
-                            {disbursements.toLocaleString()}
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Financial Summary */}
-            <div className="flex justify-end pt-2 border-t border-stone-200">
-              <div className="w-full sm:w-72 space-y-1.5 text-xs">
-                {taxableSubtotal > 0 && (
-                  <div className="flex justify-between text-stone-600">
-                    <span>Taxable Professional Fees:</span>
-                    <span className="font-mono font-bold">KES {taxableSubtotal.toLocaleString()}</span>
+              {/* Totals Section */}
+              <div className="flex justify-end pt-3">
+                <div className="w-64 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-700">
+                    <span>Sub Total</span>
+                    <span className="font-mono">
+                      {subTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                )}
-                {nonTaxableSubtotal > 0 && (
-                  <div className="flex justify-between text-stone-600">
-                    <span>Exempt CTS & Disbursements:</span>
-                    <span className="font-mono font-bold">KES {nonTaxableSubtotal.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-stone-700 font-semibold pt-1 border-t border-stone-200">
-                  <span>Net Total Amount:</span>
-                  <span className="font-mono">KES {netAmount.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-stone-600">
-                  <span>16% VAT (Itemized):</span>
-                  <span className="font-mono font-bold text-stone-800">KES {vatAmount.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between bg-[#132c3f] text-white p-2.5 rounded font-bold text-sm mt-2">
-                  <span>TOTAL INVOICED:</span>
-                  <span className="font-mono text-[#00c0ef]">KES {totalAmount.toLocaleString()}</span>
-                </div>
 
-                {/* Payment Breakdown if any payments recorded */}
-                {amountPaid > 0 && (
-                  <div className="pt-2 border-t border-stone-200 space-y-1">
-                    <div className="flex justify-between text-emerald-700 font-semibold">
-                      <span>Total Paid:</span>
-                      <span className="font-mono font-bold">KES {amountPaid.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-stone-800 font-bold bg-amber-50 p-2 rounded border border-amber-200">
-                      <span>Balance Due:</span>
-                      <span className={`font-mono ${balanceDue === 0 ? 'text-emerald-700' : 'text-amber-800'}`}>
-                        KES {balanceDue.toLocaleString()}
+                  {shipping > 0 && (
+                    <div className="flex justify-between text-slate-700">
+                      <span>Shipping Charges</span>
+                      <span className="font-mono">
+                        {shipping.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
+                  )}
+
+                  {adjustment !== 0 && (
+                    <div className="flex justify-between text-slate-700">
+                      <span>Adjustment</span>
+                      <span className="font-mono">
+                        {adjustment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between font-bold text-slate-900 pt-1 border-t border-slate-200">
+                    <span>Total</span>
+                    <span className="font-mono">
+                      KES{totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                )}
+
+                  <div className="flex justify-between font-bold text-slate-900 bg-slate-100 p-2 rounded">
+                    <span>Balance Due</span>
+                    <span className="font-mono">
+                      KES{balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Notes & Payment Options */}
+              <div className="pt-4 text-xs space-y-4">
+                <p className="text-slate-800">{feeNoteToUse.customerNotes || 'Thanks for your business.'}</p>
+
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-900 text-xs">PAYMENT OPTIONS:</p>
+                  <p className="text-slate-700 text-[11px]">Cash payments can be done via</p>
+                  <p className="font-bold text-slate-900 text-xs">
+                    MPESA | BUY GOODS: {paybill}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Payment & Bank Remittance Instructions */}
-            <div className="rounded border border-blue-200 bg-blue-50/60 p-3 text-[11px] text-blue-950 space-y-1">
-              <p className="font-bold flex items-center space-x-1.5 text-stone-900">
-                <ShieldCheck className="h-3.5 w-3.5 text-[#0098db]" />
-                <span>Bank Payment Instructions (Client Trust Account)</span>
-              </p>
-              <p>Bank: <strong className="text-stone-900">Stanbic Bank Kenya Ltd</strong> • Branch: <strong className="text-stone-900">Upper Hill Nairobi</strong></p>
-              <p>Account Name: <strong className="text-stone-900">Muthoni Ahago Advocates Client Acc</strong></p>
-              <p>Account No: <strong className="font-mono text-stone-900">0100004918239</strong> | Swift: <strong className="font-mono text-stone-900">SBKENXNA</strong></p>
+            {/* Footer Line */}
+            <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-[10px] text-slate-400">
+              <span>{companyName} | {phone} | {email} | {settings.website || 'www.ceatrontechnologies.com'}</span>
+              <span>1</span>
             </div>
 
-            {/* Footer stamp */}
-            <div className="border-t border-stone-200 pt-4 flex items-center justify-between text-[10px] text-stone-400">
-              <span>{feeNote?.quoteNumber ? `Generated from Quotation ${feeNote.quoteNumber}` : 'Direct Legal Fee Note'}</span>
-              <p className="font-mono">Computer Generated Tax Invoice</p>
-            </div>
           </div>
         </div>
 
         {/* Drawer Actions */}
-        <div className="border-t border-stone-200 p-4 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-xs text-stone-500">
-            Invoice Total: <strong className="font-mono text-stone-900 text-sm">KES {totalAmount.toLocaleString()}</strong>
+        <div className="border-t border-slate-200 p-4 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-xs text-slate-500">
+            Invoice Total: <strong className="font-mono text-slate-900 text-sm">KES {totalAmount.toLocaleString()}</strong>
             {balanceDue > 0 && balanceDue !== totalAmount && (
               <span className="ml-2 text-amber-700 font-semibold">(Bal: KES {balanceDue.toLocaleString()})</span>
             )}
           </div>
 
           <div className="flex items-center space-x-2">
-            {onReceivePayment && isCustomFeeNote && feeNote && balanceDue > 0 && (
+            {onReceivePayment && balanceDue > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   onClose();
-                  onReceivePayment(feeNote);
+                  onReceivePayment(feeNoteToUse);
                 }}
                 className="flex items-center space-x-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
               >
@@ -394,23 +321,23 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
             )}
 
             <button
-              onClick={() => handleAction('Invoice printed successfully.')}
-              className="flex items-center space-x-1.5 rounded border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
+              onClick={handlePrint}
+              className="flex items-center space-x-1.5 rounded border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <Printer className="h-4 w-4" />
               <span>Print</span>
             </button>
 
             <button
-              onClick={() => handleAction(`Fee Note emailed directly to ${clientName} Finance team.`)}
-              className="flex items-center space-x-1.5 rounded border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
+              onClick={handleSendEmail}
+              className="flex items-center space-x-1.5 rounded border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <Send className="h-4 w-4" />
               <span>Email Client</span>
             </button>
 
             <button
-              onClick={() => handleAction(`Downloaded Tax Fee Note ${invoiceNumber}.pdf`)}
+              onClick={handleDownloadPdf}
               className="flex items-center space-x-1.5 rounded bg-[#0098db] px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-[#0087c2] cursor-pointer"
             >
               <Download className="h-4 w-4" />
@@ -423,4 +350,3 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
     </div>
   );
 };
-

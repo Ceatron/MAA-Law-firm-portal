@@ -156,21 +156,24 @@ export interface ActivityLog {
 export interface InvoiceLineItem {
   id: string;
   description: string;
+  subDescription?: string;
   category?: 'Professional Fees' | 'Court Filing / CTS' | 'Disbursement' | 'Legal Research' | 'Consultation' | 'Drafting Pleading' | 'Other' | string;
   quantity: number; // e.g. hours or units
   unitPriceKES: number; // e.g. rate per hour or item cost
-  discountPercent?: number; // optional line item discount
+  discountPercent?: number; // optional line item discount in %
   discountKES?: number;
   totalPriceKES: number;
   isTaxable?: boolean; // whether VAT (16%) is charged on this specific item/row
   vatAmountKES?: number; // calculated VAT for this line item
+  taxRate?: number;
+  taxName?: string;
 }
 
 export type FeeNoteStatus = 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Pending';
 
 export interface FeeNote {
   id: string;
-  invoiceNumber: string; // e.g. MAA-INV-2026-088
+  invoiceNumber: string; // e.g. INV-000544 or MAA-INV-2026-088
   clientName: string;
   clientId?: string;
   clientEmail?: string;
@@ -179,6 +182,8 @@ export interface FeeNote {
   matterId?: string;
   matterRef?: string;
   matterTitle: string;
+  subject?: string; // Let your customer know what this Invoice is for / Project
+  terms?: string; // e.g. "Due on Receipt", "Net 15", "Net 30"
   dateIssued: string;
   dueDate: string;
   items?: InvoiceLineItem[];
@@ -187,6 +192,8 @@ export interface FeeNote {
   taxableAmountKES?: number; // Net amount of VAT-chargeable items
   nonTaxableAmountKES?: number; // Net amount of zero-rated / exempt items (e.g. CTS filing, stamp duty)
   disbursementsKES?: number;
+  shippingChargesKES?: number;
+  adjustmentKES?: number;
   amountKES: number; // Total net amount before VAT
   vatRatePercent?: number; // standard VAT percentage (default 16%)
   vatKES: number;
@@ -198,8 +205,11 @@ export interface FeeNote {
   quoteId?: string; // linked quotation ID if converted
   quoteNumber?: string;
   notes?: string;
+  customerNotes?: string;
+  termsAndConditions?: string;
   bankDetails?: string;
   paymentsCount?: number;
+  attachedFiles?: string[];
 }
 
 export type PaymentMethod = 'M-Pesa' | 'Bank Transfer' | 'Cheque';

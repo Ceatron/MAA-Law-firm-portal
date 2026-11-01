@@ -228,24 +228,6 @@ const INITIAL_SEED_DATA: ChambersDatabaseState = {
   ],
   tasks: [
     {
-      id: 'tsk-1',
-      title: 'Draft Replying Affidavit on Injunction Notice of Motion',
-      description: 'Review defendant replying affidavits and draft response contesting status quo order over mortgaged property.',
-      matterId: 'mat-1',
-      matterRef: 'MAA/HC/COM/2026/0142',
-      clientName: 'Stanbic Bank Kenya Limited',
-      assignedTo: 'Adv. Costa Kimathi',
-      assignedToId: 'adv-1',
-      assignedToEmail: 'muthoni@muthoniahagolaw.co.ke',
-      createdBy: 'Adv. Costa Kimathi',
-      createdById: 'adv-1',
-      dueDate: '2026-03-08',
-      priority: 'High',
-      status: 'In Progress',
-      tags: ['Drafting', 'High Court'],
-      createdAt: '2026-03-01T08:00:00.000Z',
-    },
-    {
       id: 'tsk-2',
       title: 'Conduct Environmental Site Expert Conference & Obtain Soil Analysis',
       description: 'Liaise with registered NEMA lead expert to formulate counter-report on drainage compliance for Apex Properties.',
@@ -280,24 +262,6 @@ const INITIAL_SEED_DATA: ChambersDatabaseState = {
       status: 'Pending',
       tags: ['Tax', 'TAT'],
       createdAt: '2026-03-03T11:00:00.000Z',
-    },
-    {
-      id: 'tsk-4',
-      title: 'E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry',
-      description: 'Collate court bundle, execute CTS online filing, and ensure physical stamping on opposing counsel.',
-      matterId: 'mat-1',
-      matterRef: 'MAA/HC/COM/2026/0142',
-      clientName: 'Stanbic Bank Kenya Limited',
-      assignedTo: 'Enrique Irungu',
-      assignedToId: 'staff-clerk-1',
-      assignedToEmail: 'irungu@muthoniahagolaw.co.ke',
-      createdBy: 'Adv. Costa Kimathi',
-      createdById: 'adv-1',
-      dueDate: '2026-03-10',
-      priority: 'High',
-      status: 'Pending',
-      tags: ['Court Registry', 'CTS Filing'],
-      createdAt: '2026-03-03T14:15:00.000Z',
     }
   ],
   deadlines: [
@@ -399,12 +363,22 @@ export function loadDatabase(): ChambersDatabaseState {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
+        const rawTasks = Array.isArray(parsed.tasks) && parsed.tasks.length > 0 ? parsed.tasks : INITIAL_SEED_DATA.tasks;
+        const cleanedTasks = (rawTasks || []).filter(
+          (t: any) =>
+            t &&
+            t.id !== 'tsk-1' &&
+            t.id !== 'tsk-4' &&
+            !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+            !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry')
+        );
+
         inMemoryDb = {
           ...INITIAL_SEED_DATA,
           ...parsed,
           matters: Array.isArray(parsed.matters) && parsed.matters.length > 0 ? parsed.matters : INITIAL_SEED_DATA.matters,
           clients: Array.isArray(parsed.clients) && parsed.clients.length > 0 ? parsed.clients : INITIAL_SEED_DATA.clients,
-          tasks: Array.isArray(parsed.tasks) && parsed.tasks.length > 0 ? parsed.tasks : INITIAL_SEED_DATA.tasks,
+          tasks: cleanedTasks,
           deadlines: Array.isArray(parsed.deadlines) && parsed.deadlines.length > 0 ? parsed.deadlines : INITIAL_SEED_DATA.deadlines,
         };
         return inMemoryDb!;

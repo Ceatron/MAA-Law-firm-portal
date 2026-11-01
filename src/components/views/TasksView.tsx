@@ -632,6 +632,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
   ).filter(
     (t) =>
       t &&
+      t.id !== 'tsk-1' &&
+      t.id !== 'tsk-4' &&
+      !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+      !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry') &&
       t.matterRef !== 'MAA/CIV/2026/735' &&
       !t.matterRef?.includes('735') &&
       !t.title?.includes('735') &&

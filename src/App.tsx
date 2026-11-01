@@ -208,6 +208,10 @@ export default function App() {
     loadSavedTasks().filter(
       (t) =>
         t &&
+        t.id !== 'tsk-1' &&
+        t.id !== 'tsk-4' &&
+        !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+        !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry') &&
         t.matterRef !== 'MAA/CIV/2026/735' &&
         !t.matterRef?.includes('735') &&
         !t.description?.includes('735') &&
@@ -227,10 +231,33 @@ export default function App() {
   );
   const [notifications, setNotifications] = useState(() => loadSavedNotifications());
 
-  // Proactively purge any residual test data with '735' or 'MAA/CIV/2026/735' from browser storage
+  // Proactively purge removed tasks and test data from browser storage
   useEffect(() => {
     try {
-      ['muthoni_ahago_matters_v3', 'muthoni_ahago_tasks_v2', 'muthoni_ahago_activities_v1'].forEach((key) => {
+      ['muthoni_ahago_tasks_v1', 'muthoni_ahago_tasks_v2'].forEach((key) => {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              const cleaned = parsed.filter(
+                (t: any) =>
+                  t.id !== 'tsk-1' &&
+                  t.id !== 'tsk-4' &&
+                  !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+                  !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry') &&
+                  t.matterRef !== 'MAA/CIV/2026/735' &&
+                  !t.matterRef?.includes('735')
+              );
+              if (cleaned.length !== parsed.length) {
+                localStorage.setItem(key, JSON.stringify(cleaned));
+              }
+            }
+          } catch {}
+        }
+      });
+
+      ['muthoni_ahago_matters_v3', 'muthoni_ahago_activities_v1'].forEach((key) => {
         const raw = localStorage.getItem(key);
         if (raw && (raw.includes('735') || raw.includes('MAA/CIV/2026/735'))) {
           try {
@@ -649,10 +676,21 @@ export default function App() {
     ChambersCloudService.markAllNotificationsRead(currentAdvocate.email);
   };
 
-  const scopedTasksForCount = isManagingAdvocate
+  const scopedTasksForCount = (isManagingAdvocate
     ? tasks
-    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters));
-  const pendingTasksCount = scopedTasksForCount.filter((t) => t.status !== 'Completed').length;
+    : tasks.filter((t) => isTaskVisibleToUser(t, currentAdvocate, matters))
+  ).filter(
+    (t) =>
+      t &&
+      t.id !== 'tsk-1' &&
+      t.id !== 'tsk-4' &&
+      !t.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+      !t.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry')
+  );
+  const pendingTasksCount = scopedTasksForCount.filter((t) => {
+    const s = (t.status || '').toLowerCase();
+    return s !== 'completed' && s !== 'closed';
+  }).length;
   const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
   if (!isAuthenticated) {
