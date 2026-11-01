@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { FeeNote, ChambersSettings } from '../types';
 import { loadChambersSettings } from './settingsStorage';
+import { MA_LAW_LOGO_DATA_URL } from '../assets/maLawLogoBase64';
 
 export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSettings): jsPDF => {
   const settings = customSettings || loadChambersSettings();
@@ -25,72 +26,46 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
 
   let currentY = 18;
 
-  // 1. Draw Company Logo on Top Left
-  // Geometric stylish arcs logo like the PDF
-  doc.setFillColor(...skyBlue);
-  doc.circle(margin + 5, currentY + 5, 5, 'F');
-  doc.setFillColor(30, 41, 59);
-  doc.circle(margin + 8, currentY + 8, 4, 'F');
-  doc.setFillColor(255, 255, 255);
-  doc.circle(margin + 6, currentY + 6, 2.5, 'F');
+  // 1. Draw Official Firm Logo on Top Left
+  try {
+    doc.addImage(MA_LAW_LOGO_DATA_URL, 'JPEG', margin, currentY, 24, 22.3);
+  } catch (err) {
+    // Graceful fallback to styled initials if image embedding fails
+    doc.setFillColor(...skyBlue);
+    doc.circle(margin + 6, currentY + 6, 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('MA', margin + 3.5, currentY + 8);
+  }
 
-  // Company Name next to logo
+  // Top Right: "Fee Note", "# INV-000544", "Balance Due", "KES1,000.00"
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(...textDark);
-  const companyName = settings.firmName || 'Ceatron Technologies Ltd';
-  doc.text(companyName, margin + 14, currentY + 4);
-
-  // Top Right: "Invoice", "# INV-000544", "Balance Due", "KES1,000.00"
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(28);
+  doc.setFontSize(26);
   doc.setTextColor(...skyBlue);
-  doc.text('Invoice', pageWidth - margin, currentY + 4, { align: 'right' });
+  doc.text('Fee Note', pageWidth - margin, currentY + 5, { align: 'right' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(...textDark);
   const invNumber = feeNote.invoiceNumber || 'INV-000544';
-  doc.text(`# ${invNumber}`, pageWidth - margin, currentY + 11, { align: 'right' });
+  doc.text(`# ${invNumber}`, pageWidth - margin, currentY + 12, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...textMuted);
-  doc.text('Balance Due', pageWidth - margin, currentY + 17, { align: 'right' });
+  doc.text('Balance Due', pageWidth - margin, currentY + 18, { align: 'right' });
 
   const totalAmount = feeNote.totalKES || feeNote.amountKES || 0;
   const balanceDue = feeNote.balanceKES !== undefined ? feeNote.balanceKES : totalAmount;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13.5);
   doc.setTextColor(...textDark);
-  doc.text(`KES${balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - margin, currentY + 23, { align: 'right' });
+  doc.text(`KES${balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - margin, currentY + 24, { align: 'right' });
 
-  // Company Address Lines (under company logo)
-  currentY += 18;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(...textDark);
-  doc.text(companyName, margin, currentY);
-
-  currentY += 4.5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(...textMuted);
-  const addr1 = 'The Triple Two Address,';
-  const addr2 = 'Block B, 1st Floor';
-  doc.text(addr1, margin, currentY);
-  currentY += 4;
-  doc.text(addr2, margin, currentY);
-  currentY += 4;
-  const phone = settings.phone || '+254 786 652 032 / +254 724833192';
-  doc.text(`Phone ${phone}`, margin, currentY);
-  currentY += 4;
-  const email = settings.email || settings.billingEmail || 'info@ceatrontechnologies.com';
-  doc.text(`Email: ${email}`, margin, currentY);
-
-  // Right-aligned Invoice Date, Terms, Due Date
-  const metaYStart = currentY - 14;
-  const metaLabelX = pageWidth - margin - 50;
+  // Right-aligned Invoice Date, Terms, Due Date (placed strictly BELOW Balance Due to avoid overlap)
+  const metaYStart = currentY + 32;
+  const metaLabelX = pageWidth - margin - 52;
   const metaValueX = pageWidth - margin;
 
   doc.setFont('helvetica', 'normal');
@@ -106,7 +81,21 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.text('Due Date :', metaLabelX, metaYStart + 11);
   doc.text(feeNote.dueDate || '30 Oct 2026', metaValueX, metaYStart + 11, { align: 'right' });
 
-  currentY += 12;
+  // Company Address Lines (under company logo, no duplicate firm name)
+  const addrYStart = currentY + 26;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...textMuted);
+  const addr1 = 'The Triple Two Address,';
+  const addr2 = 'Block B, 1st Floor';
+  doc.text(addr1, margin, addrYStart);
+  doc.text(addr2, margin, addrYStart + 4);
+  const phone = settings.phone || '+254 (0)20 271 9900';
+  doc.text(`Phone ${phone}`, margin, addrYStart + 8);
+  const email = settings.email || settings.billingEmail || 'info@muthoniahago.co.ke';
+  doc.text(`Email: ${email}`, margin, addrYStart + 12);
+
+  currentY = Math.max(addrYStart + 18, metaYStart + 18);
 
   // BILL TO & PROJECT / SUBJECT SECTION
   doc.setFont('helvetica', 'bold');
@@ -228,9 +217,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   const totalsValueX = pageWidth - margin - 3;
 
   const subTotal = feeNote.subtotalKES || rawItems.reduce((acc, it) => acc + (it.totalPriceKES || 0), 0);
-  const shipping = feeNote.shippingChargesKES || feeNote.disbursementsKES || 0;
-  const adjustment = feeNote.adjustmentKES || 0;
-  const finalTotal = feeNote.totalKES || (subTotal + shipping + adjustment);
+  const discountAmount = feeNote.discountKES || (feeNote.adjustmentKES && feeNote.adjustmentKES < 0 ? Math.abs(feeNote.adjustmentKES) : 0);
+  const finalTotal = feeNote.totalKES || Math.max(0, subTotal - discountAmount);
+  const companyName = settings.firmName || 'Muthoni Ahago Advocates';
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -239,15 +228,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.text(subTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), totalsValueX, currentY + 4, { align: 'right' });
   currentY += 6.5;
 
-  if (shipping > 0) {
-    doc.text('Shipping Charges', totalsLabelX, currentY + 4);
-    doc.text(shipping.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), totalsValueX, currentY + 4, { align: 'right' });
-    currentY += 6.5;
-  }
-
-  if (adjustment !== 0) {
-    doc.text('Adjustment', totalsLabelX, currentY + 4);
-    doc.text(adjustment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), totalsValueX, currentY + 4, { align: 'right' });
+  if (discountAmount > 0) {
+    doc.text('Discount', totalsLabelX, currentY + 4);
+    doc.text(`- ${discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, totalsValueX, currentY + 4, { align: 'right' });
     currentY += 6.5;
   }
 
@@ -272,7 +255,7 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.text(`KES${balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, totalsValueX, currentY + 5.2, { align: 'right' });
 
   // BOTTOM LEFT: Customer Notes & Payment Options
-  const notesY = currentY - (shipping > 0 ? 12 : 6);
+  const notesY = currentY - (discountAmount > 0 ? 12 : 6);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...textDark);
@@ -288,7 +271,7 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.setFontSize(8);
   doc.setTextColor(...textDark);
   doc.text('Cash payments can be done via', margin, payY + 4.5);
-  const paybill = settings.bankDetails?.paybillNumber || '603685';
+  const paybill = settings.bankDetails?.paybillNumber || '522522';
   doc.setFont('helvetica', 'bold');
   doc.text(`MPESA | BUY GOODS: ${paybill}`, margin, payY + 8.5);
 
@@ -300,7 +283,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...textMuted);
-  const footerText = `${companyName} | ${phone} | ${email} | ${settings.website || 'www.ceatrontechnologies.com'}`;
+  const footerPhone = settings.phone || '+254 (0)20 271 9900';
+  const footerEmail = settings.email || 'info@muthoniahago.co.ke';
+  const footerText = `${companyName} | ${footerPhone} | ${footerEmail} | ${settings.website || 'www.muthoniahago.co.ke'}`;
   doc.text(footerText, margin, footerY);
   doc.text('1', pageWidth - margin, footerY, { align: 'right' });
 

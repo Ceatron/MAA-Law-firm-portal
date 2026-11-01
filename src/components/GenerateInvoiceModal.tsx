@@ -107,13 +107,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     },
   ]);
 
-  // Bulk Add / Quick snippets drawer
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  // Standard service items / quick dropdown
+  const [openItemDropdownIndex, setOpenItemDropdownIndex] = useState<number | null>(null);
   const standardSnippets = loadStandardServiceSnippets();
 
-  // Summary fields
-  const [shippingCharges, setShippingCharges] = useState<number>(0);
-  const [adjustment, setAdjustment] = useState<number>(0);
+  // Summary fields (shipping removed, adjustment replaced with discount)
+  const [discountKES, setDiscountKES] = useState<number>(0);
 
   // Customer Notes & Terms
   const [customerNotes, setCustomerNotes] = useState<string>('Thanks for your business.');
@@ -146,11 +145,15 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     setDueDate(d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
   };
 
-  // Close dropdown on click outside
+  // Close dropdowns on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (clientDropdownRef.current && !clientDropdownRef.current.contains(e.target as Node)) {
         setIsClientDropdownOpen(false);
+      }
+      const target = e.target as HTMLElement;
+      if (!target.closest('.item-details-dropdown-container')) {
+        setOpenItemDropdownIndex(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -240,27 +243,9 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     setItems(items.filter((_, i) => i !== index));
   };
 
-  // Add standard snippet
-  const handleAddSnippet = (snippet: StandardServiceItem) => {
-    const newRow: InvoiceLineItem = {
-      id: `item-${Date.now()}`,
-      description: snippet.description,
-      subDescription: snippet.category,
-      quantity: 1,
-      unitPriceKES: snippet.unitPriceKES,
-      discountPercent: 0,
-      discountKES: 0,
-      totalPriceKES: snippet.unitPriceKES,
-      isTaxable: snippet.isTaxable,
-      taxName: snippet.isTaxable ? 'VAT [16%]' : '0% Non-Taxable / Exempt',
-    };
-    setItems((prev) => [...prev, newRow]);
-    setIsBulkModalOpen(false);
-  };
-
   // Calculate totals
   const subTotal = items.reduce((acc, it) => acc + (it.totalPriceKES || 0), 0);
-  const totalAmount = Math.max(0, subTotal + (shippingCharges || 0) + (adjustment || 0));
+  const totalAmount = Math.max(0, subTotal - (discountKES || 0));
 
   // Quick Client Creation
   const handleSaveNewClient = () => {
@@ -312,9 +297,8 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       dueDate: dueDate,
       items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
       subtotalKES: subTotal,
-      shippingChargesKES: shippingCharges,
-      disbursementsKES: shippingCharges,
-      adjustmentKES: adjustment,
+      discountKES: discountKES,
+      adjustmentKES: discountKES ? -discountKES : 0,
       amountKES: subTotal,
       vatRatePercent: 16,
       vatKES: items.filter((it) => it.isTaxable).reduce((sum, it) => sum + (it.totalPriceKES * 0.16), 0),
@@ -358,9 +342,8 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       dueDate: dueDate,
       items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
       subtotalKES: subTotal,
-      shippingChargesKES: shippingCharges,
-      disbursementsKES: shippingCharges,
-      adjustmentKES: adjustment,
+      discountKES: discountKES,
+      adjustmentKES: discountKES ? -discountKES : 0,
       amountKES: subTotal,
       vatRatePercent: 16,
       vatKES: 0,
@@ -628,32 +611,14 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
           {/* ========================================================= */}
           {/* ITEM TABLE SECTION */}
           {/* ========================================================= */}
-          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
-            {/* Table Header Bar */}
+          <div className="border border-slate-200 rounded-lg overflow-visible shadow-2xs">
+            {/* Table Header Bar (Scan Item & Bulk Actions removed per instruction) */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
               <span className="font-bold text-xs md:text-sm text-slate-800">Item Table</span>
-              <div className="flex items-center space-x-3 text-xs font-medium text-blue-600">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkModalOpen(true)}
-                  className="inline-flex items-center space-x-1 hover:text-blue-800 cursor-pointer"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Scan Item</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsBulkModalOpen(true)}
-                  className="inline-flex items-center space-x-1 hover:text-blue-800 cursor-pointer"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Bulk Actions</span>
-                </button>
-              </div>
             </div>
 
             {/* Table Body */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-visible">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-white text-[11px] font-bold text-slate-600 uppercase tracking-wider">
@@ -678,14 +643,101 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                       <td className="py-3 px-2 text-slate-300 text-center">
                         <GripVertical className="h-4 w-4 mx-auto cursor-grab" />
                       </td>
-                      <td className="py-3 px-3">
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => updateItemRow(index, 'description', e.target.value)}
-                          placeholder="Type or click to select an item."
-                          className="w-full rounded border border-transparent hover:border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 px-2 py-1 text-xs text-slate-800 font-medium"
-                        />
+                      <td className="py-3 px-3 relative item-details-dropdown-container">
+                        {/* Interactive Item Input & Selection Dropdown */}
+                        <div className="relative">
+                          <div className="flex items-center">
+                            <input
+                              type="text"
+                              value={item.description}
+                              onFocus={() => setOpenItemDropdownIndex(index)}
+                              onChange={(e) => {
+                                updateItemRow(index, 'description', e.target.value);
+                                setOpenItemDropdownIndex(index);
+                              }}
+                              placeholder="Type or click to select an item."
+                              className="w-full rounded border border-transparent hover:border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 pr-7 px-2 py-1 text-xs text-slate-800 font-medium"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenItemDropdownIndex(openItemDropdownIndex === index ? null : index);
+                              }}
+                              className="absolute right-1 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                              title="Click to select standard practice item"
+                            >
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openItemDropdownIndex === index ? 'rotate-180 text-blue-600' : ''}`} />
+                            </button>
+                          </div>
+
+                          {/* Interactive Dropdown */}
+                          {openItemDropdownIndex === index && (
+                            <div className="absolute left-0 top-full mt-1 w-80 sm:w-96 max-h-64 overflow-y-auto bg-white rounded-lg border border-slate-200 shadow-2xl z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                              <div className="p-2.5 bg-slate-50/90 sticky top-0 border-b border-slate-200 flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                                <span className="flex items-center space-x-1.5">
+                                  <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+                                  <span>Select Item / Fee Service</span>
+                                </span>
+                                <span className="text-[10px] text-slate-400">Type above to filter</span>
+                              </div>
+                              {standardSnippets
+                                .filter((s) => {
+                                  if (!item.description) return true;
+                                  const q = item.description.toLowerCase();
+                                  return (
+                                    s.description.toLowerCase().includes(q) ||
+                                    s.category.toLowerCase().includes(q) ||
+                                    (s.practiceArea && s.practiceArea.toLowerCase().includes(q))
+                                  );
+                                })
+                                .map((snippet) => (
+                                  <div
+                                    key={snippet.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      const rate = snippet.unitPriceKES || 0;
+                                      const qty = item.quantity || 1;
+                                      const discPercent = item.discountPercent || 0;
+                                      const gross = qty * rate;
+                                      const discKES = (gross * discPercent) / 100;
+
+                                      setItems((prev) => {
+                                        const next = [...prev];
+                                        next[index] = {
+                                          ...next[index],
+                                          description: snippet.description,
+                                          subDescription: snippet.category,
+                                          unitPriceKES: rate,
+                                          discountKES: discKES,
+                                          totalPriceKES: Math.max(0, gross - discKES),
+                                          isTaxable: snippet.isTaxable,
+                                          taxName: snippet.isTaxable ? 'VAT [16%]' : '0% Non-Taxable / Exempt',
+                                        };
+                                        return next;
+                                      });
+                                      setOpenItemDropdownIndex(null);
+                                    }}
+                                    className="p-2.5 hover:bg-blue-50/70 cursor-pointer transition text-left"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="text-xs font-medium text-slate-900 leading-snug">{snippet.description}</p>
+                                      <span className="font-mono font-bold text-xs text-blue-600 shrink-0">
+                                        KES {snippet.unitPriceKES.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
+                                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-medium">{snippet.category}</span>
+                                      {snippet.statutoryReference && (
+                                        <span className="text-slate-400">• {snippet.statutoryReference}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+
                         <input
                           type="text"
                           value={item.subDescription || ''}
@@ -764,7 +816,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               </table>
             </div>
 
-            {/* Table Footer Buttons */}
+            {/* Table Footer Buttons (Add Items in Bulk removed per instruction) */}
             <div className="p-3 bg-white border-t border-slate-200 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -773,14 +825,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Add New Row</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsBulkModalOpen(true)}
-                className="inline-flex items-center space-x-1 rounded-md bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold shadow-2xs transition cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Items in Bulk</span>
               </button>
             </div>
           </div>
@@ -859,6 +903,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             </div>
 
             {/* Right 5 cols: Sub Total, Shipping, Adjustment, Total */}
+            {/* Right 5 cols: Sub Total, Discount, Total */}
             <div className="md:col-span-5 bg-slate-50/50 rounded-xl border border-slate-200 p-5 space-y-3.5 text-xs">
               {/* Sub Total */}
               <div className="flex items-center justify-between">
@@ -868,45 +913,24 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                 </span>
               </div>
 
-              {/* Shipping Charges */}
+              {/* Discount (Replaced Adjustment per user instruction) */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-1 text-slate-600">
-                  <span>Shipping Charges</span>
-                  <HelpCircle className="h-3.5 w-3.5 text-slate-400" title="Disbursements, courier, or delivery fees" />
+                  <span className="rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">Discount</span>
+                  <HelpCircle className="h-3.5 w-3.5 text-slate-400" title="Discount deducted from subtotal (KES)" />
                 </div>
                 <div className="flex items-center space-x-2">
                   <input
                     type="number"
+                    step="100"
                     min="0"
-                    step="10"
-                    value={shippingCharges || ''}
-                    onChange={(e) => setShippingCharges(parseFloat(e.target.value) || 0)}
+                    value={discountKES || ''}
+                    onChange={(e) => setDiscountKES(Math.max(0, parseFloat(e.target.value) || 0))}
                     placeholder="0.00"
-                    className="w-24 text-right rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 font-mono focus:border-blue-500"
+                    className="w-28 text-right rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 font-mono focus:border-blue-500"
                   />
-                  <span className="font-mono text-slate-900 w-16 text-right">
-                    {(shippingCharges || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-
-              {/* Adjustment */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1 text-slate-600">
-                  <span className="rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px]">Adjustment</span>
-                  <HelpCircle className="h-3.5 w-3.5 text-slate-400" title="Manual rounding or adjustment (positive or negative)" />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    step="1"
-                    value={adjustment || ''}
-                    onChange={(e) => setAdjustment(parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
-                    className="w-24 text-right rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 font-mono focus:border-blue-500"
-                  />
-                  <span className="font-mono text-slate-900 w-16 text-right">
-                    {(adjustment || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <span className="font-mono text-emerald-600 w-16 text-right font-medium">
+                    {discountKES > 0 ? `- ${(discountKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00'}
                   </span>
                 </div>
               </div>
@@ -1039,57 +1063,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
           </div>
         )}
 
-        {/* Modal: Bulk Add Snippets */}
-        {isBulkModalOpen && (
-          <div className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
-              <div className="flex items-center justify-between border-b pb-3">
-                <h3 className="font-heading font-bold text-base text-slate-900 flex items-center space-x-2">
-                  <Sparkles className="h-5 w-5 text-blue-600" />
-                  <span>Select Service / Item</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setIsBulkModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="max-h-80 overflow-y-auto space-y-2 text-xs">
-                {standardSnippets.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleAddSnippet(s)}
-                    className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{s.description}</p>
-                      <span className="inline-block mt-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                        {s.category}
-                      </span>
-                    </div>
-                    <span className="font-mono font-bold text-slate-800">
-                      KES {s.unitPriceKES.toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-end pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkModalOpen(false)}
-                  className="px-4 py-1.5 rounded border border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
+        {/* End of Modals */}
       </div>
     </div>
   );

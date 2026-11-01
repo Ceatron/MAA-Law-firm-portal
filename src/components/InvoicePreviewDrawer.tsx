@@ -101,7 +101,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
           <div className="flex items-center space-x-2">
             <FileText className="h-5 w-5 text-[#0098db]" />
             <h2 className="font-heading text-base font-bold text-white">
-              Invoice {invoiceNumber} - {clientName}
+              Fee Note {invoiceNumber} - {clientName}
             </h2>
           </div>
           <button
@@ -127,19 +127,17 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
             <div className="space-y-6">
               {/* Top Header Grid */}
               <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                {/* Left: Logo & Company Address */}
-                <div className="space-y-3">
+                {/* Left: Official Logo & Company Address */}
+                <div className="space-y-2.5">
                   <div className="flex items-center space-x-2">
-                    <div className="relative h-10 w-10 shrink-0">
-                      <div className="absolute inset-0 rounded-full bg-[#0098db] opacity-90"></div>
-                      <div className="absolute right-0 bottom-0 h-7 w-7 rounded-full bg-slate-900"></div>
-                      <div className="absolute inset-2 rounded-full bg-white"></div>
-                    </div>
-                    <span className="font-heading font-bold text-sm text-slate-900">{companyName}</span>
+                    <img
+                      src="/ma-law-logo.jpg"
+                      alt={companyName}
+                      className="h-14 w-auto object-contain rounded-xs border border-slate-100"
+                    />
                   </div>
 
-                  <div className="text-[11px] text-slate-600 leading-tight space-y-0.5">
-                    <p className="font-bold text-slate-900">{companyName}</p>
+                  <div className="text-[11px] text-slate-600 leading-tight space-y-0.5 pt-1">
                     <p>The Triple Two Address,</p>
                     <p>Block B, 1st Floor</p>
                     <p>Phone {phone}</p>
@@ -147,10 +145,10 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Invoice Title, Number & Balance Due */}
+                {/* Right: Fee Note Title, Number, Balance Due & Dates */}
                 <div className="text-right sm:self-start space-y-1">
                   <h1 className="text-3xl font-extrabold text-[#0098db] leading-none">
-                    Invoice
+                    Fee Note
                   </h1>
                   <p className="font-bold text-slate-900 text-xs mt-1"># {invoiceNumber}</p>
                   <p className="text-[10px] text-slate-400 mt-1">Balance Due</p>
@@ -158,7 +156,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                     KES{balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
 
-                  <div className="pt-2 text-[11px] space-y-0.5">
+                  <div className="pt-4 text-[11px] space-y-1">
                     <div className="flex justify-end space-x-4">
                       <span className="text-slate-500">Invoice Date :</span>
                       <span className="font-medium text-slate-800">{dateIssued}</span>
@@ -239,20 +237,11 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                     </span>
                   </div>
 
-                  {shipping > 0 && (
+                  {(feeNoteToUse.discountKES || 0) > 0 && (
                     <div className="flex justify-between text-slate-700">
-                      <span>Shipping Charges</span>
-                      <span className="font-mono">
-                        {shipping.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  )}
-
-                  {adjustment !== 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>Adjustment</span>
-                      <span className="font-mono">
-                        {adjustment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <span>Discount</span>
+                      <span className="font-mono text-emerald-600">
+                        - {(feeNoteToUse.discountKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   )}
