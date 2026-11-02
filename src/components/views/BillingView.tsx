@@ -146,6 +146,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [selectedMatterForInvoice, setSelectedMatterForInvoice] = useState<string | undefined>(undefined);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<string | undefined>(undefined);
+  const [editingFeeNote, setEditingFeeNote] = useState<FeeNote | null>(null);
   const [isReceivePaymentModalOpen, setIsReceivePaymentModalOpen] = useState(false);
   const [isCreateQuoteModalOpen, setIsCreateQuoteModalOpen] = useState(false);
   
@@ -163,6 +164,26 @@ export const BillingView: React.FC<BillingViewProps> = ({
   // Search & Filter States
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Matter Retainers'>('ALL');
+
+  const handleOpenEditInvoice = (inv: FeeNote) => {
+    setEditingFeeNote(inv);
+    setIsGenerateModalOpen(true);
+  };
+
+  const handleUpdateInvoice = (updatedInvoice: FeeNote) => {
+    setFeeNotes((prev) =>
+      prev.map((fn) => (fn.id === updatedInvoice.id ? updatedInvoice : fn))
+    );
+    ChambersCloudService.upsertFeeNote(updatedInvoice).catch((err) =>
+      console.warn('[BillingView] Failed to sync updated fee note to cloud:', err)
+    );
+    showToast(`Fee Note ${updatedInvoice.invoiceNumber} updated successfully.`);
+    setEditingFeeNote(null);
+    setIsGenerateModalOpen(false);
+    if (previewingFeeNote?.id === updatedInvoice.id) {
+      setPreviewingFeeNote(updatedInvoice);
+    }
+  };
 
   const [paymentSearchQuery, setPaymentSearchQuery] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | 'M-Pesa' | 'Bank Transfer' | 'Cheque'>('ALL');
@@ -1211,11 +1232,23 @@ export const BillingView: React.FC<BillingViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleOpenReceivePayment(fn)}
-                                  className="flex items-center space-x-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer"
-                                  title="Receive Payment"
+                                  className="flex items-center space-x-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title="Record Payment"
                                 >
                                   <CreditCard className="h-3 w-3" />
-                                  <span>Pay</span>
+                                  <span>Record Payment</span>
+                                </button>
+                              )}
+
+                              {canAccessInvoicing && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditInvoice(fn)}
+                                  className="flex items-center space-x-1 rounded border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer"
+                                  title="Edit Fee Note / Invoice"
+                                >
+                                  <Edit3 className="h-3 w-3 text-stone-500" />
+                                  <span>Edit</span>
                                 </button>
                               )}
 
@@ -1636,23 +1669,28 @@ export const BillingView: React.FC<BillingViewProps> = ({
         linkedInvoice={previewingPayment ? feeNotes.find((i) => i.id === previewingPayment.invoiceId || i.invoiceNumber === previewingPayment.invoiceNumber) : null}
       />
 
-      {/* Generate Invoice Modal */}
+      {/* Generate / Edit Invoice Modal */}
       <GenerateInvoiceModal
         isOpen={isGenerateModalOpen}
         onClose={() => {
           setIsGenerateModalOpen(false);
+          setEditingFeeNote(null);
           setSelectedMatterForInvoice(undefined);
           setSelectedClientForInvoice(undefined);
         }}
         clients={clients}
         matters={matters}
         existingInvoices={feeNotes}
+        editingInvoice={editingFeeNote}
         initialSelectedMatterId={selectedMatterForInvoice}
         initialClientId={selectedClientForInvoice}
         onAddInvoice={(newInvoice) => {
           setFeeNotes((prev) => [newInvoice, ...prev]);
           showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created!`);
+          setIsGenerateModalOpen(false);
+          setEditingFeeNote(null);
         }}
+        onUpdateInvoice={handleUpdateInvoice}
         onAddClient={onAddClient}
       />
 
@@ -1665,6 +1703,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         }}
         feeNote={previewingFeeNote}
         onReceivePayment={(inv) => handleOpenReceivePayment(inv)}
+        onEditInvoice={canAccessInvoicing ? handleOpenEditInvoice : undefined}
       />
 
       {/* Create Quote Modal */}

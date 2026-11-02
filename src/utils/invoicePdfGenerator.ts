@@ -128,7 +128,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(...textDark);
-    doc.text(projectOrSubject, margin, currentY);
+    const projLines: string[] = doc.splitTextToSize(projectOrSubject, contentWidth);
+    doc.text(projLines, margin, currentY);
+    currentY += (projLines.length - 1) * 4.2;
   }
 
   currentY += 8;
@@ -137,12 +139,14 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   // Sky Blue bar across table
   const colX = {
     num: margin + 3,
-    desc: margin + 12,
+    desc: margin + 10,
     qty: margin + 98,
     rate: margin + 122,
     discount: margin + 148,
     amount: pageWidth - margin - 3,
   };
+
+  const descMaxWidth = 72; // Width allocated strictly for description to prevent column overlap
 
   doc.setFillColor(...skyBlue);
   doc.rect(margin, currentY, contentWidth, 7.5, 'F');
@@ -177,30 +181,64 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
       maximumFractionDigits: 2,
     });
 
-    const rowHeight = subDesc ? 11 : 8.5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    const titleLines: string[] = doc.splitTextToSize(title, descMaxWidth);
 
-    // Row bottom separator line
-    doc.setDrawColor(...borderColor);
-    doc.line(margin, currentY + rowHeight, pageWidth - margin, currentY + rowHeight);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    const subLines: string[] = subDesc ? doc.splitTextToSize(subDesc, descMaxWidth) : [];
 
-    // Text output
+    const lineHeight = 4.0;
+    const subLineHeight = 3.5;
+    const titleBlockHeight = titleLines.length * lineHeight;
+    const subBlockHeight = subLines.length > 0 ? (subLines.length * subLineHeight + 1) : 0;
+    const rowHeight = Math.max(8.5, titleBlockHeight + subBlockHeight + 3);
+
+    // Page overflow check
+    if (currentY + rowHeight > pageHeight - 40) {
+      doc.addPage();
+      currentY = 18;
+      doc.setFillColor(...skyBlue);
+      doc.rect(margin, currentY, contentWidth, 7.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('#', colX.num, currentY + 5);
+      doc.text('Description', colX.desc, currentY + 5);
+      doc.text('Qty', colX.qty, currentY + 5, { align: 'right' });
+      doc.text('Rate', colX.rate, currentY + 5, { align: 'right' });
+      doc.text('Discount', colX.discount, currentY + 5, { align: 'right' });
+      doc.text('Amount', colX.amount, currentY + 5, { align: 'right' });
+      currentY += 7.5;
+    }
+
+    // Number
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...textDark);
     doc.text(itemNum, colX.num, currentY + 5);
 
-    // Item title
+    // Title lines wrapped cleanly within descMaxWidth
     doc.setFont('helvetica', 'bold');
-    doc.text(title, colX.desc, currentY + 5);
+    doc.setFontSize(8.5);
+    doc.setTextColor(...textDark);
+    titleLines.forEach((line: string, lIdx: number) => {
+      doc.text(line, colX.desc, currentY + 5 + (lIdx * lineHeight));
+    });
 
-    // Sub-description
-    if (subDesc) {
+    // Sub-description lines wrapped cleanly
+    if (subLines.length > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(...textMuted);
-      doc.text(subDesc, colX.desc, currentY + 9);
+      const subStartY = currentY + 5 + (titleLines.length * lineHeight);
+      subLines.forEach((line: string, sIdx: number) => {
+        doc.text(line, colX.desc, subStartY + (sIdx * subLineHeight));
+      });
     }
 
+    // Number columns aligned with first line of row
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...textDark);
@@ -208,6 +246,10 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
     doc.text(rateStr, colX.rate, currentY + 5, { align: 'right' });
     doc.text(discountStr, colX.discount, currentY + 5, { align: 'right' });
     doc.text(amountStr, colX.amount, currentY + 5, { align: 'right' });
+
+    // Row bottom separator line
+    doc.setDrawColor(...borderColor);
+    doc.line(margin, currentY + rowHeight, pageWidth - margin, currentY + rowHeight);
 
     currentY += rowHeight;
   });
@@ -222,6 +264,13 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   const discountAmount = feeNote.discountKES || (feeNote.adjustmentKES && feeNote.adjustmentKES < 0 ? Math.abs(feeNote.adjustmentKES) : 0);
   const finalTotal = feeNote.totalKES || Math.max(0, subTotal - discountAmount);
   const companyName = settings.firmName || 'Muthoni Ahago Advocates';
+
+  if (currentY + 35 > pageHeight - 15) {
+    doc.addPage();
+    currentY = 20;
+  }
+
+  const startTotalsY = currentY;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -256,13 +305,14 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.text('Balance Due', boxX + 4, currentY + 5.2);
   doc.text(`KES${balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, totalsValueX, currentY + 5.2, { align: 'right' });
 
-  // BOTTOM LEFT: Customer Notes
-  const notesY = currentY - (discountAmount > 0 ? 8 : 4);
+  // BOTTOM LEFT: Customer Notes with safe width to avoid collision with totals box
+  const custNotes = feeNote.customerNotes || feeNote.notes || 'Thanks for your business.';
+  const notesMaxWidth = totalsLabelX - margin - 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...textDark);
-  const custNotes = feeNote.customerNotes || feeNote.notes || 'Thanks for your business.';
-  doc.text(custNotes, margin, notesY);
+  const notesLines: string[] = doc.splitTextToSize(custNotes, Math.max(50, notesMaxWidth));
+  doc.text(notesLines, margin, startTotalsY + 4);
 
   // FOOTER
   const footerY = pageHeight - 12;

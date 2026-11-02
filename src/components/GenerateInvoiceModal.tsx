@@ -40,7 +40,9 @@ interface GenerateInvoiceModalProps {
   clients: Client[];
   matters: LegalMatter[];
   existingInvoices?: FeeNote[];
+  editingInvoice?: FeeNote | null;
   onAddInvoice: (invoice: FeeNote) => void;
+  onUpdateInvoice?: (invoice: FeeNote) => void;
   onAddClient?: (client: Client) => void;
   initialSelectedMatterId?: string;
   initialClientId?: string;
@@ -52,16 +54,21 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   clients,
   matters,
   existingInvoices,
+  editingInvoice,
   onAddInvoice,
+  onUpdateInvoice,
   onAddClient,
   initialSelectedMatterId,
   initialClientId,
 }) => {
   if (!isOpen) return null;
 
+  const isEditMode = Boolean(editingInvoice);
+
   // Selected Client State
-  const [selectedClientId, setSelectedClientId] = useState<string>(initialClientId || '');
+  const [selectedClientId, setSelectedClientId] = useState<string>(() => editingInvoice?.clientId || initialClientId || '');
   const [clientSearchQuery, setClientSearchQuery] = useState<string>(() => {
+    if (editingInvoice?.clientName) return editingInvoice.clientName;
     if (initialClientId) {
       const init = clients.find((c) => c.id === initialClientId);
       return init ? init.name : '';
@@ -76,60 +83,133 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
   const clientDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Invoice Meta Fields: sequential numbering starting at INV-000001
+  // Invoice Meta Fields
   const [invoiceNumber, setInvoiceNumber] = useState<string>(() => {
+    if (editingInvoice?.invoiceNumber) return editingInvoice.invoiceNumber;
     return getNextSequentialInvoiceNumber(existingInvoices);
   });
 
-  // Re-sync next sequential invoice number whenever the modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setInvoiceNumber(getNextSequentialInvoiceNumber(existingInvoices));
-    }
-  }, [isOpen, existingInvoices]);
-
   const [invoiceDate, setInvoiceDate] = useState<string>(() => {
+    if (editingInvoice?.dateIssued) return editingInvoice.dateIssued;
     const today = new Date();
     return today.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   });
 
-  const [terms, setTerms] = useState<string>('Due on Receipt');
+  const [terms, setTerms] = useState<string>(() => editingInvoice?.terms || 'Due on Receipt');
 
   const [dueDate, setDueDate] = useState<string>(() => {
+    if (editingInvoice?.dueDate) return editingInvoice.dueDate;
     const today = new Date();
     return today.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   });
 
   // Subject (e.g. Website Maintenance / Legal Representation)
-  const [subject, setSubject] = useState<string>('');
+  const [subject, setSubject] = useState<string>(() => editingInvoice?.subject || editingInvoice?.matterTitle || '');
 
-  // Item Table Rows: start with single empty row ready for typing (no preloaded amounts)
-  const [items, setItems] = useState<InvoiceLineItem[]>([
-    {
-      id: 'item-1',
-      description: '',
-      subDescription: '',
-      quantity: 0,
-      unitPriceKES: 0,
-      discountType: 'percent',
-      discountPercent: 0,
-      discountAmount: 0,
-      discountKES: 0,
-      totalPriceKES: 0,
-      isTaxable: false,
-      taxName: 'Select a Tax',
-    },
-  ]);
+  // Item Table Rows
+  const [items, setItems] = useState<InvoiceLineItem[]>(() => {
+    if (editingInvoice?.items && editingInvoice.items.length > 0) {
+      return editingInvoice.items.map((it) => ({ ...it }));
+    }
+    return [
+      {
+        id: 'item-1',
+        description: '',
+        subDescription: '',
+        quantity: 0,
+        unitPriceKES: 0,
+        discountType: 'percent',
+        discountPercent: 0,
+        discountAmount: 0,
+        discountKES: 0,
+        totalPriceKES: 0,
+        isTaxable: false,
+        taxName: 'Select a Tax',
+      },
+    ];
+  });
+
+  // Customer Notes & Terms
+  const [customerNotes, setCustomerNotes] = useState<string>(() => editingInvoice?.customerNotes || editingInvoice?.notes || 'Thanks for your business.');
+  const [termsAndConditions, setTermsAndConditions] = useState<string>(() => editingInvoice?.termsAndConditions || '');
+  const [attachedFiles, setAttachedFiles] = useState<string[]>(() => editingInvoice?.attachedFiles || []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Re-sync form state whenever modal opens or editingInvoice changes
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (editingInvoice) {
+      setSelectedClientId(editingInvoice.clientId || '');
+      setClientSearchQuery(editingInvoice.clientName || '');
+      setInvoiceNumber(editingInvoice.invoiceNumber || '');
+      setInvoiceDate(editingInvoice.dateIssued || '');
+      setTerms(editingInvoice.terms || 'Due on Receipt');
+      setDueDate(editingInvoice.dueDate || '');
+      setSubject(editingInvoice.subject || editingInvoice.matterTitle || '');
+      if (editingInvoice.items && editingInvoice.items.length > 0) {
+        setItems(editingInvoice.items.map((it) => ({ ...it })));
+      } else {
+        setItems([
+          {
+            id: 'item-1',
+            description: '',
+            subDescription: '',
+            quantity: 1,
+            unitPriceKES: 0,
+            discountType: 'percent',
+            discountPercent: 0,
+            discountAmount: 0,
+            discountKES: 0,
+            totalPriceKES: 0,
+            isTaxable: false,
+            taxName: 'Select a Tax',
+          },
+        ]);
+      }
+      setCustomerNotes(editingInvoice.customerNotes || editingInvoice.notes || 'Thanks for your business.');
+      setTermsAndConditions(editingInvoice.termsAndConditions || '');
+      setAttachedFiles(editingInvoice.attachedFiles || []);
+    } else {
+      setSelectedClientId(initialClientId || '');
+      if (initialClientId) {
+        const init = clients.find((c) => c.id === initialClientId);
+        setClientSearchQuery(init ? init.name : '');
+      } else {
+        setClientSearchQuery('');
+      }
+      setInvoiceNumber(getNextSequentialInvoiceNumber(existingInvoices));
+      const today = new Date();
+      const dateStr = today.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      setInvoiceDate(dateStr);
+      setTerms('Due on Receipt');
+      setDueDate(dateStr);
+      setSubject('');
+      setItems([
+        {
+          id: 'item-1',
+          description: '',
+          subDescription: '',
+          quantity: 0,
+          unitPriceKES: 0,
+          discountType: 'percent',
+          discountPercent: 0,
+          discountAmount: 0,
+          discountKES: 0,
+          totalPriceKES: 0,
+          isTaxable: false,
+          taxName: 'Select a Tax',
+        },
+      ]);
+      setCustomerNotes('Thanks for your business.');
+      setTermsAndConditions('');
+      setAttachedFiles([]);
+    }
+  }, [isOpen, editingInvoice, initialClientId, existingInvoices, clients]);
 
   // Standard service items / quick dropdown
   const [openItemDropdownIndex, setOpenItemDropdownIndex] = useState<number | null>(null);
   const standardSnippets = loadStandardServiceSnippets();
-
-  // Customer Notes & Terms
-  const [customerNotes, setCustomerNotes] = useState<string>('Thanks for your business.');
-  const [termsAndConditions, setTermsAndConditions] = useState<string>('');
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Toast / Feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -304,7 +384,8 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   // Quick Client Creation
   const handleSaveNewClient = () => {
     if (!newClientName.trim()) {
-      alert('Please enter a customer name.');
+      setToastMessage('Please enter a customer name.');
+      setTimeout(() => setToastMessage(null), 3500);
       return;
     }
     const newClient: Client = {
@@ -333,12 +414,75 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     const finalClientName = activeClient?.name || clientSearchQuery.trim();
 
     if (!finalClientName) {
-      alert('Please select or specify a Customer Name.');
+      setToastMessage('Please select or specify a Customer Name.');
+      setTimeout(() => setToastMessage(null), 3500);
       return;
     }
 
     const finalInvoiceNumber = invoiceNumber.trim() || getNextSequentialInvoiceNumber(existingInvoices);
     recordUsedInvoiceNumber(finalInvoiceNumber);
+
+    if (isEditMode && editingInvoice) {
+      const prevPaid = editingInvoice.amountPaidKES !== undefined
+        ? editingInvoice.amountPaidKES
+        : (editingInvoice.status === 'Paid' ? editingInvoice.totalKES : 0);
+      const newBalance = Math.max(0, totalAmount - prevPaid);
+      let newStatus = editingInvoice.status;
+      if (newBalance === 0) {
+        newStatus = 'Paid';
+      } else if (prevPaid > 0) {
+        newStatus = 'Partially Paid';
+      } else {
+        newStatus = status === 'Draft' ? 'Pending' : 'Unpaid';
+      }
+
+      const updatedInvoice: FeeNote = {
+        ...editingInvoice,
+        invoiceNumber: finalInvoiceNumber,
+        clientId: selectedClientId || editingInvoice.clientId || `client-${Date.now()}`,
+        clientName: finalClientName,
+        clientEmail: activeClient?.email || editingInvoice.clientEmail,
+        clientAddress: activeClient?.city || editingInvoice.clientAddress || 'Nairobi, Kenya',
+        matterTitle: subject.trim() || editingInvoice.matterTitle || 'Invoice Services',
+        subject: subject.trim(),
+        terms: terms,
+        dateIssued: invoiceDate,
+        dueDate: dueDate,
+        items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
+        subtotalKES: subTotal,
+        discountKES: editingInvoice.discountKES || 0,
+        adjustmentKES: editingInvoice.adjustmentKES || 0,
+        amountKES: subTotal,
+        vatRatePercent: 16,
+        vatKES: vatAmount,
+        totalKES: totalAmount,
+        amountPaidKES: prevPaid,
+        balanceKES: newBalance,
+        status: newStatus,
+        customerNotes: customerNotes,
+        notes: customerNotes,
+        termsAndConditions: termsAndConditions,
+        attachedFiles: attachedFiles,
+      };
+
+      if (onUpdateInvoice) {
+        onUpdateInvoice(updatedInvoice);
+      } else {
+        onAddInvoice(updatedInvoice);
+      }
+
+      if (status === 'Sent') {
+        try {
+          const doc = generateInvoicePdf(updatedInvoice);
+          doc.save(`${updatedInvoice.invoiceNumber}.pdf`);
+        } catch (err) {
+          console.warn('PDF auto-download warning:', err);
+        }
+      }
+
+      onClose();
+      return;
+    }
 
     const newInvoice: FeeNote = {
       id: `fn-${Date.now()}`,
@@ -414,11 +558,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
     try {
       const doc = generateInvoicePdf(tempInvoice);
-      const pdfBlob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      window.open(blobUrl, '_blank');
-    } catch (err) {
-      alert('Failed to generate PDF preview.');
+      doc.save(`${tempInvoice.invoiceNumber}_Preview.pdf`);
+      setToastMessage(`Generated and downloaded ${tempInvoice.invoiceNumber}_Preview.pdf`);
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch {
+      setToastMessage('Failed to generate PDF preview.');
+      setTimeout(() => setToastMessage(null), 3500);
     }
   };
 
@@ -444,9 +589,23 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-white">
           <div className="flex items-center space-x-2.5">
             <FileText className="h-6 w-6 text-slate-800" strokeWidth={1.8} />
-            <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900">
-              New Invoice
-            </h1>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900">
+                  {isEditMode ? `Edit Fee Note: ${editingInvoice?.invoiceNumber}` : 'New Invoice'}
+                </h1>
+                {isEditMode && (
+                  <span className="rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold">
+                    Editing Mode
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isEditMode
+                  ? 'Update line items, particulars, and billing terms for this fee note'
+                  : 'Create a professional VAT-compliant legal fee note or proforma invoice'}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -467,6 +626,23 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* In-Modal Toast / Alerts */}
+        {toastMessage && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-xs text-amber-900 font-semibold flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center space-x-2">
+              <Info className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>{toastMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="text-amber-500 hover:text-amber-700 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Scrollable Form Body */}
         <div className="p-6 md:p-8 space-y-6 text-sm text-slate-800 bg-white overflow-y-auto max-h-[calc(85vh-120px)]">
@@ -1045,7 +1221,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               onClick={() => handleSaveInvoice('Draft')}
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer shadow-2xs"
             >
-              Save as Draft
+              {isEditMode ? 'Update as Draft' : 'Save as Draft'}
             </button>
 
             <button
@@ -1053,7 +1229,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               onClick={() => handleSaveInvoice('Sent')}
               className="inline-flex items-center space-x-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold transition cursor-pointer shadow-2xs"
             >
-              <span>Save and Send</span>
+              <span>{isEditMode ? 'Save & Update Fee Note' : 'Save and Send'}</span>
               <ChevronDown className="h-3.5 w-3.5 border-l border-blue-400/40 pl-1 -mr-1" />
             </button>
 

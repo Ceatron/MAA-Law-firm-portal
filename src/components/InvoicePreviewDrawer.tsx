@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Download, Printer, Send, FileText, CheckCircle2, ShieldCheck, CreditCard } from 'lucide-react';
+import { X, Download, Printer, Send, FileText, CheckCircle2, ShieldCheck, CreditCard, Edit3 } from 'lucide-react';
 import { FeeNote } from '../types';
 import { loadChambersSettings } from '../utils/settingsStorage';
 import { generateInvoicePdf } from '../utils/invoicePdfGenerator';
@@ -9,6 +9,7 @@ interface InvoicePreviewDrawerProps {
   onClose: () => void;
   feeNote?: FeeNote | null;
   onReceivePayment?: (feeNote: FeeNote) => void;
+  onEditInvoice?: (feeNote: FeeNote) => void;
 }
 
 export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
@@ -16,6 +17,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
   onClose,
   feeNote,
   onReceivePayment,
+  onEditInvoice,
 }) => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -64,19 +66,35 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     } catch (err) {
-      alert('Failed to generate PDF.');
+      setToastMessage('Failed to generate PDF.');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
     }
   };
 
   const handlePrint = () => {
     try {
       const doc = generateInvoicePdf(feeNoteToUse, settings);
-      const blobUrl = URL.createObjectURL(doc.output('blob'));
-      const printWindow = window.open(blobUrl, '_blank');
-      if (printWindow) {
-        printWindow.focus();
-      }
-    } catch (err) {
+      doc.autoPrint();
+      const blobUrl = doc.output('bloburl');
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = String(blobUrl);
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.print();
+        }
+      }, 500);
+    } catch {
       window.print();
     }
   };
@@ -300,6 +318,21 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
               >
                 <CreditCard className="h-4 w-4" />
                 <span>Receive Payment</span>
+              </button>
+            )}
+
+            {onEditInvoice && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditInvoice(feeNoteToUse);
+                }}
+                className="flex items-center space-x-1.5 rounded border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs"
+                title="Edit this invoice"
+              >
+                <Edit3 className="h-4 w-4 text-slate-500" />
+                <span>Edit Invoice</span>
               </button>
             )}
 
