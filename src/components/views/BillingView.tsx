@@ -163,7 +163,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
   // Search & Filter States
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
-  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Matter Retainers'>('ALL');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Sent' | 'Drafts'>('ALL');
 
   const handleOpenEditInvoice = (inv: FeeNote) => {
     setEditingFeeNote(inv);
@@ -438,6 +438,9 @@ export const BillingView: React.FC<BillingViewProps> = ({
     return paid === 0 && fn.status !== 'Paid';
   }).length;
 
+  const draftInvoicesCount = feeNotes.filter((fn) => fn.status === 'Draft' || fn.status === 'Pending').length;
+  const sentInvoicesCount = feeNotes.length - draftInvoicesCount;
+
   // Filtered Fee Notes
   const filteredFeeNotes = feeNotes.filter((fn) => {
     const matchesSearch =
@@ -445,18 +448,15 @@ export const BillingView: React.FC<BillingViewProps> = ({
       fn.invoiceNumber.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
       fn.matterTitle.toLowerCase().includes(invoiceSearchQuery.toLowerCase());
 
-    const bal = fn.balanceKES !== undefined ? fn.balanceKES : (fn.status === 'Paid' ? 0 : fn.totalKES);
-    const paid = fn.amountPaidKES || 0;
+    const isDraft = fn.status === 'Draft' || fn.status === 'Pending';
+    const isSent = !isDraft;
 
-    let derivedStatus = fn.status;
-    if (bal === 0) derivedStatus = 'Paid';
-    else if (paid > 0) derivedStatus = 'Partially Paid';
-    else derivedStatus = 'Unpaid';
-
-    const matchesStatus =
-      invoiceStatusFilter === 'ALL' ||
-      derivedStatus === invoiceStatusFilter ||
-      (invoiceStatusFilter === 'Overdue' && fn.status === 'Overdue');
+    let matchesStatus = true;
+    if (invoiceStatusFilter === 'Sent') {
+      matchesStatus = isSent;
+    } else if (invoiceStatusFilter === 'Drafts') {
+      matchesStatus = isDraft;
+    }
 
     return matchesSearch && matchesStatus;
   });
@@ -1008,119 +1008,43 @@ export const BillingView: React.FC<BillingViewProps> = ({
               />
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex items-center space-x-1 overflow-x-auto">
-              <span className="text-xs font-semibold text-stone-500 mr-1.5 flex items-center">
+            {/* Filter Pills: ALL, Sent, Drafts */}
+            <div className="flex items-center space-x-1.5 overflow-x-auto">
+              <span className="text-xs font-semibold text-stone-500 mr-1 flex items-center">
                 <Filter className="h-3.5 w-3.5 mr-1" />
                 Filter:
               </span>
-              {(['ALL', 'Unpaid', 'Partially Paid', 'Paid', 'Overdue', 'Matter Retainers'] as const).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setInvoiceStatusFilter(st)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                    invoiceStatusFilter === st
-                      ? 'bg-[#132c3f] text-white shadow-2xs'
-                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                  }`}
-                >
-                  {st === 'Matter Retainers' ? `Matter Retainers (${mattersWithFee.length})` : st}
-                </button>
-              ))}
+              {(['ALL', 'Sent', 'Drafts'] as const).map((st) => {
+                const count = st === 'ALL' ? feeNotes.length : st === 'Sent' ? sentInvoicesCount : draftInvoicesCount;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setInvoiceStatusFilter(st)}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+                      invoiceStatusFilter === st
+                        ? 'bg-[#132c3f] text-white shadow-2xs'
+                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    }`}
+                  >
+                    <span>{st}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        invoiceStatusFilter === st
+                          ? 'bg-white/20 text-white'
+                          : 'bg-stone-200 text-stone-700'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {invoiceStatusFilter === 'Matter Retainers' ? (
-            /* Registered Matters with Pending Fees Table */
-            <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
-                    <tr>
-                      <th className="py-3 px-4">Matter Ref</th>
-                      <th className="py-3 px-4">Matter Title</th>
-                      <th className="py-3 px-4">Client Particulars</th>
-                      <th className="py-3 px-4">Assigned Advocate</th>
-                      <th className="py-3 px-3 text-right">Agreed Fee (KES)</th>
-                      <th className="py-3 px-3 text-right">Paid (KES)</th>
-                      <th className="py-3 px-3 text-right">Receivable Due</th>
-                      <th className="py-3 px-3 text-center">Status</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {filteredMattersWithFee.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="py-8 text-center text-stone-500">
-                          No registered matters with pending fees matching your search or filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredMattersWithFee.map((m) => {
-                        const fee = m.billedKES || m.estimatedFeeKES || 0;
-                        const paid = m.paidKES || 0;
-                        const bal = Math.max(0, fee - paid);
-
-                        return (
-                          <tr key={m.id} className="hover:bg-stone-50/70 transition-colors">
-                            <td className="py-3 px-4 font-mono font-bold text-[#0098db] whitespace-nowrap">
-                              {m.referenceNumber}
-                            </td>
-                            <td className="py-3 px-4 font-medium text-stone-900 max-w-xs truncate">
-                              {m.title}
-                            </td>
-                            <td className="py-3 px-4">
-                              <p className="font-bold text-stone-900">{m.clientName}</p>
-                              {m.practiceArea && (
-                                <p className="text-[10px] text-stone-500">{m.practiceArea}</p>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-stone-700">
-                              {m.responsibleAdvocateName}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-stone-900 whitespace-nowrap">
-                              {fee.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
-                              {paid.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-amber-800 whitespace-nowrap">
-                              {bal.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 text-center whitespace-nowrap">
-                              <span className="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">
-                                Fee Agreed • Unbilled
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center whitespace-nowrap">
-                              {canAccessInvoicing && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedMatterForInvoice(m.id);
-                                    setSelectedClientForInvoice(m.clientId);
-                                    setIsGenerateModalOpen(true);
-                                  }}
-                                  className="inline-flex items-center space-x-1 rounded bg-[#0098db] hover:bg-blue-600 text-white px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer"
-                                  title="Generate Tax Fee Note for this Matter"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                  <span>Generate Fee Note</span>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            /* Fee Notes Table */
-            <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
+          {/* Fee Notes Table */}
+          <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -1131,7 +1055,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                     <th className="py-3 px-3 text-right">Total (KES)</th>
                     <th className="py-3 px-3 text-right">Paid (KES)</th>
                     <th className="py-3 px-3 text-right">Balance Due</th>
-                    <th className="py-3 px-3 text-center">Payment Status</th>
+                    <th className="py-3 px-3 text-center">Status</th>
                     <th className="py-3 px-4 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -1149,9 +1073,17 @@ export const BillingView: React.FC<BillingViewProps> = ({
                       const balance = fn.balanceKES !== undefined ? fn.balanceKES : Math.max(0, total - paid);
 
                       let statusBadge = fn.status;
-                      if (balance === 0) statusBadge = 'Paid';
-                      else if (paid > 0) statusBadge = 'Partially Paid';
-                      else statusBadge = 'Unpaid';
+                      if (fn.status === 'Draft' || fn.status === 'Pending') {
+                        statusBadge = 'Draft';
+                      } else if (balance === 0 || fn.status === 'Paid') {
+                        statusBadge = 'Paid';
+                      } else if (paid > 0) {
+                        statusBadge = 'Partially Paid';
+                      } else if (fn.status === 'Overdue') {
+                        statusBadge = 'Overdue';
+                      } else {
+                        statusBadge = 'Unpaid';
+                      }
 
                       return (
                         <tr key={fn.id} className="hover:bg-stone-50/70 transition-colors">
@@ -1208,11 +1140,13 @@ export const BillingView: React.FC<BillingViewProps> = ({
                             </span>
                           </td>
 
-                          {/* Status */}
+                          {/* Status: Draft, Unpaid, Partially Paid, Paid, Overdue */}
                           <td className="py-3 px-3 text-center whitespace-nowrap">
                             <span
                               className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                statusBadge === 'Paid'
+                                statusBadge === 'Draft'
+                                  ? 'bg-stone-100 text-stone-700 border border-stone-200'
+                                  : statusBadge === 'Paid'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : statusBadge === 'Partially Paid'
                                   ? 'bg-blue-100 text-blue-800'
@@ -1275,7 +1209,6 @@ export const BillingView: React.FC<BillingViewProps> = ({
               </table>
             </div>
           </div>
-          )}
         </div>
       )}
 
