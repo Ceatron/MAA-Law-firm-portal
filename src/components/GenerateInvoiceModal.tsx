@@ -381,7 +381,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex flex-col items-center justify-start p-2 sm:p-4 md:p-6 animate-in fade-in duration-150">
-      <div className="relative w-full max-w-5xl rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto">
+      <div className="relative w-full max-w-6xl rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto">
         
         {/* Header Bar */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-white">
@@ -433,7 +433,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                     }}
                     onFocus={() => setIsClientDropdownOpen(true)}
                     placeholder="Select or add a customer"
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm text-slate-950 font-medium placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                   />
                   {clientSearchQuery && (
                     <button
@@ -602,7 +602,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Let your customer know what this Invoice is for"
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm text-slate-950 font-medium placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
               </div>
             </div>
@@ -619,16 +619,16 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
             {/* Table Body */}
             <div className="overflow-x-auto overflow-y-visible">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse min-w-[960px]">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-white text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-900 uppercase tracking-wider">
                     <th className="py-2.5 px-3 w-8"></th>
-                    <th className="py-2.5 px-3">ITEM DETAILS</th>
+                    <th className="py-2.5 px-3 min-w-[440px] md:min-w-[480px]">ITEM DETAILS</th>
                     <th className="py-2.5 px-3 w-24 text-right">QUANTITY</th>
                     <th className="py-2.5 px-3 w-32 text-right">
                       <div className="flex items-center justify-end space-x-1">
                         <span>RATE</span>
-                        <TableIcon className="h-3 w-3 text-slate-400" />
+                        <TableIcon className="h-3 w-3 text-slate-500" />
                       </div>
                     </th>
                     <th className="py-2.5 px-3 w-28 text-right">DISCOUNT</th>
@@ -640,7 +640,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {items.map((item, index) => (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition group">
-                      <td className="py-3 px-2 text-slate-300 text-center">
+                      <td className="py-3 px-2 text-slate-400 text-center">
                         <GripVertical className="h-4 w-4 mx-auto cursor-grab" />
                       </td>
                       <td className="py-3 px-3 relative item-details-dropdown-container">
@@ -656,7 +656,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                                 setOpenItemDropdownIndex(index);
                               }}
                               placeholder="Type or click to select an item."
-                              className="w-full rounded border border-transparent hover:border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 pr-7 px-2 py-1 text-xs text-slate-800 font-medium"
+                              className="w-full rounded-md border border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-500 bg-white pr-8 px-3.5 py-2 text-xs md:text-sm text-slate-950 font-semibold placeholder:text-slate-500 shadow-2xs transition-colors"
                             />
                             <button
                               type="button"
@@ -664,22 +664,22 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                                 e.stopPropagation();
                                 setOpenItemDropdownIndex(openItemDropdownIndex === index ? null : index);
                               }}
-                              className="absolute right-1 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                              className="absolute right-1 text-slate-500 hover:text-slate-800 p-1.5 cursor-pointer"
                               title="Click to select standard practice item"
                             >
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openItemDropdownIndex === index ? 'rotate-180 text-blue-600' : ''}`} />
+                              <ChevronDown className={`h-4 w-4 transition-transform ${openItemDropdownIndex === index ? 'rotate-180 text-blue-600' : ''}`} />
                             </button>
                           </div>
 
                           {/* Interactive Dropdown */}
                           {openItemDropdownIndex === index && (
-                            <div className="absolute left-0 top-full mt-1 w-80 sm:w-96 max-h-64 overflow-y-auto bg-white rounded-lg border border-slate-200 shadow-2xl z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
-                              <div className="p-2.5 bg-slate-50/90 sticky top-0 border-b border-slate-200 flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                            <div className="absolute left-0 top-full mt-1.5 w-full min-w-[440px] max-w-xl max-h-72 overflow-y-auto bg-white rounded-lg border border-slate-200 shadow-2xl z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                              <div className="p-2.5 bg-slate-50/95 sticky top-0 border-b border-slate-200 flex items-center justify-between text-[11px] font-semibold text-slate-800">
                                 <span className="flex items-center space-x-1.5">
                                   <Sparkles className="h-3.5 w-3.5 text-blue-600" />
-                                  <span>Select Item / Fee Service</span>
+                                  <span className="font-bold text-slate-900">Select Item / Fee Service</span>
                                 </span>
-                                <span className="text-[10px] text-slate-400">Type above to filter</span>
+                                <span className="text-[10px] text-slate-500">Type above to filter</span>
                               </div>
                               {standardSnippets
                                 .filter((s) => {
@@ -718,18 +718,18 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                                       });
                                       setOpenItemDropdownIndex(null);
                                     }}
-                                    className="p-2.5 hover:bg-blue-50/70 cursor-pointer transition text-left"
+                                    className="p-2.5 hover:bg-blue-50/80 cursor-pointer transition text-left"
                                   >
                                     <div className="flex items-start justify-between gap-2">
-                                      <p className="text-xs font-medium text-slate-900 leading-snug">{snippet.description}</p>
-                                      <span className="font-mono font-bold text-xs text-blue-600 shrink-0">
+                                      <p className="text-xs font-semibold text-slate-950 leading-snug">{snippet.description}</p>
+                                      <span className="font-mono font-bold text-xs text-blue-700 shrink-0">
                                         KES {snippet.unitPriceKES.toLocaleString()}
                                       </span>
                                     </div>
-                                    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
-                                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-medium">{snippet.category}</span>
+                                    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-600">
+                                      <span className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-semibold">{snippet.category}</span>
                                       {snippet.statutoryReference && (
-                                        <span className="text-slate-400">• {snippet.statutoryReference}</span>
+                                        <span className="text-slate-500">• {snippet.statutoryReference}</span>
                                       )}
                                     </div>
                                   </div>
@@ -743,7 +743,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                           value={item.subDescription || ''}
                           onChange={(e) => updateItemRow(index, 'subDescription', e.target.value)}
                           placeholder="Add description sub-line (e.g. Monthly website maintenance)"
-                          className="w-full mt-1 rounded border border-transparent hover:border-slate-200 focus:border-blue-400 px-2 py-0.5 text-[11px] text-slate-500"
+                          className="w-full mt-1.5 rounded-md border border-slate-200 hover:border-slate-300 focus:border-blue-500 bg-slate-50/70 focus:bg-white px-3 py-1 text-xs text-slate-900 font-medium placeholder:text-slate-400 transition-colors"
                         />
                       </td>
                       <td className="py-3 px-3 text-right">
@@ -753,7 +753,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                           min="0"
                           value={item.quantity}
                           onChange={(e) => updateItemRow(index, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-20 text-right rounded border border-slate-200 px-2 py-1 text-xs text-slate-800 focus:border-blue-500"
+                          className="w-20 text-right rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                         />
                       </td>
                       <td className="py-3 px-3 text-right">
@@ -763,7 +763,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                           min="0"
                           value={item.unitPriceKES}
                           onChange={(e) => updateItemRow(index, 'unitPriceKES', parseFloat(e.target.value) || 0)}
-                          className="w-28 text-right rounded border border-slate-200 px-2 py-1 text-xs font-mono text-slate-800 focus:border-blue-500"
+                          className="w-28 text-right rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                         />
                       </td>
                       <td className="py-3 px-3 text-right">
@@ -775,9 +775,9 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                             max="100"
                             value={item.discountPercent || 0}
                             onChange={(e) => updateItemRow(index, 'discountPercent', parseFloat(e.target.value) || 0)}
-                            className="w-14 text-right rounded border border-slate-200 px-1.5 py-1 text-xs text-slate-800 focus:border-blue-500"
+                            className="w-16 text-right rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                           />
-                          <span className="text-[11px] font-semibold text-slate-500">%</span>
+                          <span className="text-[11px] font-bold text-slate-700">%</span>
                         </div>
                       </td>
                       <td className="py-3 px-3">
@@ -789,7 +789,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                             updateItemRow(index, 'taxName', val);
                             updateItemRow(index, 'isTaxable', isTax);
                           }}
-                          className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 shadow-2xs"
                         >
                           <option value="Select a Tax">Select a Tax</option>
                           <option value="VAT [16%]">VAT [16%]</option>
@@ -797,7 +797,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                           <option value="Zero Rated [0%]">Zero Rated [0%]</option>
                         </select>
                       </td>
-                      <td className="py-3 px-3 text-right font-bold font-mono text-slate-900">
+                      <td className="py-3 px-3 text-right font-bold font-mono text-xs md:text-sm text-slate-950">
                         {(item.totalPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="py-3 px-2 text-center">
@@ -845,7 +845,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                   rows={2}
                   value={customerNotes}
                   onChange={(e) => setCustomerNotes(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  className="w-full rounded-md border border-slate-300 bg-white p-2.5 text-xs text-slate-950 font-medium placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
                 <p className="text-[11px] text-slate-400 mt-0.5">Will be displayed on the invoice</p>
               </div>
@@ -860,7 +860,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                   value={termsAndConditions}
                   onChange={(e) => setTermsAndConditions(e.target.value)}
                   placeholder="Enter the terms and conditions of your business to be displayed in your transaction"
-                  className="w-full rounded-md border border-slate-300 bg-white p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  className="w-full rounded-md border border-slate-300 bg-white p-2.5 text-xs text-slate-950 font-medium placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
               </div>
 

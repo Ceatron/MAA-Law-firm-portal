@@ -254,26 +254,13 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.text('Balance Due', boxX + 4, currentY + 5.2);
   doc.text(`KES${balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, totalsValueX, currentY + 5.2, { align: 'right' });
 
-  // BOTTOM LEFT: Customer Notes & Payment Options
-  const notesY = currentY - (discountAmount > 0 ? 12 : 6);
+  // BOTTOM LEFT: Customer Notes
+  const notesY = currentY - (discountAmount > 0 ? 8 : 4);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...textDark);
   const custNotes = feeNote.customerNotes || feeNote.notes || 'Thanks for your business.';
   doc.text(custNotes, margin, notesY);
-
-  const payY = notesY + 8;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('PAYMENT OPTIONS:', margin, payY);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...textDark);
-  doc.text('Cash payments can be done via', margin, payY + 4.5);
-  const paybill = settings.bankDetails?.paybillNumber || '522522';
-  doc.setFont('helvetica', 'bold');
-  doc.text(`MPESA | BUY GOODS: ${paybill}`, margin, payY + 8.5);
 
   // FOOTER
   const footerY = pageHeight - 12;

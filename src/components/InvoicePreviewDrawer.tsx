@@ -262,17 +262,9 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Bottom Notes & Payment Options */}
-              <div className="pt-4 text-xs space-y-4">
-                <p className="text-slate-800">{feeNoteToUse.customerNotes || 'Thanks for your business.'}</p>
-
-                <div className="space-y-0.5">
-                  <p className="font-bold text-slate-900 text-xs">PAYMENT OPTIONS:</p>
-                  <p className="text-slate-700 text-[11px]">Cash payments can be done via</p>
-                  <p className="font-bold text-slate-900 text-xs">
-                    MPESA | BUY GOODS: {paybill}
-                  </p>
-                </div>
+              {/* Bottom Customer Notes */}
+              <div className="pt-4 text-xs">
+                <p className="text-slate-900 font-medium">{feeNoteToUse.customerNotes || 'Thanks for your business.'}</p>
               </div>
             </div>
 
