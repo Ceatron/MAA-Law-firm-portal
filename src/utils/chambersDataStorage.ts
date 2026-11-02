@@ -334,6 +334,9 @@ export const saveStoredFeeNotes = async (feeNotes: FeeNote[]): Promise<void> => 
 };
 
 export const persistSingleFeeNote = async (feeNote: FeeNote): Promise<void> => {
+  if (feeNote.invoiceNumber) {
+    recordUsedInvoiceNumber(feeNote.invoiceNumber);
+  }
   await ChambersCloudService.upsertFeeNote(feeNote);
   const current = loadSavedFeeNotes();
   const idx = current.findIndex((fn) => fn.id === feeNote.id);
@@ -345,6 +348,59 @@ export const deleteStoredFeeNote = async (feeNoteId: string): Promise<void> => {
   await ChambersCloudService.deleteFeeNote(feeNoteId);
   const current = loadSavedFeeNotes().filter((fn) => fn.id !== feeNoteId);
   saveStoredFeeNotesCache(current);
+};
+
+/**
+ * Computes the next sequential invoice number in the format INV-000001, INV-000002, etc.
+ * Finds the highest sequence number from existing fee notes and ensures consecutive progression.
+ */
+export const getNextSequentialInvoiceNumber = (existingInvoices?: FeeNote[]): string => {
+  const invoices = existingInvoices && existingInvoices.length > 0 ? existingInvoices : loadSavedFeeNotes();
+  let maxSeq = 0;
+
+  for (const inv of invoices) {
+    if (!inv.invoiceNumber) continue;
+    const match = inv.invoiceNumber.match(/(\d+)/);
+    if (match) {
+      const val = parseInt(match[1], 10);
+      if (!isNaN(val) && val > maxSeq) {
+        maxSeq = val;
+      }
+    }
+  }
+
+  try {
+    const savedLast = parseInt(localStorage.getItem('chambers_invoice_last_seq') || '0', 10);
+    if (!isNaN(savedLast) && savedLast > maxSeq) {
+      maxSeq = savedLast;
+    }
+  } catch {
+    // Ignore storage exceptions
+  }
+
+  const nextSeq = maxSeq + 1;
+  return `INV-${String(nextSeq).padStart(6, '0')}`;
+};
+
+/**
+ * Records an invoice number into sequence history to guarantee consecutive numbering.
+ */
+export const recordUsedInvoiceNumber = (invNumber: string): void => {
+  if (!invNumber) return;
+  const match = invNumber.match(/(\d+)/);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    if (!isNaN(val)) {
+      try {
+        const cur = parseInt(localStorage.getItem('chambers_invoice_last_seq') || '0', 10);
+        if (val > cur) {
+          localStorage.setItem('chambers_invoice_last_seq', String(val));
+        }
+      } catch {
+        // Ignore storage exceptions
+      }
+    }
+  }
 };
 
 // ============================================================================

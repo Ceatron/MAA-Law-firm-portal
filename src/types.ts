@@ -161,6 +161,8 @@ export interface InvoiceLineItem {
   quantity: number; // e.g. hours or units
   unitPriceKES: number; // e.g. rate per hour or item cost
   discountPercent?: number; // optional line item discount in %
+  discountAmount?: number; // optional line item discount in KES
+  discountType?: 'percent' | 'amount'; // percentage or fixed amount
   discountKES?: number;
   totalPriceKES: number;
   isTaxable?: boolean; // whether VAT (16%) is charged on this specific item/row
@@ -173,7 +175,7 @@ export type FeeNoteStatus = 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | '
 
 export interface FeeNote {
   id: string;
-  invoiceNumber: string; // e.g. INV-000544 or MAA-INV-2026-088
+  invoiceNumber: string; // e.g. INV-000001 (sequential order)
   clientName: string;
   clientId?: string;
   clientEmail?: string;

@@ -42,7 +42,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
   const settings = loadChambersSettings();
   const feeNoteToUse = feeNote;
 
-  const invoiceNumber = feeNoteToUse.invoiceNumber || 'INV-000000';
+  const invoiceNumber = feeNoteToUse.invoiceNumber || 'INV-000001';
   const clientName = feeNoteToUse.clientName || 'Client';
   const projectOrSubject = feeNoteToUse.subject || feeNoteToUse.matterTitle || 'Invoice Services';
   const dateIssued = feeNoteToUse.dateIssued || '';
@@ -216,7 +216,9 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                           {(it.unitPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td className="py-3 px-3 text-right font-mono">
-                          {it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%'}
+                          {it.discountType === 'amount'
+                            ? (it.discountKES || it.discountAmount ? `KES ${(it.discountKES || it.discountAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00')
+                            : (it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%')}
                         </td>
                         <td className="py-3 px-3 text-right font-bold font-mono text-slate-900">
                           {(it.totalPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

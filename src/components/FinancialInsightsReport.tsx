@@ -27,20 +27,14 @@ import {
   Lock,
   ShieldAlert,
 } from 'lucide-react';
-import {
-  mockMonthlyRevenue,
-  mockAgingBuckets,
-  mockTopBillingClients,
-  mockPracticeAreaRevenue,
-  mockFeeNotes,
-} from '../data/mockData';
-import { FeeNote, LegalMatter, PaymentRecord } from '../types';
+import { FeeNote, LegalMatter, PaymentRecord, Client } from '../types';
 
 interface FinancialInsightsReportProps {
   isManagingAdvocate?: boolean;
   feeNotes?: FeeNote[];
   matters?: LegalMatter[];
   payments?: PaymentRecord[];
+  clients?: Client[];
 }
 
 export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = ({
@@ -48,6 +42,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
   feeNotes = [],
   matters = [],
   payments = [],
+  clients = [],
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<'FY2026' | 'Q3_2026' | 'Q2_2026'>('FY2026');
   const [clientCategoryFilter, setClientCategoryFilter] = useState<string>('All');
@@ -78,23 +73,305 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Calculations from dynamic data incorporating fee notes & registered matter fees
-  const actualFeeNotes = feeNotes && feeNotes.length > 0 ? feeNotes : mockFeeNotes;
-  const mattersReceivablesKES = (matters || []).reduce(
+  // Calculations from dynamic data incorporating fee notes, payments, clients & registered matter fees
+  const actualFeeNotes = feeNotes || [];
+  const actualMatters = matters || [];
+  const actualPayments = payments || [];
+  const actualClients = clients || [];
+
+  const mattersWithFee = actualMatters.filter((m) => {
+    const fee = m.billedKES || m.estimatedFeeKES || 0;
+    return fee > 0;
+  });
+
+  const pendingMatters = actualMatters.filter((m) => {
+    const fee = m.billedKES || m.estimatedFeeKES || 0;
+    const paid = m.paidKES || 0;
+    return Math.max(0, fee - paid) > 0;
+  });
+
+  const mattersReceivablesKES = actualMatters.reduce(
     (acc, m) => acc + Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)),
     0
   );
-  const totalBilledVal = actualFeeNotes.reduce((acc, f) => acc + f.totalKES, 0) + mattersReceivablesKES;
-  const totalPaidVal = actualFeeNotes.filter(f => f.status === 'Paid' || (f.amountPaidKES && f.amountPaidKES > 0)).reduce((acc, f) => acc + (f.amountPaidKES !== undefined ? f.amountPaidKES : f.totalKES), 0) + (matters || []).reduce((sum, m) => sum + (m.paidKES || 0), 0);
-  const feeNotesOutstandingVal = actualFeeNotes.filter(f => f.status !== 'Paid').reduce((acc, f) => acc + (f.balanceKES !== undefined ? f.balanceKES : f.totalKES), 0);
+
+  const mattersPaidKES = actualMatters.reduce(
+    (acc, m) => acc + (m.paidKES || 0),
+    0
+  );
+
+  const feeNotesBilledKES = actualFeeNotes.reduce((acc, f) => acc + (f.totalKES || 0), 0);
+  const feeNotesPaidKES = actualFeeNotes
+    .filter((f) => f.status === 'Paid' || (f.amountPaidKES && f.amountPaidKES > 0))
+    .reduce((acc, f) => acc + (f.amountPaidKES !== undefined ? f.amountPaidKES : f.totalKES), 0);
+  const feeNotesOutstandingVal = actualFeeNotes
+    .filter((f) => f.status !== 'Paid')
+    .reduce((acc, f) => acc + (f.balanceKES !== undefined ? f.balanceKES : f.totalKES), 0);
+
+  const totalBilledVal = feeNotesBilledKES + mattersReceivablesKES;
+  const totalPaidVal = feeNotesPaidKES + mattersPaidKES;
   const totalOutstandingVal = feeNotesOutstandingVal + mattersReceivablesKES;
-  const pendingInvoicesCount = actualFeeNotes.filter(f => f.status !== 'Paid').length;
-  const pendingMattersCount = (matters || []).filter(m => Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)) > 0).length;
+
+  const unpaidFeeNotes = actualFeeNotes.filter(
+    (fn) => fn.status !== 'Paid' && (fn.balanceKES === undefined || fn.balanceKES > 0)
+  );
+  const pendingInvoicesCount = unpaidFeeNotes.length;
+  const pendingMattersCount = pendingMatters.length;
+
+  // Real App Transactions: Dynamic Client Revenue Map
+  const clientRevenueMap = new Map<
+    string,
+    {
+      clientName: string;
+      category: string;
+      billedKES: number;
+      paidKES: number;
+      outstandingKES: number;
+      activeMattersCount: number;
+    }
+  >();
+
+  // Accumulate from matters
+  actualMatters.forEach((m) => {
+    const name = m.clientName || 'General Client';
+    const cat = m.practiceArea || 'Commercial Law';
+    const billed = m.billedKES || m.estimatedFeeKES || 0;
+    const paid = m.paidKES || 0;
+    const outstanding = Math.max(0, billed - paid);
+
+    if (!clientRevenueMap.has(name)) {
+      clientRevenueMap.set(name, {
+        clientName: name,
+        category: cat,
+        billedKES: billed,
+        paidKES: paid,
+        outstandingKES: outstanding,
+        activeMattersCount: 1,
+      });
+    } else {
+      const rec = clientRevenueMap.get(name)!;
+      rec.billedKES += billed;
+      rec.paidKES += paid;
+      rec.outstandingKES += outstanding;
+      rec.activeMattersCount += 1;
+    }
+  });
+
+  // Accumulate from fee notes
+  actualFeeNotes.forEach((fn) => {
+    const name = fn.clientName || 'General Client';
+    const billed = fn.totalKES || 0;
+    const paid = fn.amountPaidKES !== undefined ? fn.amountPaidKES : fn.status === 'Paid' ? billed : 0;
+    const outstanding = fn.balanceKES !== undefined ? fn.balanceKES : Math.max(0, billed - paid);
+
+    if (!clientRevenueMap.has(name)) {
+      clientRevenueMap.set(name, {
+        clientName: name,
+        category: 'Corporate',
+        billedKES: billed,
+        paidKES: paid,
+        outstandingKES: outstanding,
+        activeMattersCount: 1,
+      });
+    } else {
+      const rec = clientRevenueMap.get(name)!;
+      if (!fn.matterId) {
+        rec.billedKES += billed;
+        rec.paidKES += paid;
+        rec.outstandingKES += outstanding;
+      }
+    }
+  });
+
+  // Check registered clients with recorded totalBilledKES
+  actualClients.forEach((cl) => {
+    const name = cl.name;
+    const billed = cl.totalBilledKES || 0;
+    const cat = cl.industry || cl.type || 'Corporate';
+    if (clientRevenueMap.has(name)) {
+      const rec = clientRevenueMap.get(name)!;
+      if (billed > rec.billedKES) {
+        rec.billedKES = billed;
+        rec.outstandingKES = Math.max(0, rec.billedKES - rec.paidKES);
+      }
+    } else if (billed > 0) {
+      clientRevenueMap.set(name, {
+        clientName: name,
+        category: cat,
+        billedKES: billed,
+        paidKES: 0,
+        outstandingKES: billed,
+        activeMattersCount: cl.activeMattersCount || 1,
+      });
+    }
+  });
+
+  const realTopBillingClients = Array.from(clientRevenueMap.values())
+    .filter((c) => c.billedKES > 0 || c.paidKES > 0)
+    .sort((a, b) => b.billedKES - a.billedKES);
+
+  const topClient = realTopBillingClients[0] || (actualClients.length > 0 ? {
+    clientName: actualClients[0].name,
+    category: actualClients[0].industry || 'Corporate',
+    billedKES: actualClients[0].totalBilledKES || 0,
+    paidKES: 0,
+    outstandingKES: actualClients[0].totalBilledKES || 0,
+    activeMattersCount: actualClients[0].activeMattersCount || 1,
+  } : null);
 
   // Filter top clients if category is selected
   const filteredClients = clientCategoryFilter === 'All'
-    ? mockTopBillingClients
-    : mockTopBillingClients.filter(c => c.category.includes(clientCategoryFilter));
+    ? realTopBillingClients
+    : realTopBillingClients.filter((c) =>
+        c.category.toLowerCase().includes(clientCategoryFilter.toLowerCase()) ||
+        c.clientName.toLowerCase().includes(clientCategoryFilter.toLowerCase())
+      );
+
+  // Dynamic Monthly Revenue Trends from App Transactions
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthlyMap = new Map<string, { month: string; billedKES: number; collectedKES: number }>();
+  months.forEach((m) => monthlyMap.set(m, { month: m, billedKES: 0, collectedKES: 0 }));
+
+  actualMatters.forEach((m) => {
+    const dateStr = m.lodgedDate || m.createdDate;
+    if (dateStr) {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const monthName = months[d.getMonth()];
+        const entry = monthlyMap.get(monthName);
+        if (entry) {
+          entry.billedKES += m.billedKES || m.estimatedFeeKES || 0;
+          entry.collectedKES += m.paidKES || 0;
+        }
+      }
+    }
+  });
+
+  actualFeeNotes.forEach((fn) => {
+    if (fn.dateIssued) {
+      const d = new Date(fn.dateIssued);
+      if (!isNaN(d.getTime())) {
+        const monthName = months[d.getMonth()];
+        const entry = monthlyMap.get(monthName);
+        if (entry) {
+          entry.billedKES += fn.totalKES || 0;
+          entry.collectedKES += fn.amountPaidKES || (fn.status === 'Paid' ? fn.totalKES : 0);
+        }
+      }
+    }
+  });
+
+  actualPayments.forEach((p) => {
+    if (p.paymentDate) {
+      const d = new Date(p.paymentDate);
+      if (!isNaN(d.getTime())) {
+        const monthName = months[d.getMonth()];
+        const entry = monthlyMap.get(monthName);
+        if (entry) {
+          entry.collectedKES += p.amountKES || 0;
+        }
+      }
+    }
+  });
+
+  const dynamicMonthlyRevenue = Array.from(monthlyMap.values());
+  const hasMonthlyData = dynamicMonthlyRevenue.some((m) => m.billedKES > 0 || m.collectedKES > 0);
+
+  // Dynamic Aging Buckets from App Transactions
+  const dynamicAgingBuckets = [
+    { category: '0-30 Days', amountKES: 0, count: 0, color: '#10b981' },
+    { category: '31-60 Days', amountKES: 0, count: 0, color: '#0B63E5' },
+    { category: '61-90 Days', amountKES: 0, count: 0, color: '#f59e0b' },
+    { category: '90+ Days', amountKES: 0, count: 0, color: '#ef4444' },
+  ];
+
+  const now = Date.now();
+  unpaidFeeNotes.forEach((fn) => {
+    const issueDate = new Date(fn.dateIssued).getTime();
+    const diffDays = Math.floor((now - (isNaN(issueDate) ? now : issueDate)) / (1000 * 60 * 60 * 24));
+    const bal = fn.balanceKES !== undefined ? fn.balanceKES : fn.totalKES;
+    if (diffDays <= 30) {
+      dynamicAgingBuckets[0].amountKES += bal;
+      dynamicAgingBuckets[0].count += 1;
+    } else if (diffDays <= 60) {
+      dynamicAgingBuckets[1].amountKES += bal;
+      dynamicAgingBuckets[1].count += 1;
+    } else if (diffDays <= 90) {
+      dynamicAgingBuckets[2].amountKES += bal;
+      dynamicAgingBuckets[2].count += 1;
+    } else {
+      dynamicAgingBuckets[3].amountKES += bal;
+      dynamicAgingBuckets[3].count += 1;
+    }
+  });
+
+  pendingMatters.forEach((m) => {
+    const regDate = new Date(m.createdDate || m.lodgedDate || '').getTime();
+    const diffDays = Math.floor((now - (isNaN(regDate) ? now : regDate)) / (1000 * 60 * 60 * 24));
+    const bal = Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0));
+    if (diffDays <= 30) {
+      dynamicAgingBuckets[0].amountKES += bal;
+      dynamicAgingBuckets[0].count += 1;
+    } else if (diffDays <= 60) {
+      dynamicAgingBuckets[1].amountKES += bal;
+      dynamicAgingBuckets[1].count += 1;
+    } else if (diffDays <= 90) {
+      dynamicAgingBuckets[2].amountKES += bal;
+      dynamicAgingBuckets[2].count += 1;
+    } else {
+      dynamicAgingBuckets[3].amountKES += bal;
+      dynamicAgingBuckets[3].count += 1;
+    }
+  });
+
+  const hasAgingData = dynamicAgingBuckets.some((b) => b.amountKES > 0);
+
+  // Dynamic Actionable Pending Items
+  const pendingActionItems = [
+    ...unpaidFeeNotes.map((fn) => ({
+      id: fn.id,
+      number: fn.invoiceNumber,
+      clientName: fn.clientName,
+      title: fn.matterTitle || fn.subject || 'Fee Note Services',
+      amountKES: fn.balanceKES !== undefined ? fn.balanceKES : fn.totalKES,
+      status: fn.status || 'Unpaid',
+      isInvoice: true,
+    })),
+    ...pendingMatters.map((m) => ({
+      id: m.id,
+      number: m.referenceNumber,
+      clientName: m.clientName,
+      title: m.title,
+      amountKES: Math.max(0, (m.billedKES || m.estimatedFeeKES || 0) - (m.paidKES || 0)),
+      status: 'Retainer Pending',
+      isInvoice: false,
+    })),
+  ];
+
+  // Dynamic Practice Area Revenue Distribution
+  const practiceAreaMap = new Map<string, { revenueKES: number; activeMattersCount: number }>();
+  actualMatters.forEach((m) => {
+    const pa = m.practiceArea || 'General Practice';
+    const rev = m.billedKES || m.estimatedFeeKES || 0;
+    if (!practiceAreaMap.has(pa)) {
+      practiceAreaMap.set(pa, { revenueKES: rev, activeMattersCount: 1 });
+    } else {
+      const existing = practiceAreaMap.get(pa)!;
+      existing.revenueKES += rev;
+      existing.activeMattersCount += 1;
+    }
+  });
+
+  const totalPracticeRevenue = Array.from(practiceAreaMap.values()).reduce((sum, p) => sum + p.revenueKES, 0);
+
+  const dynamicPracticeAreaRevenue = Array.from(practiceAreaMap.entries())
+    .map(([practiceArea, data]) => ({
+      practiceArea,
+      revenueKES: data.revenueKES,
+      activeMattersCount: data.activeMattersCount,
+      percentage: totalPracticeRevenue > 0 ? Math.round((data.revenueKES / totalPracticeRevenue) * 100) : 0,
+    }))
+    .sort((a, b) => b.revenueKES - a.revenueKES);
 
   const formatKES = (value: number) => {
     if (value >= 1000000) {
@@ -216,7 +493,20 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             {formatKES(totalBilledVal)}
           </p>
           <div className="mt-2 flex items-center text-[11px] font-semibold text-stone-500">
-            <span>{mockFeeNotes.length} fee notes issued</span>
+            <span>
+              {actualFeeNotes.length > 0 && (
+                <>
+                  {actualFeeNotes.length} fee note{actualFeeNotes.length === 1 ? '' : 's'} issued
+                  {mattersWithFee.length > 0 ? ' • ' : ''}
+                </>
+              )}
+              {mattersWithFee.length > 0 && (
+                <>{mattersWithFee.length} matter retainers billed</>
+              )}
+              {actualFeeNotes.length === 0 && mattersWithFee.length === 0 && (
+                <>0 fee notes issued</>
+              )}
+            </span>
           </div>
         </div>
 
@@ -248,10 +538,20 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             {formatKES(totalOutstandingVal)}
           </p>
           <div className="mt-2 flex items-center text-[11px] text-amber-800 font-semibold">
-            <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-600" />
+            <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-600 shrink-0" />
             <span>
-              {pendingInvoicesCount} invoices
-              {pendingMattersCount > 0 ? ` + ${pendingMattersCount} matter retainers` : ''} pending
+              {pendingInvoicesCount > 0 && (
+                <>
+                  {pendingInvoicesCount} invoice{pendingInvoicesCount === 1 ? '' : 's'}
+                  {pendingMattersCount > 0 ? ' + ' : ''}
+                </>
+              )}
+              {pendingMattersCount > 0 && (
+                <>{pendingMattersCount} matter retainers pending</>
+              )}
+              {pendingInvoicesCount === 0 && pendingMattersCount === 0 && (
+                <>0 invoices pending</>
+              )}
             </span>
           </div>
         </div>
@@ -264,11 +564,13 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             </div>
           </div>
           <p className="font-serif-title text-2xl font-bold text-stone-900">
-            {mockTopBillingClients.length > 0 ? formatKES(mockTopBillingClients[0].billedKES) : 'KES 0'}
+            {topClient && topClient.billedKES > 0 ? formatKES(topClient.billedKES) : 'KES 0'}
           </p>
           <div className="mt-2 flex items-center text-[11px] text-stone-600">
-            <span className="font-semibold text-stone-800">
-              {mockTopBillingClients.length > 0 ? mockTopBillingClients[0].clientName : 'No clients logged'}
+            <span className="font-semibold text-stone-800 truncate" title={topClient ? topClient.clientName : undefined}>
+              {topClient && (topClient.billedKES > 0 || topClient.activeMattersCount > 0)
+                ? `${topClient.clientName}${topClient.activeMattersCount > 0 ? ` (${topClient.activeMattersCount} matter${topClient.activeMattersCount === 1 ? '' : 's'})` : ''}`
+                : 'No client transactions logged'}
             </span>
           </div>
         </div>
@@ -339,7 +641,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             </div>
           </div>
 
-          {mockMonthlyRevenue.length === 0 ? (
+          {!hasMonthlyData ? (
             <div className="rounded-lg border border-dashed border-stone-300 p-12 text-center bg-stone-50/50">
               <TrendingUp className="mx-auto h-8 w-8 text-stone-400 mb-2" />
               <p className="text-sm font-semibold text-stone-700">No monthly revenue data logged yet</p>
@@ -349,7 +651,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             <div className="h-80 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={mockMonthlyRevenue}
+                  data={dynamicMonthlyRevenue}
                   margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
                   barGap={6}
                 >
@@ -401,7 +703,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
               </p>
             </div>
 
-            {mockAgingBuckets.length === 0 ? (
+            {!hasAgingData ? (
               <div className="rounded-lg border border-dashed border-stone-300 p-12 text-center bg-stone-50/50">
                 <Clock className="mx-auto h-8 w-8 text-stone-400 mb-2" />
                 <p className="text-sm font-semibold text-stone-700">No overdue receivables recorded</p>
@@ -411,7 +713,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
               <div className="h-80 w-full pt-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={mockAgingBuckets}
+                    data={dynamicAgingBuckets}
                     margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2dfd5" />
@@ -429,7 +731,7 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Bar dataKey="amountKES" name="Outstanding Amount" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                      {mockAgingBuckets.map((entry, index) => (
+                      {dynamicAgingBuckets.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Bar>
@@ -444,65 +746,63 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
                 <h4 className="font-serif-title font-bold text-stone-900 text-sm">
-                  Pending Invoice Actions
+                  Pending Billing Actions
                 </h4>
                 <p className="text-[11px] text-stone-500">Requires finance collection follow-up</p>
               </div>
               <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                {mockFeeNotes.filter(f => f.status !== 'Paid').length} Invoices
+                {pendingActionItems.length} Pending
               </span>
             </div>
 
             <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-              {mockFeeNotes.length === 0 ? (
+              {pendingActionItems.length === 0 ? (
                 <div className="py-8 text-center text-stone-400 text-xs">
-                  No invoices pending action.
+                  No invoices or matter retainers pending action.
                 </div>
               ) : (
-                mockFeeNotes.map((invoice) => (
+                pendingActionItems.slice(0, 15).map((item) => (
                   <div
-                    key={invoice.id}
+                    key={item.id}
                     className="rounded-lg border border-stone-200 bg-stone-50/60 p-3 hover:bg-stone-50 transition-colors"
                   >
                     <div className="flex items-start justify-between">
                       <div>
                         <span className="font-mono text-[11px] font-bold text-[#0B63E5]">
-                          {invoice.invoiceNumber}
+                          {item.number}
                         </span>
-                        <h5 className="font-bold text-stone-900 text-xs mt-0.5">{invoice.clientName}</h5>
+                        <h5 className="font-bold text-stone-900 text-xs mt-0.5">{item.clientName}</h5>
                       </div>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                          invoice.status === 'Paid'
+                          item.status === 'Paid'
                             ? 'bg-emerald-100 text-emerald-800'
-                            : invoice.status === 'Pending'
+                            : item.status === 'Pending' || item.status === 'Retainer Pending'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-red-100 text-red-800'
                         }`}
                       >
-                        {invoice.status}
+                        {item.status}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-stone-600 mt-1 line-clamp-1">{invoice.matterTitle}</p>
+                    <p className="text-[11px] text-stone-600 mt-1 line-clamp-1">{item.title}</p>
 
                     <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-stone-200/60 text-xs">
                       <div>
                         <span className="text-[10px] text-stone-400 block">Total Due:</span>
                         <span className="font-mono font-bold text-stone-900">
-                          KES {invoice.totalKES.toLocaleString()}
+                          KES {item.amountKES.toLocaleString()}
                         </span>
                       </div>
 
-                      {invoice.status !== 'Paid' && (
-                        <button
-                          onClick={() => showToast(`Payment reminder dispatch sent to ${invoice.clientName}`)}
-                          className="flex items-center space-x-1 rounded bg-[#0B63E5]/10 px-2 py-1 text-[11px] font-semibold text-[#0B63E5] hover:bg-[#0B63E5]/20 cursor-pointer transition-colors"
-                        >
-                          <Send className="h-3 w-3" />
-                          <span>Remind</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => showToast(`Payment reminder dispatch sent to ${item.clientName}`)}
+                        className="flex items-center space-x-1 rounded bg-[#0B63E5]/10 px-2 py-1 text-[11px] font-semibold text-[#0B63E5] hover:bg-[#0B63E5]/20 cursor-pointer transition-colors"
+                      >
+                        <Send className="h-3 w-3" />
+                        <span>Remind</span>
+                      </button>
                     </div>
                   </div>
                 ))
@@ -617,16 +917,16 @@ export const FinancialInsightsReport: React.FC<FinancialInsightsReportProps> = (
             </h3>
             <p className="text-[11px] text-stone-500">Revenue split across firm practice departments</p>
           </div>
-          <span className="text-xs font-semibold text-stone-600">{mockPracticeAreaRevenue.length} Practice Areas</span>
+          <span className="text-xs font-semibold text-stone-600">{dynamicPracticeAreaRevenue.length} Practice Areas</span>
         </div>
 
-        {mockPracticeAreaRevenue.length === 0 ? (
+        {dynamicPracticeAreaRevenue.length === 0 ? (
           <div className="rounded-lg border border-dashed border-stone-300 p-8 text-center bg-stone-50/50">
             <p className="text-xs text-stone-500">No practice area revenue records available.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mockPracticeAreaRevenue.map((pa) => (
+            {dynamicPracticeAreaRevenue.map((pa) => (
               <div key={pa.practiceArea} className="rounded-lg border border-stone-200 bg-stone-50/50 p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-xs text-stone-900">{pa.practiceArea}</span>

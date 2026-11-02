@@ -48,7 +48,7 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(...textDark);
-  const invNumber = feeNote.invoiceNumber || 'INV-000544';
+  const invNumber = feeNote.invoiceNumber || 'INV-000001';
   doc.text(`# ${invNumber}`, pageWidth - margin, currentY + 12, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
@@ -169,7 +169,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
     const subDesc = it.subDescription || (it.category && it.category !== 'Other' ? it.category : '');
     const qtyStr = (it.quantity || 1).toFixed(2);
     const rateStr = (it.unitPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const discountStr = it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%';
+    const discountStr = it.discountType === 'amount'
+      ? (it.discountKES || it.discountAmount ? `KES ${(it.discountKES || it.discountAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00')
+      : (it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%');
     const amountStr = (it.totalPriceKES || (it.quantity || 1) * (it.unitPriceKES || 0)).toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,

@@ -29,12 +29,17 @@ import {
 } from '../types';
 import { generateInvoicePdf } from '../utils/invoicePdfGenerator';
 import { loadStandardServiceSnippets } from '../utils/feeNoteTemplatesStorage';
+import {
+  getNextSequentialInvoiceNumber,
+  recordUsedInvoiceNumber,
+} from '../utils/chambersDataStorage';
 
 interface GenerateInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   clients: Client[];
   matters: LegalMatter[];
+  existingInvoices?: FeeNote[];
   onAddInvoice: (invoice: FeeNote) => void;
   onAddClient?: (client: Client) => void;
   initialSelectedMatterId?: string;
@@ -46,6 +51,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   onClose,
   clients,
   matters,
+  existingInvoices,
   onAddInvoice,
   onAddClient,
   initialSelectedMatterId,
@@ -70,11 +76,17 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
   const clientDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Invoice Meta Fields
+  // Invoice Meta Fields: sequential numbering starting at INV-000001
   const [invoiceNumber, setInvoiceNumber] = useState<string>(() => {
-    const randomNum = Math.floor(100000 + Math.random() * 900000);
-    return `INV-${randomNum}`;
+    return getNextSequentialInvoiceNumber(existingInvoices);
   });
+
+  // Re-sync next sequential invoice number whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setInvoiceNumber(getNextSequentialInvoiceNumber(existingInvoices));
+    }
+  }, [isOpen, existingInvoices]);
 
   const [invoiceDate, setInvoiceDate] = useState<string>(() => {
     const today = new Date();
@@ -91,15 +103,17 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   // Subject (e.g. Website Maintenance / Legal Representation)
   const [subject, setSubject] = useState<string>('');
 
-  // Item Table Rows: start with single empty row ready for typing
+  // Item Table Rows: start with single empty row ready for typing (no preloaded amounts)
   const [items, setItems] = useState<InvoiceLineItem[]>([
     {
       id: 'item-1',
       description: '',
       subDescription: '',
-      quantity: 1,
+      quantity: 0,
       unitPriceKES: 0,
+      discountType: 'percent',
       discountPercent: 0,
+      discountAmount: 0,
       discountKES: 0,
       totalPriceKES: 0,
       isTaxable: false,
@@ -110,9 +124,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   // Standard service items / quick dropdown
   const [openItemDropdownIndex, setOpenItemDropdownIndex] = useState<number | null>(null);
   const standardSnippets = loadStandardServiceSnippets();
-
-  // Summary fields (shipping removed, adjustment replaced with discount)
-  const [discountKES, setDiscountKES] = useState<number>(0);
 
   // Customer Notes & Terms
   const [customerNotes, setCustomerNotes] = useState<string>('Thanks for your business.');
@@ -193,14 +204,51 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       const next = [...prev];
       const item = { ...next[index], [field]: value };
 
-      const qty = item.quantity || 0;
-      const rate = item.unitPriceKES || 0;
+      const qty = Number(item.quantity) || 0;
+      const rate = Number(item.unitPriceKES) || 0;
       const gross = qty * rate;
-      const discPercent = item.discountPercent || 0;
-      const discKES = (gross * discPercent) / 100;
+      const discType = item.discountType || 'percent';
+
+      let discKES = 0;
+      if (discType === 'amount') {
+        const amt = Number(item.discountAmount) || 0;
+        discKES = Math.min(gross, Math.max(0, amt));
+        item.discountKES = discKES;
+        item.discountPercent = gross > 0 ? (discKES / gross) * 100 : 0;
+      } else {
+        const pct = Number(item.discountPercent) || 0;
+        discKES = (gross * Math.min(100, Math.max(0, pct))) / 100;
+        item.discountKES = discKES;
+        item.discountAmount = discKES;
+      }
+
+      item.totalPriceKES = Math.max(0, gross - discKES);
+      next[index] = item;
+      return next;
+    });
+  };
+
+  const handleToggleDiscountType = (index: number, newType: 'percent' | 'amount') => {
+    setItems((prev) => {
+      const next = [...prev];
+      const item = { ...next[index], discountType: newType };
+      const qty = Number(item.quantity) || 0;
+      const rate = Number(item.unitPriceKES) || 0;
+      const gross = qty * rate;
+
+      let discKES = 0;
+      if (newType === 'amount') {
+        const amt = item.discountKES || 0;
+        item.discountAmount = amt;
+        discKES = Math.min(gross, Math.max(0, amt));
+      } else {
+        const pct = gross > 0 ? ((item.discountKES || 0) / gross) * 100 : (item.discountPercent || 0);
+        item.discountPercent = Math.round(pct * 100) / 100;
+        discKES = (gross * item.discountPercent) / 100;
+      }
+
       item.discountKES = discKES;
       item.totalPriceKES = Math.max(0, gross - discKES);
-
       next[index] = item;
       return next;
     });
@@ -211,9 +259,11 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       id: `item-${Date.now()}-${items.length + 1}`,
       description: '',
       subDescription: '',
-      quantity: 1,
+      quantity: 0,
       unitPriceKES: 0,
+      discountType: 'percent',
       discountPercent: 0,
+      discountAmount: 0,
       discountKES: 0,
       totalPriceKES: 0,
       isTaxable: false,
@@ -229,9 +279,11 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
           id: `item-${Date.now()}`,
           description: '',
           subDescription: '',
-          quantity: 1,
+          quantity: 0,
           unitPriceKES: 0,
+          discountType: 'percent',
           discountPercent: 0,
+          discountAmount: 0,
           discountKES: 0,
           totalPriceKES: 0,
           isTaxable: false,
@@ -243,9 +295,11 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     setItems(items.filter((_, i) => i !== index));
   };
 
-  // Calculate totals
+  // Calculate totals (bottom discount removed per user instruction)
   const subTotal = items.reduce((acc, it) => acc + (it.totalPriceKES || 0), 0);
-  const totalAmount = Math.max(0, subTotal - (discountKES || 0));
+  const taxableItemsTotal = items.filter((it) => it.isTaxable).reduce((sum, it) => sum + (it.totalPriceKES || 0), 0);
+  const vatAmount = taxableItemsTotal * 0.16;
+  const totalAmount = subTotal + vatAmount;
 
   // Quick Client Creation
   const handleSaveNewClient = () => {
@@ -283,9 +337,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       return;
     }
 
+    const finalInvoiceNumber = invoiceNumber.trim() || getNextSequentialInvoiceNumber(existingInvoices);
+    recordUsedInvoiceNumber(finalInvoiceNumber);
+
     const newInvoice: FeeNote = {
       id: `fn-${Date.now()}`,
-      invoiceNumber: invoiceNumber.trim() || `INV-${Math.floor(100000 + Math.random() * 900000)}`,
+      invoiceNumber: finalInvoiceNumber,
       clientId: selectedClientId || `client-${Date.now()}`,
       clientName: finalClientName,
       clientEmail: activeClient?.email,
@@ -297,11 +354,11 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       dueDate: dueDate,
       items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
       subtotalKES: subTotal,
-      discountKES: discountKES,
-      adjustmentKES: discountKES ? -discountKES : 0,
+      discountKES: 0,
+      adjustmentKES: 0,
       amountKES: subTotal,
       vatRatePercent: 16,
-      vatKES: items.filter((it) => it.isTaxable).reduce((sum, it) => sum + (it.totalPriceKES * 0.16), 0),
+      vatKES: vatAmount,
       totalKES: totalAmount,
       balanceKES: totalAmount,
       status: status === 'Draft' ? 'Pending' : 'Unpaid',
@@ -330,7 +387,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     const finalClientName = activeClient?.name || clientSearchQuery.trim() || 'Customer';
     const tempInvoice: FeeNote = {
       id: `fn-temp-${Date.now()}`,
-      invoiceNumber: invoiceNumber.trim() || 'INV-000544',
+      invoiceNumber: invoiceNumber.trim() || getNextSequentialInvoiceNumber(existingInvoices),
       clientId: selectedClientId,
       clientName: finalClientName,
       clientEmail: activeClient?.email,
@@ -342,11 +399,11 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       dueDate: dueDate,
       items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
       subtotalKES: subTotal,
-      discountKES: discountKES,
-      adjustmentKES: discountKES ? -discountKES : 0,
+      discountKES: 0,
+      adjustmentKES: 0,
       amountKES: subTotal,
       vatRatePercent: 16,
-      vatKES: 0,
+      vatKES: vatAmount,
       totalKES: totalAmount,
       balanceKES: totalAmount,
       status: 'Unpaid',
@@ -511,37 +568,48 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               <label className="md:col-span-3 text-xs md:text-sm font-medium text-rose-600">
                 Invoice#*
               </label>
-              <div className="md:col-span-9 flex items-center space-x-2">
+              <div className="md:col-span-9 flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   value={invoiceNumber}
                   onChange={(e) => setInvoiceNumber(e.target.value)}
-                  className="w-full sm:w-72 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm font-mono text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  placeholder="INV-000001"
+                  className="w-full sm:w-64 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm font-mono font-bold text-slate-950 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    const rnd = Math.floor(100000 + Math.random() * 900000);
-                    setInvoiceNumber(`INV-${rnd}`);
+                    const nextNum = getNextSequentialInvoiceNumber(existingInvoices);
+                    setInvoiceNumber(nextNum);
                   }}
-                  className="rounded-md bg-rose-600 text-white px-2 py-1.5 text-xs hover:bg-rose-700 transition cursor-pointer flex items-center space-x-1"
-                  title="Auto-generate invoice number"
+                  className="rounded-md bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                  title="Generate next sequential number (e.g. INV-000001 series)"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Next Sequential</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    const prefix = prompt('Enter invoice numbering prefix:', 'INV-');
-                    if (prefix) {
-                      setInvoiceNumber(`${prefix}${Math.floor(100000 + Math.random() * 900000)}`);
+                    const customStart = prompt('Set next sequential counter or enter starting number (e.g. 1 for INV-000001):', '1');
+                    if (customStart !== null) {
+                      const num = parseInt(customStart.replace(/\D/g, ''), 10);
+                      if (!isNaN(num) && num > 0) {
+                        try {
+                          localStorage.setItem('chambers_invoice_last_seq', String(num - 1));
+                        } catch {}
+                        setInvoiceNumber(`INV-${String(num).padStart(6, '0')}`);
+                      }
                     }
                   }}
-                  className="p-1.5 text-blue-500 hover:text-blue-600 rounded-md hover:bg-blue-50 transition cursor-pointer"
-                  title="Configure numbering series"
+                  className="p-1.5 text-slate-500 hover:text-slate-800 rounded-md hover:bg-slate-100 transition cursor-pointer"
+                  title="Configure starting sequence number (e.g. 1 -> INV-000001)"
                 >
                   <Settings className="h-4 w-4" />
                 </button>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Sequential Order (INV-000001)
+                </span>
               </div>
             </div>
 
@@ -631,7 +699,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                         <TableIcon className="h-3 w-3 text-slate-500" />
                       </div>
                     </th>
-                    <th className="py-2.5 px-3 w-28 text-right">DISCOUNT</th>
+                    <th className="py-2.5 px-3 w-32 text-right">DISCOUNT</th>
                     <th className="py-2.5 px-3 w-36">TAX</th>
                     <th className="py-2.5 px-3 w-28 text-right">AMOUNT</th>
                     <th className="py-2.5 px-2 w-8"></th>
@@ -697,10 +765,15 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                                     onMouseDown={(e) => {
                                       e.preventDefault();
                                       const rate = snippet.unitPriceKES || 0;
-                                      const qty = item.quantity || 1;
-                                      const discPercent = item.discountPercent || 0;
+                                      const qty = item.quantity && item.quantity > 0 ? item.quantity : 1;
                                       const gross = qty * rate;
-                                      const discKES = (gross * discPercent) / 100;
+                                      const discType = item.discountType || 'percent';
+                                      let discKES = 0;
+                                      if (discType === 'amount') {
+                                        discKES = Math.min(gross, item.discountAmount || 0);
+                                      } else {
+                                        discKES = (gross * (item.discountPercent || 0)) / 100;
+                                      }
 
                                       setItems((prev) => {
                                         const next = [...prev];
@@ -708,6 +781,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                                           ...next[index],
                                           description: snippet.description,
                                           subDescription: snippet.category,
+                                          quantity: qty,
                                           unitPriceKES: rate,
                                           discountKES: discKES,
                                           totalPriceKES: Math.max(0, gross - discKES),
@@ -749,35 +823,63 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                       <td className="py-3 px-3 text-right">
                         <input
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
-                          value={item.quantity}
-                          onChange={(e) => updateItemRow(index, 'quantity', parseFloat(e.target.value) || 0)}
+                          value={item.quantity === 0 || !item.quantity ? '' : item.quantity}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateItemRow(index, 'quantity', isNaN(val) ? 0 : val);
+                          }}
+                          placeholder="0"
                           className="w-20 text-right rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                         />
                       </td>
                       <td className="py-3 px-3 text-right">
                         <input
                           type="number"
-                          step="1"
+                          step="any"
                           min="0"
-                          value={item.unitPriceKES}
-                          onChange={(e) => updateItemRow(index, 'unitPriceKES', parseFloat(e.target.value) || 0)}
+                          value={item.unitPriceKES === 0 || !item.unitPriceKES ? '' : item.unitPriceKES}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateItemRow(index, 'unitPriceKES', isNaN(val) ? 0 : val);
+                          }}
+                          placeholder="0.00"
                           className="w-28 text-right rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                         />
                       </td>
                       <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end space-x-1">
+                        <div className="inline-flex items-center justify-end rounded-md shadow-2xs">
                           <input
                             type="number"
-                            step="1"
+                            step={item.discountType === 'amount' ? '100' : '1'}
                             min="0"
-                            max="100"
-                            value={item.discountPercent || 0}
-                            onChange={(e) => updateItemRow(index, 'discountPercent', parseFloat(e.target.value) || 0)}
-                            className="w-16 text-right rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                            max={item.discountType === 'amount' ? undefined : 100}
+                            value={
+                              item.discountType === 'amount'
+                                ? (item.discountAmount === 0 || !item.discountAmount ? '' : item.discountAmount)
+                                : (item.discountPercent === 0 || !item.discountPercent ? '' : item.discountPercent)
+                            }
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              if (item.discountType === 'amount') {
+                                updateItemRow(index, 'discountAmount', isNaN(val) ? 0 : val);
+                              } else {
+                                updateItemRow(index, 'discountPercent', isNaN(val) ? 0 : val);
+                              }
+                            }}
+                            placeholder="0"
+                            className="w-16 text-right rounded-l-md border border-r-0 border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-950 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                           />
-                          <span className="text-[11px] font-bold text-slate-700">%</span>
+                          <select
+                            value={item.discountType || 'percent'}
+                            onChange={(e) => handleToggleDiscountType(index, e.target.value as 'percent' | 'amount')}
+                            className="rounded-r-md border border-slate-300 bg-slate-100 hover:bg-slate-200 px-1 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer focus:border-blue-500"
+                            title="Discount mode: Percentage (%) or Amount (KES)"
+                          >
+                            <option value="percent">%</option>
+                            <option value="amount">KES</option>
+                          </select>
                         </div>
                       </td>
                       <td className="py-3 px-3">
@@ -902,8 +1004,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               </div>
             </div>
 
-            {/* Right 5 cols: Sub Total, Shipping, Adjustment, Total */}
-            {/* Right 5 cols: Sub Total, Discount, Total */}
+            {/* Right 5 cols: Sub Total & Total (Bottom discount removed per user instruction) */}
             <div className="md:col-span-5 bg-slate-50/50 rounded-xl border border-slate-200 p-5 space-y-3.5 text-xs">
               {/* Sub Total */}
               <div className="flex items-center justify-between">
@@ -913,27 +1014,15 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                 </span>
               </div>
 
-              {/* Discount (Replaced Adjustment per user instruction) */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1 text-slate-600">
-                  <span className="rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">Discount</span>
-                  <HelpCircle className="h-3.5 w-3.5 text-slate-400" title="Discount deducted from subtotal (KES)" />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    step="100"
-                    min="0"
-                    value={discountKES || ''}
-                    onChange={(e) => setDiscountKES(Math.max(0, parseFloat(e.target.value) || 0))}
-                    placeholder="0.00"
-                    className="w-28 text-right rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 font-mono focus:border-blue-500"
-                  />
-                  <span className="font-mono text-emerald-600 w-16 text-right font-medium">
-                    {discountKES > 0 ? `- ${(discountKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00'}
+              {/* Tax / VAT if applicable */}
+              {vatAmount > 0 && (
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-medium text-slate-700">VAT (16%)</span>
+                  <span className="font-bold font-mono text-slate-900">
+                    {vatAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-              </div>
+              )}
 
               {/* Total ( KES ) */}
               <div className="border-t border-slate-200 pt-3 flex items-center justify-between">

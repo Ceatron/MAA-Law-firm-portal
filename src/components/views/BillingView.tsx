@@ -1599,6 +1599,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           feeNotes={feeNotes}
           matters={scopedMatters}
           payments={payments}
+          clients={clients}
         />
       )}
 
@@ -1645,6 +1646,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         }}
         clients={clients}
         matters={matters}
+        existingInvoices={feeNotes}
         initialSelectedMatterId={selectedMatterForInvoice}
         initialClientId={selectedClientForInvoice}
         onAddInvoice={(newInvoice) => {
