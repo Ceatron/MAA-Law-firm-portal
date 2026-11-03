@@ -35,6 +35,10 @@ import {
   saveRecordToDb,
   deleteRecordFromDb,
 } from '../services/chambersDbClient';
+import {
+  loadChambersSettings,
+  saveChambersSettingsCache,
+} from './settingsStorage';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -915,6 +919,19 @@ export async function hydrateFromCentralDatabase(): Promise<void> {
         if (c && c.id) map.set(c.id, c);
       });
       saveStoredClientsCache(Array.from(map.values()));
+    }
+
+    if (data.settings && typeof data.settings === 'object' && Object.keys(data.settings).length > 0) {
+      const currentSettings = loadChambersSettings();
+      const mergedSettings = {
+        ...currentSettings,
+        ...data.settings,
+        bankDetails: {
+          ...currentSettings.bankDetails,
+          ...(data.settings.bankDetails || {}),
+        },
+      };
+      saveChambersSettingsCache(mergedSettings);
     }
   } catch (err) {
     console.warn('[Storage] Hydration from central database failed:', err);

@@ -17,6 +17,7 @@ const DB_FILE = path.join(DATA_DIR, 'chambers_db.json');
 export interface ChambersDatabaseState {
   version: number;
   lastUpdated: string;
+  settings?: any;
   matters: any[];
   clients: any[];
   tasks: any[];
@@ -34,6 +35,47 @@ export interface ChambersDatabaseState {
 const INITIAL_SEED_DATA: ChambersDatabaseState = {
   version: 1,
   lastUpdated: new Date().toISOString(),
+  settings: {
+    firmName: 'Muthoni Ahago Advocates',
+    tagline: 'Exceptional Legal Insight',
+    logoUrl: null,
+    lskFirmRegNo: 'LSK/FIRM/2026/0411',
+    kraPin: 'P0512839401Z',
+    physicalAddress: '1st Floor, The Triple Two Address, Along the Eastern Bypass, Ruiru',
+    postalAddress: 'P.O. Box 40512-00100 Ruiru, Kenya',
+    phone: '(+254) 726 113 664',
+    email: 'info@muthoniahagolaw.co.ke',
+    billingEmail: 'info@muthoniahagolaw.co.ke',
+    website: 'www.muthoniahagolaw.co.ke',
+    managingPartner: 'Adv. Costa Kimathi',
+    bankDetails: {
+      bankName: 'KCB Bank Kenya',
+      accountName: 'Muthoni Ahago Advocates Client Trust A/C',
+      accountNumber: '1289405821',
+      branch: 'Ruiru Branch',
+      swiftCode: 'KCBLKENX',
+      paybillNumber: '522522',
+    },
+    integrations: {
+      ctsAutoSync: true,
+      ctsApiKey: 'CTS_SEC_AUTH_2026_MA_RUIRU',
+      ardhiSasaSync: true,
+      brsAutoSearch: true,
+      syncFrequencyMinutes: 30,
+    },
+    compliance: {
+      lskLicenseActive: true,
+      rollRef: 'P.105/18420/26',
+      auditLoggingEnforced: true,
+      amlThresholdKES: 1000000,
+      requireConflictCheckApproval: true,
+    },
+    displayPreferences: {
+      defaultCurrency: 'KES',
+      dateFormat: 'DD/MM/YYYY',
+    },
+    lastSaved: new Date().toISOString(),
+  },
   matters: [
     {
       id: 'mat-1',
@@ -576,6 +618,16 @@ export function loadDatabase(): ChambersDatabaseState {
         inMemoryDb = {
           ...INITIAL_SEED_DATA,
           ...parsed,
+          settings: parsed.settings
+            ? {
+                ...INITIAL_SEED_DATA.settings,
+                ...parsed.settings,
+                bankDetails: {
+                  ...INITIAL_SEED_DATA.settings.bankDetails,
+                  ...(parsed.settings.bankDetails || {}),
+                },
+              }
+            : INITIAL_SEED_DATA.settings,
           matters: Array.isArray(parsed.matters) && parsed.matters.length > 0 ? parsed.matters : INITIAL_SEED_DATA.matters,
           clients: Array.isArray(parsed.clients) && parsed.clients.length > 0 ? parsed.clients : INITIAL_SEED_DATA.clients,
           tasks: cleanedTasks,
@@ -608,6 +660,50 @@ export function saveDatabase(data: ChambersDatabaseState): void {
   } catch (err) {
     console.error('[Chambers DB] Error saving DB to file:', err);
   }
+}
+
+/**
+ * Returns the current chambers firm workspace settings.
+ */
+export function getChambersSettings(): any {
+  const db = loadDatabase();
+  return db.settings || INITIAL_SEED_DATA.settings;
+}
+
+/**
+ * Updates chambers firm workspace settings persistently in the central database.
+ */
+export function updateChambersSettings(newSettings: any): any {
+  if (!newSettings || typeof newSettings !== 'object') {
+    return getChambersSettings();
+  }
+  const db = loadDatabase();
+  const current = db.settings || INITIAL_SEED_DATA.settings;
+  const merged = {
+    ...current,
+    ...newSettings,
+    bankDetails: {
+      ...current.bankDetails,
+      ...(newSettings.bankDetails || {}),
+    },
+    integrations: {
+      ...current.integrations,
+      ...(newSettings.integrations || {}),
+    },
+    compliance: {
+      ...current.compliance,
+      ...(newSettings.compliance || {}),
+    },
+    displayPreferences: {
+      ...current.displayPreferences,
+      ...(newSettings.displayPreferences || {}),
+    },
+    lastSaved: new Date().toISOString(),
+  };
+
+  db.settings = merged;
+  saveDatabase(db);
+  return merged;
 }
 
 /**
@@ -781,6 +877,18 @@ export async function syncCollections(incoming: Partial<ChambersDatabaseState>):
   if (incoming.activities) db.activities = mergeArray(db.activities, incoming.activities);
   if (incoming.notifications) db.notifications = mergeArray(db.notifications, incoming.notifications);
   if (incoming.fee_notes) db.fee_notes = mergeArray(db.fee_notes, incoming.fee_notes);
+  if (incoming.payments) db.payments = mergeArray(db.payments, incoming.payments);
+  if (incoming.settings) {
+    db.settings = {
+      ...(db.settings || INITIAL_SEED_DATA.settings),
+      ...incoming.settings,
+      bankDetails: {
+        ...((db.settings || INITIAL_SEED_DATA.settings).bankDetails || {}),
+        ...(incoming.settings.bankDetails || {}),
+      },
+      lastSaved: new Date().toISOString(),
+    };
+  }
 
   saveDatabase(db);
 

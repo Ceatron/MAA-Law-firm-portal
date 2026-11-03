@@ -1,4 +1,5 @@
 import { ChambersSettings, ChambersCustomizationSettings, PdfTemplateConfig } from '../types';
+import { fetchDbSettings, saveDbSettings } from '../services/chambersDbClient';
 
 export const DEFAULT_PDF_TEMPLATES: PdfTemplateConfig[] = [
   // Invoices
@@ -337,10 +338,10 @@ export const DEFAULT_CHAMBERS_SETTINGS: ChambersSettings = {
   kraPin: 'P0512839401Z',
   physicalAddress: '1st Floor, The Triple Two Address, Along the Eastern Bypass, Ruiru',
   postalAddress: 'P.O. Box 40512-00100 Ruiru, Kenya',
-  phone: '+254 (0)20 271 9900',
-  email: 'info@muthoniahago.co.ke',
-  billingEmail: 'billing@muthoniahago.co.ke',
-  website: 'www.muthoniahago.co.ke',
+  phone: '(+254) 726 113 664',
+  email: 'info@muthoniahagolaw.co.ke',
+  billingEmail: 'info@muthoniahagolaw.co.ke',
+  website: 'www.muthoniahagolaw.co.ke',
   managingPartner: 'Adv. Costa Kimathi',
   bankDetails: {
     bankName: 'KCB Bank Kenya',
@@ -425,20 +426,102 @@ export const loadChambersSettings = (): ChambersSettings => {
   return DEFAULT_CHAMBERS_SETTINGS;
 };
 
-export const saveChambersSettings = (settings: ChambersSettings): void => {
+export const saveChambersSettingsCache = (settings: ChambersSettings): void => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    window.dispatchEvent(
+      new CustomEvent('chambers-settings-updated', { detail: settings })
+    );
+  } catch (err) {
+    console.error('Failed to save chambers settings to cache:', err);
+  }
+};
+
+export const saveChambersSettings = (settings: ChambersSettings): ChambersSettings => {
   try {
     const updatedSettings = {
       ...settings,
       lastSaved: new Date().toISOString(),
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedSettings));
-    window.dispatchEvent(
-      new CustomEvent('chambers-settings-updated', { detail: updatedSettings })
-    );
+    saveChambersSettingsCache(updatedSettings);
+
+    // Asynchronously synchronize with central database
+    saveDbSettings(updatedSettings).catch((err) => {
+      console.warn('[Settings Storage] Server background sync failed:', err);
+    });
+
+    return updatedSettings;
   } catch (err) {
     console.error('Failed to save chambers settings to storage:', err);
     throw err;
   }
+};
+
+export const saveChambersSettingsAsync = async (settings: ChambersSettings): Promise<ChambersSettings> => {
+  const updatedSettings = {
+    ...settings,
+    lastSaved: new Date().toISOString(),
+  };
+  saveChambersSettingsCache(updatedSettings);
+
+  try {
+    const serverResult = await saveDbSettings(updatedSettings);
+    if (serverResult && typeof serverResult === 'object') {
+      const merged: ChambersSettings = {
+        ...updatedSettings,
+        ...serverResult,
+        bankDetails: {
+          ...updatedSettings.bankDetails,
+          ...(serverResult.bankDetails || {}),
+        },
+      };
+      saveChambersSettingsCache(merged);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('[Settings Storage] Remote save warning, stored locally:', err);
+  }
+
+  return updatedSettings;
+};
+
+export const fetchAndHydrateChambersSettings = async (): Promise<ChambersSettings> => {
+  try {
+    const serverSettings = await fetchDbSettings();
+    if (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0) {
+      const current = loadChambersSettings();
+      const merged: ChambersSettings = {
+        ...DEFAULT_CHAMBERS_SETTINGS,
+        ...current,
+        ...serverSettings,
+        bankDetails: {
+          ...DEFAULT_CHAMBERS_SETTINGS.bankDetails,
+          ...current.bankDetails,
+          ...(serverSettings.bankDetails || {}),
+        },
+        integrations: {
+          ...DEFAULT_CHAMBERS_SETTINGS.integrations,
+          ...current.integrations,
+          ...(serverSettings.integrations || {}),
+        },
+        compliance: {
+          ...DEFAULT_CHAMBERS_SETTINGS.compliance,
+          ...current.compliance,
+          ...(serverSettings.compliance || {}),
+        },
+        displayPreferences: {
+          ...DEFAULT_CHAMBERS_SETTINGS.displayPreferences,
+          ...current.displayPreferences,
+          ...(serverSettings.displayPreferences || {}),
+        },
+      };
+      saveChambersSettingsCache(merged);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('[Settings Storage] Fetching remote settings failed:', err);
+  }
+  return loadChambersSettings();
 };
 
 export const resetChambersSettings = (): ChambersSettings => {
@@ -447,6 +530,9 @@ export const resetChambersSettings = (): ChambersSettings => {
     window.dispatchEvent(
       new CustomEvent('chambers-settings-updated', { detail: DEFAULT_CHAMBERS_SETTINGS })
     );
+    saveDbSettings(DEFAULT_CHAMBERS_SETTINGS).catch((err) => {
+      console.warn('[Settings Storage] Reset central sync warning:', err);
+    });
   } catch (err) {
     console.error('Failed to reset chambers settings:', err);
   }

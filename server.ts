@@ -19,6 +19,8 @@ import {
   upsertRecord,
   deleteRecord,
   syncCollections,
+  getChambersSettings,
+  updateChambersSettings,
 } from "./server/chambersDatabase.ts";
 
 async function startServer() {
@@ -431,6 +433,24 @@ Always format output clearly using Markdown:
       res.json(status);
     } catch (err: any) {
       res.status(500).json({ error: err?.message || "Failed to get database status." });
+    }
+  });
+
+  app.get("/api/db/settings", (req, res) => {
+    try {
+      const settings = getChambersSettings();
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to retrieve chambers settings." });
+    }
+  });
+
+  app.post("/api/db/settings", (req, res) => {
+    try {
+      const updated = updateChambersSettings(req.body);
+      res.json({ success: true, settings: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to update chambers settings." });
     }
   });
 

@@ -1,6 +1,47 @@
 {
   "version": 1,
-  "lastUpdated": "2026-09-04T13:42:31.402Z",
+  "lastUpdated": "2026-11-03T14:03:23.326Z",
+  "settings": {
+    "firmName": "Muthoni Ahago Advocates",
+    "tagline": "Exceptional Legal Insight",
+    "logoUrl": null,
+    "lskFirmRegNo": "LSK/FIRM/2026/0411",
+    "kraPin": "P0512839401Z",
+    "physicalAddress": "1st Floor, The Triple Two Address, Along the Eastern Bypass, Ruiru",
+    "postalAddress": "P.O. Box 40512-00100 Ruiru, Kenya",
+    "phone": "(+254) 726 113 664",
+    "email": "info@muthoniahagolaw.co.ke",
+    "billingEmail": "info@muthoniahagolaw.co.ke",
+    "website": "www.muthoniahagolaw.co.ke",
+    "managingPartner": "Adv. Costa Kimathi",
+    "bankDetails": {
+      "bankName": "KCB Bank Kenya",
+      "accountName": "Muthoni Ahago Advocates Client Trust A/C",
+      "accountNumber": "1289405821",
+      "branch": "Ruiru Branch",
+      "swiftCode": "KCBLKENX",
+      "paybillNumber": "522522"
+    },
+    "integrations": {
+      "ctsAutoSync": true,
+      "ctsApiKey": "CTS_SEC_AUTH_2026_MA_RUIRU",
+      "ardhiSasaSync": true,
+      "brsAutoSearch": true,
+      "syncFrequencyMinutes": 30
+    },
+    "compliance": {
+      "lskLicenseActive": true,
+      "rollRef": "P.105/18420/26",
+      "auditLoggingEnforced": true,
+      "amlThresholdKES": 1000000,
+      "requireConflictCheckApproval": true
+    },
+    "displayPreferences": {
+      "defaultCurrency": "KES",
+      "dateFormat": "DD/MM/YYYY"
+    },
+    "lastSaved": "2026-11-03T14:03:23.326Z"
+  },
   "matters": [
     {
       "id": "mat-1",

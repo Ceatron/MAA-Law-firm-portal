@@ -76,3 +76,30 @@ export async function syncStateWithDb(data: Record<string, any[]>): Promise<any 
     return null;
   }
 }
+
+export async function fetchDbSettings(): Promise<any | null> {
+  try {
+    const res = await fetch('/api/db/settings');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn('[DB Client] Fetch settings failed:', err);
+    return null;
+  }
+}
+
+export async function saveDbSettings(settings: any): Promise<any | null> {
+  try {
+    const res = await fetch('/api/db/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.settings || json;
+  } catch (err) {
+    console.warn('[DB Client] Save settings failed:', err);
+    return null;
+  }
+}

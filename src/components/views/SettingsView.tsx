@@ -47,6 +47,8 @@ import { isSysAdminUser } from '../../utils/staffStorage';
 import {
   loadChambersSettings,
   saveChambersSettings,
+  saveChambersSettingsAsync,
+  fetchAndHydrateChambersSettings,
   resetChambersSettings,
 } from '../../utils/settingsStorage';
 
@@ -71,6 +73,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  // Hydrate settings on mount and listen for real-time firm updates
+  React.useEffect(() => {
+    fetchAndHydrateChambersSettings()
+      .then((fresh) => {
+        if (fresh) setSettings(fresh);
+      })
+      .catch((err) => console.warn('Failed to hydrate settings from DB:', err));
+
+    const handleSettingsUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<ChambersSettings>;
+      if (customEvent.detail) {
+        setSettings(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('chambers-settings-updated', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('chambers-settings-updated', handleSettingsUpdate);
+    };
+  }, []);
 
   const isDevAdmin = isSysAdminUser(currentAdvocate);
 
@@ -134,11 +157,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showToast('Custom logo removed. Reset to default chambers monogram.');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsSaving(true);
     try {
-      saveChambersSettings(settings);
-      showToast('All chambers settings & branding saved successfully!');
+      const saved = await saveChambersSettingsAsync(settings);
+      setSettings(saved);
+      showToast('All chambers settings & firm profile saved and synced across all user dashboards!');
     } catch (err) {
       showToast('Error saving settings. Please try again.');
     } finally {
