@@ -37,6 +37,7 @@ import {
   Advocate,
   Client,
   TaskItem,
+  FeeNote,
 } from './types';
 import { LandingPage } from './components/LandingPage';
 import { loadStaffRoster, isSysAdminUser } from './utils/staffStorage';
@@ -58,6 +59,7 @@ import {
   saveStoredActivities,
   loadSavedNotifications,
   saveStoredNotifications,
+  loadSavedFeeNotes,
   initChambersDatabaseSync,
   syncAllChambersDataFromCloud,
 } from './utils/chambersDataStorage';
@@ -65,17 +67,6 @@ import { isMatterVisibleToUser, isTaskVisibleToUser, canUserViewAll, canUserAssi
 import { getSupabaseClient, isSupabaseConfigured } from './utils/supabaseClient';
 import { ChambersCloudService } from './services/chambersCloudService';
 import SupabaseMigrationService from './services/SupabaseMigrationService';
-
-// One-time auto-wipe of stale browser cache across client devices
-try {
-  if (!localStorage.getItem('v2_supabase_cache_cleared')) {
-    localStorage.clear();
-    sessionStorage.clear();
-    localStorage.setItem('v2_supabase_cache_cleared', 'true');
-  }
-} catch (e) {
-  console.warn('[Cache Reset] Local storage check bypassed:', e);
-}
 
 export default function App() {
   // Authentication State: Read from persistent session if previously signed in
@@ -230,6 +221,7 @@ export default function App() {
     )
   );
   const [notifications, setNotifications] = useState(() => loadSavedNotifications());
+  const [feeNotes, setFeeNotes] = useState<FeeNote[]>(() => loadSavedFeeNotes());
 
   // Proactively purge removed tasks and test data from browser storage
   useEffect(() => {
@@ -365,6 +357,9 @@ export default function App() {
     const handleRemoteNotifications = (e: any) => {
       if (Array.isArray(e.detail)) setNotifications(e.detail);
     };
+    const handleRemoteFeeNotes = (e: any) => {
+      if (Array.isArray(e.detail)) setFeeNotes(e.detail);
+    };
 
     window.addEventListener('chambers-matters-updated', handleRemoteMatters);
     window.addEventListener('chambers-tasks-updated', handleRemoteTasks);
@@ -372,6 +367,7 @@ export default function App() {
     window.addEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
     window.addEventListener('chambers-activities-updated', handleRemoteActivities);
     window.addEventListener('chambers-notifications-updated', handleRemoteNotifications);
+    window.addEventListener('chambers-invoices-updated', handleRemoteFeeNotes);
 
     return () => {
       cleanup();
@@ -381,6 +377,7 @@ export default function App() {
       window.removeEventListener('chambers-deadlines-updated', handleRemoteDeadlines);
       window.removeEventListener('chambers-activities-updated', handleRemoteActivities);
       window.removeEventListener('chambers-notifications-updated', handleRemoteNotifications);
+      window.removeEventListener('chambers-invoices-updated', handleRemoteFeeNotes);
     };
   }, []);
 
@@ -739,6 +736,7 @@ export default function App() {
               clients={clients}
               activities={activities}
               tasks={tasks}
+              feeNotes={feeNotes}
               currentAdvocate={currentAdvocate}
               isManagingAdvocate={isManagingAdvocate}
               canAccessBilling={canAccessBilling}

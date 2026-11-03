@@ -450,13 +450,19 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
         newStatus = status === 'Draft' ? 'Pending' : 'Unpaid';
       }
 
+      const targetMatter = matters.find(
+        (m) => m.id === initialSelectedMatterId || (editingInvoice && m.id === editingInvoice.matterId)
+      );
+
       const updatedInvoice: FeeNote = {
         ...editingInvoice,
         invoiceNumber: finalInvoiceNumber,
-        clientId: selectedClientId || editingInvoice.clientId || `client-${Date.now()}`,
+        clientId: selectedClientId || editingInvoice.clientId || undefined,
         clientName: finalClientName,
         clientEmail: activeClient?.email || editingInvoice.clientEmail,
         clientAddress: activeClient?.city || editingInvoice.clientAddress || 'Nairobi, Kenya',
+        matterId: initialSelectedMatterId || editingInvoice.matterId || undefined,
+        matterRef: targetMatter?.referenceNumber || editingInvoice.matterRef || undefined,
         matterTitle: subject.trim() || editingInvoice.matterTitle || 'Invoice Services',
         subject: subject.trim(),
         terms: terms,
@@ -497,14 +503,20 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
       return;
     }
 
+    const targetMatter = matters.find(
+      (m) => m.id === initialSelectedMatterId || (editingInvoice && m.id === editingInvoice.matterId)
+    );
+
     const newInvoice: FeeNote = {
       id: `fn-${Date.now()}`,
       invoiceNumber: finalInvoiceNumber,
-      clientId: selectedClientId || `client-${Date.now()}`,
+      clientId: selectedClientId || undefined,
       clientName: finalClientName,
       clientEmail: activeClient?.email,
       clientAddress: activeClient?.city || 'Nairobi, Kenya',
-      matterTitle: subject.trim() || 'Invoice Services',
+      matterId: initialSelectedMatterId || undefined,
+      matterRef: targetMatter?.referenceNumber || undefined,
+      matterTitle: targetMatter ? `${targetMatter.referenceNumber}: ${targetMatter.title}` : (subject.trim() || 'Invoice Services'),
       subject: subject.trim(),
       terms: terms,
       dateIssued: invoiceDate,

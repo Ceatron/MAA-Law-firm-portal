@@ -44,14 +44,20 @@ import { FeeNote, Client, LegalMatter, Advocate, PaymentRecord, Quotation, Payme
 import {
   loadSavedFeeNotes,
   saveStoredFeeNotes,
+  saveStoredFeeNotesCache,
+  persistSingleFeeNote,
   deleteStoredFeeNote,
   loadSavedPayments,
   saveStoredPayments,
+  saveStoredPaymentsCache,
+  persistSinglePayment,
   deleteStoredPayment,
   loadSavedQuotes,
   saveStoredQuotes,
+  saveStoredQuotesCache,
   deleteStoredQuote,
 } from '../../utils/chambersDataStorage';
+import { fetchAllDbData } from '../../services/chambersDbClient';
 import ChambersCloudService from '../../services/chambersCloudService';
 import { downloadInvoicePdf } from '../../utils/invoicePdfGenerator';
 import { isSupabaseConfigured } from '../../utils/supabaseClient';
@@ -86,10 +92,63 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [payments, setPayments] = useState<PaymentRecord[]>(() => loadSavedPayments());
   const [quotes, setQuotes] = useState<Quotation[]>(() => loadSavedQuotes());
 
-  // Cloud Hydration & Realtime Synchronization
+  // Central Database Hydration & Realtime Synchronization
   useEffect(() => {
     let isCancelled = false;
-    const loadBillingCloudData = async () => {
+
+    const loadCentralAndCloudData = async () => {
+      // 1. Fetch from Central Chambers Database
+      try {
+        const dbData = await fetchAllDbData();
+        if (!isCancelled && dbData) {
+          if (Array.isArray(dbData.fee_notes) && dbData.fee_notes.length > 0) {
+            setFeeNotes((prev) => {
+              const map = new Map<string, FeeNote>();
+              dbData.fee_notes.forEach((fn: FeeNote) => {
+                if (fn && (fn.id || fn.invoiceNumber)) map.set(fn.id || fn.invoiceNumber, fn);
+              });
+              prev.forEach((fn) => {
+                if (fn && (fn.id || fn.invoiceNumber)) map.set(fn.id || fn.invoiceNumber, fn);
+              });
+              const merged = Array.from(map.values());
+              saveStoredFeeNotesCache(merged);
+              return merged;
+            });
+          }
+          if (Array.isArray(dbData.payments) && dbData.payments.length > 0) {
+            setPayments((prev) => {
+              const map = new Map<string, PaymentRecord>();
+              dbData.payments.forEach((p: PaymentRecord) => {
+                if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
+              });
+              prev.forEach((p) => {
+                if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
+              });
+              const merged = Array.from(map.values());
+              saveStoredPaymentsCache(merged);
+              return merged;
+            });
+          }
+          if (Array.isArray(dbData.quotes) && dbData.quotes.length > 0) {
+            setQuotes((prev) => {
+              const map = new Map<string, Quotation>();
+              dbData.quotes.forEach((q: Quotation) => {
+                if (q && (q.id || q.quoteNumber)) map.set(q.id || q.quoteNumber, q);
+              });
+              prev.forEach((q) => {
+                if (q && (q.id || q.quoteNumber)) map.set(q.id || q.quoteNumber, q);
+              });
+              const merged = Array.from(map.values());
+              saveStoredQuotesCache(merged);
+              return merged;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[BillingView] Central DB hydration notice:', err);
+      }
+
+      // 2. Fetch from Supabase if configured
       if (!isSupabaseConfigured()) return;
       try {
         const [cloudNotes, cloudPayments, cloudQuotes] = await Promise.all([
@@ -98,24 +157,63 @@ export const BillingView: React.FC<BillingViewProps> = ({
           ChambersCloudService.fetchQuotes(),
         ]);
         if (isCancelled) return;
-        if (cloudNotes && cloudNotes.length > 0) setFeeNotes(cloudNotes);
-        if (cloudPayments && cloudPayments.length > 0) setPayments(cloudPayments);
-        if (cloudQuotes && cloudQuotes.length > 0) setQuotes(cloudQuotes);
+        if (cloudNotes && cloudNotes.length > 0) {
+          setFeeNotes(cloudNotes);
+          saveStoredFeeNotesCache(cloudNotes);
+        }
+        if (cloudPayments && cloudPayments.length > 0) {
+          setPayments(cloudPayments);
+          saveStoredPaymentsCache(cloudPayments);
+        }
+        if (cloudQuotes && cloudQuotes.length > 0) {
+          setQuotes(cloudQuotes);
+          saveStoredQuotesCache(cloudQuotes);
+        }
       } catch (err) {
         console.warn('[BillingView] Direct cloud load error:', err);
       }
     };
 
-    loadBillingCloudData();
+    loadCentralAndCloudData();
 
     const handleInvoicesUpdated = (e: any) => {
-      if (Array.isArray(e.detail)) setFeeNotes(e.detail);
+      if (Array.isArray(e.detail)) {
+        setFeeNotes((prev) => {
+          if (
+            prev.length === e.detail.length &&
+            prev.every((inv, idx) => inv.id === e.detail[idx]?.id && inv.totalKES === e.detail[idx]?.totalKES)
+          ) {
+            return prev;
+          }
+          return e.detail;
+        });
+      }
     };
     const handlePaymentsUpdated = (e: any) => {
-      if (Array.isArray(e.detail)) setPayments(e.detail);
+      if (Array.isArray(e.detail)) {
+        setPayments((prev) => {
+          if (
+            prev.length === e.detail.length &&
+            prev.every((p, idx) => p.id === e.detail[idx]?.id && p.amountKES === e.detail[idx]?.amountKES)
+          ) {
+            return prev;
+          }
+          return e.detail;
+        });
+      }
     };
     const handleQuotesUpdated = (e: any) => {
-      if (Array.isArray(e.detail)) setQuotes(e.detail);
+      if (Array.isArray(e.detail)) {
+        setQuotes((prev) => {
+          if (
+            prev.length === e.detail.length &&
+            prev.every((q, idx) => q.id === e.detail[idx]?.id)
+          ) {
+            return prev;
+          }
+          return e.detail;
+        });
+      }
     };
 
     window.addEventListener('chambers-invoices-updated', handleInvoicesUpdated);
@@ -130,17 +228,23 @@ export const BillingView: React.FC<BillingViewProps> = ({
     };
   }, []);
 
-  // Automatically sync state to persistent storage & cloud
+  // Automatically sync state to persistent storage & cloud when modified
   useEffect(() => {
-    saveStoredFeeNotes(feeNotes);
+    if (feeNotes.length > 0) {
+      saveStoredFeeNotes(feeNotes);
+    }
   }, [feeNotes]);
 
   useEffect(() => {
-    saveStoredPayments(payments);
+    if (payments.length > 0) {
+      saveStoredPayments(payments);
+    }
   }, [payments]);
 
   useEffect(() => {
-    saveStoredQuotes(quotes);
+    if (quotes.length > 0) {
+      saveStoredQuotes(quotes);
+    }
   }, [quotes]);
 
   // Modals and Drawers States
@@ -183,12 +287,10 @@ export const BillingView: React.FC<BillingViewProps> = ({
     setIsGenerateModalOpen(true);
   };
 
-  const handleUpdateInvoice = (updatedInvoice: FeeNote) => {
+  const handleUpdateInvoice = async (updatedInvoice: FeeNote) => {
+    await persistSingleFeeNote(updatedInvoice);
     setFeeNotes((prev) =>
       prev.map((fn) => (fn.id === updatedInvoice.id ? updatedInvoice : fn))
-    );
-    ChambersCloudService.upsertFeeNote(updatedInvoice).catch((err) =>
-      console.warn('[BillingView] Failed to sync updated fee note to cloud:', err)
     );
     showToast(`Fee Note ${updatedInvoice.invoiceNumber} updated successfully.`);
     setEditingFeeNote(null);
@@ -214,7 +316,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
   // ----------------------------------------------------
   // PAYMENT RECORDING & RECALCULATION LOGIC
   // ----------------------------------------------------
-  const handleRecordPayment = (newPayment: PaymentRecord) => {
+  const handleRecordPayment = async (newPayment: PaymentRecord) => {
+    await persistSinglePayment(newPayment);
     // 1. Add to payments list
     setPayments((prev) => [newPayment, ...prev]);
 
@@ -237,7 +340,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
             newStatus = 'Unpaid';
           }
 
-          return {
+          const updatedInv: FeeNote = {
             ...inv,
             amountPaidKES: newAmountPaid,
             balanceKES: newBalance,
@@ -245,6 +348,10 @@ export const BillingView: React.FC<BillingViewProps> = ({
             paymentRef: newPayment.paymentReference,
             paymentsCount: (inv.paymentsCount || 0) + 1,
           };
+          persistSingleFeeNote(updatedInv).catch((err) =>
+            console.warn('[BillingView] Failed to persist invoice payment update:', err)
+          );
+          return updatedInv;
         }
         return inv;
       })
@@ -456,10 +563,11 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
   // Filtered Fee Notes
   const filteredFeeNotes = feeNotes.filter((fn) => {
+    const query = invoiceSearchQuery.toLowerCase();
     const matchesSearch =
-      fn.clientName.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
-      fn.invoiceNumber.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
-      fn.matterTitle.toLowerCase().includes(invoiceSearchQuery.toLowerCase());
+      (fn.clientName || '').toLowerCase().includes(query) ||
+      (fn.invoiceNumber || '').toLowerCase().includes(query) ||
+      (fn.matterTitle || fn.subject || '').toLowerCase().includes(query);
 
     const isDraft = fn.status === 'Draft' || fn.status === 'Pending';
     const isSent = !isDraft;
@@ -1657,9 +1765,16 @@ export const BillingView: React.FC<BillingViewProps> = ({
         editingInvoice={editingFeeNote}
         initialSelectedMatterId={selectedMatterForInvoice}
         initialClientId={selectedClientForInvoice}
-        onAddInvoice={(newInvoice) => {
-          setFeeNotes((prev) => [newInvoice, ...prev]);
-          showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created!`);
+        onAddInvoice={async (newInvoice) => {
+          await persistSingleFeeNote(newInvoice);
+          setFeeNotes((prev) => {
+            const exists = prev.some((fn) => fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber);
+            if (exists) {
+              return prev.map((fn) => (fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber ? newInvoice : fn));
+            }
+            return [newInvoice, ...prev];
+          });
+          showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created and saved.`);
           setIsGenerateModalOpen(false);
           setEditingFeeNote(null);
         }}

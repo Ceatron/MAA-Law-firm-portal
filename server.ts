@@ -12,14 +12,14 @@ import {
   getDefaultFromAddress,
   buildFirmBrandedHtml,
   isEmailSendingEnabled,
-} from "./server/emailService";
+} from "./server/emailService.ts";
 import {
   getDatabaseStatus,
   getAllData,
   upsertRecord,
   deleteRecord,
   syncCollections,
-} from "./server/chambersDatabase";
+} from "./server/chambersDatabase.ts";
 
 async function startServer() {
   const app = express();
