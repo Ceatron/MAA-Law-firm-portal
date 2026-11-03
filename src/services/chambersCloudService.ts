@@ -391,6 +391,8 @@ export function mapSupabaseFeeNoteToClient(row: any): FeeNote {
     quoteId: row.quote_id || undefined,
     quoteNumber: row.quote_number || undefined,
     notes: row.notes || undefined,
+    customerNotes: row.customer_notes || row.customerNotes || row.notes || undefined,
+    termsAndConditions: row.terms_and_conditions || row.termsAndConditions || undefined,
     bankDetails: row.bank_details || undefined,
     paymentsCount: Number(row.payments_count || 0),
   };
@@ -427,6 +429,8 @@ export function mapClientFeeNoteToSupabase(fn: FeeNote): any {
     quote_id: fn.quoteId || null,
     quote_number: fn.quoteNumber || null,
     notes: fn.notes || null,
+    customer_notes: fn.customerNotes || fn.notes || null,
+    terms_and_conditions: fn.termsAndConditions || null,
     bank_details: fn.bankDetails || null,
     payments_count: Number(fn.paymentsCount || 0),
     updated_at: new Date().toISOString(),

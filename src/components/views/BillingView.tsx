@@ -53,6 +53,7 @@ import {
   deleteStoredQuote,
 } from '../../utils/chambersDataStorage';
 import ChambersCloudService from '../../services/chambersCloudService';
+import { downloadInvoicePdf } from '../../utils/invoicePdfGenerator';
 import { isSupabaseConfigured } from '../../utils/supabaseClient';
 import { canUserViewAll, isMatterVisibleToUser } from '../../utils/visibilityRules';
 
@@ -165,7 +166,19 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'ALL' | 'Sent' | 'Drafts'>('ALL');
 
+  const isInvoiceFullyPaid = (fn: FeeNote) => {
+    if (fn.status === 'Paid') return true;
+    const total = fn.totalKES || 0;
+    if (fn.balanceKES !== undefined && fn.balanceKES <= 0 && total > 0) return true;
+    if (fn.amountPaidKES !== undefined && total > 0 && fn.amountPaidKES >= total) return true;
+    return false;
+  };
+
   const handleOpenEditInvoice = (inv: FeeNote) => {
+    if (isInvoiceFullyPaid(inv)) {
+      showToast(`Fee Note ${inv.invoiceNumber} is fully paid and cannot be edited.`);
+      return;
+    }
     setEditingFeeNote(inv);
     setIsGenerateModalOpen(true);
   };
@@ -1175,15 +1188,25 @@ export const BillingView: React.FC<BillingViewProps> = ({
                               )}
 
                               {canAccessInvoicing && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditInvoice(fn)}
-                                  className="flex items-center space-x-1 rounded border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer"
-                                  title="Edit Fee Note / Invoice"
-                                >
-                                  <Edit3 className="h-3 w-3 text-stone-500" />
-                                  <span>Edit</span>
-                                </button>
+                                !isInvoiceFullyPaid(fn) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditInvoice(fn)}
+                                    className="flex items-center space-x-1 rounded border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer"
+                                    title="Edit Fee Note / Invoice"
+                                  >
+                                    <Edit3 className="h-3 w-3 text-stone-500" />
+                                    <span>Edit</span>
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="flex items-center space-x-1 rounded border border-stone-200 bg-stone-50 text-stone-400 px-2 py-1 text-[11px] font-semibold cursor-not-allowed select-none"
+                                    title="Fully paid fee notes are locked and cannot be edited"
+                                  >
+                                    <Lock className="h-3 w-3 text-stone-400" />
+                                    <span>Locked</span>
+                                  </span>
+                                )
                               )}
 
                               <button
@@ -1197,6 +1220,23 @@ export const BillingView: React.FC<BillingViewProps> = ({
                               >
                                 <Eye className="h-3 w-3 text-stone-500" />
                                 <span>View</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ok = downloadInvoicePdf(fn);
+                                  if (ok) {
+                                    showToast(`Downloading PDF for Fee Note ${fn.invoiceNumber}...`);
+                                  } else {
+                                    showToast(`Failed to trigger PDF download for ${fn.invoiceNumber}.`);
+                                  }
+                                }}
+                                className="flex items-center space-x-1 rounded border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer"
+                                title="Download PDF"
+                              >
+                                <Download className="h-3 w-3 text-[#0098db]" />
+                                <span>PDF</span>
                               </button>
                             </div>
                           </td>

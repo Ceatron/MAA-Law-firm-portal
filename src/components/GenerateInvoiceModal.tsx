@@ -19,6 +19,7 @@ import {
   Eye,
   Download,
   Sparkles,
+  Lock,
 } from 'lucide-react';
 import {
   Client,
@@ -27,7 +28,7 @@ import {
   InvoiceLineItem,
   StandardServiceItem,
 } from '../types';
-import { generateInvoicePdf } from '../utils/invoicePdfGenerator';
+import { generateInvoicePdf, downloadInvoicePdf } from '../utils/invoicePdfGenerator';
 import { loadStandardServiceSnippets } from '../utils/feeNoteTemplatesStorage';
 import {
   getNextSequentialInvoiceNumber,
@@ -64,6 +65,13 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   if (!isOpen) return null;
 
   const isEditMode = Boolean(editingInvoice);
+  const isEditingPaidInvoice = Boolean(
+    editingInvoice && (
+      editingInvoice.status === 'Paid' ||
+      (editingInvoice.balanceKES !== undefined && editingInvoice.balanceKES <= 0 && (editingInvoice.totalKES || 0) > 0) ||
+      (editingInvoice.amountPaidKES !== undefined && (editingInvoice.totalKES || 0) > 0 && editingInvoice.amountPaidKES >= editingInvoice.totalKES)
+    )
+  );
 
   // Selected Client State
   const [selectedClientId, setSelectedClientId] = useState<string>(() => editingInvoice?.clientId || initialClientId || '');
@@ -411,6 +419,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
   // Save invoice (Draft or Sent)
   const handleSaveInvoice = (status: 'Draft' | 'Sent') => {
+    if (isEditMode && editingInvoice && isEditingPaidInvoice) {
+      setToastMessage('This fee note is fully paid and cannot be edited.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
+
     const finalClientName = activeClient?.name || clientSearchQuery.trim();
 
     if (!finalClientName) {
@@ -473,8 +487,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
       if (status === 'Sent') {
         try {
-          const doc = generateInvoicePdf(updatedInvoice);
-          doc.save(`${updatedInvoice.invoiceNumber}.pdf`);
+          downloadInvoicePdf(updatedInvoice);
         } catch (err) {
           console.warn('PDF auto-download warning:', err);
         }
@@ -516,8 +529,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
 
     if (status === 'Sent') {
       try {
-        const doc = generateInvoicePdf(newInvoice);
-        doc.save(`${newInvoice.invoiceNumber}.pdf`);
+        downloadInvoicePdf(newInvoice);
       } catch (err) {
         console.warn('PDF auto-download warning:', err);
       }
@@ -557,9 +569,12 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     };
 
     try {
-      const doc = generateInvoicePdf(tempInvoice);
-      doc.save(`${tempInvoice.invoiceNumber}_Preview.pdf`);
-      setToastMessage(`Generated and downloaded ${tempInvoice.invoiceNumber}_Preview.pdf`);
+      const success = downloadInvoicePdf(tempInvoice);
+      if (success) {
+        setToastMessage(`Generated and downloaded ${tempInvoice.invoiceNumber}.pdf`);
+      } else {
+        setToastMessage('Failed to download PDF preview.');
+      }
       setTimeout(() => setToastMessage(null), 3500);
     } catch {
       setToastMessage('Failed to generate PDF preview.');
@@ -594,14 +609,22 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                 <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900">
                   {isEditMode ? `Edit Fee Note: ${editingInvoice?.invoiceNumber}` : 'New Invoice'}
                 </h1>
-                {isEditMode && (
+                {isEditMode && !isEditingPaidInvoice && (
                   <span className="rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold">
                     Editing Mode
                   </span>
                 )}
+                {isEditingPaidInvoice && (
+                  <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-[10px] font-bold flex items-center space-x-1">
+                    <Lock className="h-2.5 w-2.5 text-emerald-700" />
+                    <span>Paid & Locked</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {isEditMode
+                {isEditingPaidInvoice
+                  ? 'This fee note is fully paid. Financial records cannot be modified.'
+                  : isEditMode
                   ? 'Update line items, particulars, and billing terms for this fee note'
                   : 'Create a professional VAT-compliant legal fee note or proforma invoice'}
               </p>
@@ -626,6 +649,21 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Paid and Locked Alert Banner */}
+        {isEditingPaidInvoice && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 flex items-center justify-between text-xs text-amber-900 font-medium">
+            <div className="flex items-center space-x-2">
+              <Lock className="h-4 w-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Locked Record:</strong> Fee Note {editingInvoice?.invoiceNumber} is fully paid. Once an invoice has been settled in full, it cannot be edited or modified.
+              </span>
+            </div>
+            <span className="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-2 py-0.5 rounded">
+              Paid in Full
+            </span>
+          </div>
+        )}
 
         {/* In-Modal Toast / Alerts */}
         {toastMessage && (
@@ -752,40 +790,6 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
                   placeholder="INV-000001"
                   className="w-full sm:w-64 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs md:text-sm font-mono font-bold text-slate-950 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextNum = getNextSequentialInvoiceNumber(existingInvoices);
-                    setInvoiceNumber(nextNum);
-                  }}
-                  className="rounded-md bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shadow-2xs"
-                  title="Generate next sequential number (e.g. INV-000001 series)"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Next Sequential</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const customStart = prompt('Set next sequential counter or enter starting number (e.g. 1 for INV-000001):', '1');
-                    if (customStart !== null) {
-                      const num = parseInt(customStart.replace(/\D/g, ''), 10);
-                      if (!isNaN(num) && num > 0) {
-                        try {
-                          localStorage.setItem('chambers_invoice_last_seq', String(num - 1));
-                        } catch {}
-                        setInvoiceNumber(`INV-${String(num).padStart(6, '0')}`);
-                      }
-                    }
-                  }}
-                  className="p-1.5 text-slate-500 hover:text-slate-800 rounded-md hover:bg-slate-100 transition cursor-pointer"
-                  title="Configure starting sequence number (e.g. 1 -> INV-000001)"
-                >
-                  <Settings className="h-4 w-4" />
-                </button>
-                <span className="text-[11px] font-medium text-slate-500">
-                  Sequential Order (INV-000001)
-                </span>
               </div>
             </div>
 
@@ -1219,7 +1223,13 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             <button
               type="button"
               onClick={() => handleSaveInvoice('Draft')}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+              disabled={isEditingPaidInvoice}
+              className={`rounded-md border px-4 py-2 text-xs font-semibold transition shadow-2xs ${
+                isEditingPaidInvoice
+                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed select-none'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer'
+              }`}
+              title={isEditingPaidInvoice ? 'Fully paid fee notes cannot be modified' : undefined}
             >
               {isEditMode ? 'Update as Draft' : 'Save as Draft'}
             </button>
@@ -1227,10 +1237,16 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             <button
               type="button"
               onClick={() => handleSaveInvoice('Sent')}
-              className="inline-flex items-center space-x-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold transition cursor-pointer shadow-2xs"
+              disabled={isEditingPaidInvoice}
+              className={`inline-flex items-center space-x-1.5 rounded-md px-4 py-2 text-xs font-bold transition shadow-2xs ${
+                isEditingPaidInvoice
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed select-none'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+              }`}
+              title={isEditingPaidInvoice ? 'Fully paid fee notes cannot be modified' : undefined}
             >
               <span>{isEditMode ? 'Save & Update Fee Note' : 'Save and Send'}</span>
-              <ChevronDown className="h-3.5 w-3.5 border-l border-blue-400/40 pl-1 -mr-1" />
+              <ChevronDown className="h-3.5 w-3.5 border-l border-current opacity-40 pl-1 -mr-1" />
             </button>
 
             <button

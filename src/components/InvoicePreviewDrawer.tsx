@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Download, Printer, Send, FileText, CheckCircle2, ShieldCheck, CreditCard, Edit3 } from 'lucide-react';
+import { X, Download, Printer, Send, FileText, CheckCircle2, CreditCard, Edit3, Lock } from 'lucide-react';
 import { FeeNote } from '../types';
 import { loadChambersSettings } from '../utils/settingsStorage';
-import { generateInvoicePdf } from '../utils/invoicePdfGenerator';
+import { generateInvoicePdf, downloadInvoicePdf } from '../utils/invoicePdfGenerator';
 
 interface InvoicePreviewDrawerProps {
   isOpen: boolean;
@@ -57,15 +57,40 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
   const adjustment = feeNoteToUse.adjustmentKES || 0;
   const totalAmount = feeNoteToUse.totalKES || subTotal + shipping + adjustment;
   const balanceDue = feeNoteToUse.balanceKES !== undefined ? feeNoteToUse.balanceKES : totalAmount;
+  const isFullyPaid =
+    feeNoteToUse.status === 'Paid' ||
+    balanceDue <= 0 ||
+    (feeNoteToUse.amountPaidKES !== undefined && totalAmount > 0 && feeNoteToUse.amountPaidKES >= totalAmount);
+
+  // Check if discount or tax should appear
+  const hasDiscount = Boolean(
+    (feeNoteToUse.discountKES && feeNoteToUse.discountKES > 0) ||
+    items.some(
+      (it) =>
+        (it.discountKES && it.discountKES > 0) ||
+        (it.discountPercent && it.discountPercent > 0) ||
+        (it.discountAmount && it.discountAmount > 0)
+    )
+  );
+
+  const hasTax = Boolean(
+    (feeNoteToUse.vatKES && feeNoteToUse.vatKES > 0) ||
+    (feeNoteToUse.taxableAmountKES && feeNoteToUse.taxableAmountKES > 0) ||
+    items.some((it) => it.isTaxable === true || (it.vatAmountKES && it.vatAmountKES > 0))
+  );
 
   const handleDownloadPdf = () => {
     try {
-      const doc = generateInvoicePdf(feeNoteToUse, settings);
-      doc.save(`${invoiceNumber}.pdf`);
-      setToastMessage(`Downloaded ${invoiceNumber}.pdf successfully!`);
+      const ok = downloadInvoicePdf(feeNoteToUse, settings);
+      if (ok) {
+        setToastMessage(`Downloaded ${invoiceNumber}.pdf successfully!`);
+      } else {
+        setToastMessage('Triggering direct PDF save...');
+      }
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     } catch (err) {
+      console.error('handleDownloadPdf error:', err);
       setToastMessage('Failed to generate PDF.');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
@@ -105,10 +130,17 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
     setTimeout(() => setShowToast(false), 3500);
   };
 
-  const companyName = settings.firmName || 'Ceatron Technologies Ltd';
-  const phone = settings.phone || '+254 786 652 032 / +254 724833192';
-  const email = settings.email || settings.billingEmail || 'info@ceatrontechnologies.com';
-  const paybill = settings.bankDetails?.paybillNumber || '603685';
+  const companyName = settings.firmName || 'Muthoni Ahago Advocates';
+  const phone = settings.phone || '+254 (0)20 271 9900';
+  const email = settings.email || settings.billingEmail || 'info@muthoniahago.co.ke';
+  const website = settings.website || 'www.muthoniahago.co.ke';
+  const bank = settings.bankDetails || {
+    bankName: 'KCB Bank Kenya',
+    accountName: 'Muthoni Ahago Advocates Client Trust A/C',
+    accountNumber: '1289405821',
+    branch: 'Ruiru Branch',
+    paybillNumber: '522522',
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
@@ -168,34 +200,37 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                   <h1 className="text-3xl font-extrabold text-[#0098db] leading-none">
                     Fee Note
                   </h1>
-                  <p className="font-bold text-slate-900 text-xs mt-1"># {invoiceNumber}</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Balance Due</p>
-                  <p className="font-heading text-lg font-bold text-slate-900">
+                  <p className="text-sm font-bold text-slate-900"># {invoiceNumber}</p>
+                  <p className="text-[11px] text-slate-500 pt-1">Balance Due</p>
+                  <p className="text-xl font-extrabold text-slate-900">
                     KES{balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
 
-                  <div className="pt-4 text-[11px] space-y-1">
-                    <div className="flex justify-end space-x-4">
-                      <span className="text-slate-500">Invoice Date :</span>
-                      <span className="font-medium text-slate-800">{dateIssued}</span>
-                    </div>
-                    <div className="flex justify-end space-x-4">
-                      <span className="text-slate-500">Terms :</span>
-                      <span className="font-medium text-slate-800">{terms}</span>
-                    </div>
-                    <div className="flex justify-end space-x-4">
-                      <span className="text-slate-500">Due Date :</span>
-                      <span className="font-medium text-slate-800">{dueDate}</span>
-                    </div>
+                  <div className="pt-2 text-[11px] space-y-0.5 text-slate-700">
+                    <p>
+                      <span className="text-slate-500">Invoice Date :</span>{' '}
+                      <span className="font-semibold">{dateIssued}</span>
+                    </p>
+                    <p>
+                      <span className="text-slate-500">Terms :</span>{' '}
+                      <span className="font-semibold">{terms}</span>
+                    </p>
+                    <p>
+                      <span className="text-slate-500">Due Date :</span>{' '}
+                      <span className="font-semibold">{dueDate}</span>
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* Bill To & Project Section */}
-              <div className="space-y-4 pt-2">
+              <div className="space-y-3 pt-2 border-t border-slate-100">
                 <div>
-                  <p className="text-[11px] font-bold text-slate-900 uppercase">BILL TO:</p>
-                  <p className="text-xs font-bold text-slate-900 mt-0.5">{clientName}</p>
+                  <p className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">BILL TO:</p>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">{clientName}</p>
+                  {feeNoteToUse.clientAddress && feeNoteToUse.clientAddress !== 'Nairobi, Kenya' && (
+                    <p className="text-[11px] text-slate-500">{feeNoteToUse.clientAddress}</p>
+                  )}
                 </div>
 
                 <div>
@@ -213,7 +248,12 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                       <th className="py-2 px-3">Description</th>
                       <th className="py-2 px-3 text-right w-16">Qty</th>
                       <th className="py-2 px-3 text-right w-24">Rate</th>
-                      <th className="py-2 px-3 text-right w-20">Discount</th>
+                      {hasDiscount && (
+                        <th className="py-2 px-3 text-right w-20">Discount</th>
+                      )}
+                      {hasTax && (
+                        <th className="py-2 px-3 text-right w-16">Tax</th>
+                      )}
                       <th className="py-2 px-3 text-right w-28">Amount</th>
                     </tr>
                   </thead>
@@ -233,11 +273,18 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                         <td className="py-3 px-3 text-right font-mono">
                           {(it.unitPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono">
-                          {it.discountType === 'amount'
-                            ? (it.discountKES || it.discountAmount ? `KES ${(it.discountKES || it.discountAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00')
-                            : (it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%')}
-                        </td>
+                        {hasDiscount && (
+                          <td className="py-3 px-3 text-right font-mono">
+                            {it.discountType === 'amount'
+                              ? (it.discountKES || it.discountAmount ? `KES ${(it.discountKES || it.discountAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '0.00')
+                              : (it.discountPercent ? `${it.discountPercent.toFixed(2)}%` : '0.00%')}
+                          </td>
+                        )}
+                        {hasTax && (
+                          <td className="py-3 px-3 text-right font-mono">
+                            {it.isTaxable ? '16%' : '0%'}
+                          </td>
+                        )}
                         <td className="py-3 px-3 text-right font-bold font-mono text-slate-900">
                           {(it.totalPriceKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
@@ -257,11 +304,20 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                     </span>
                   </div>
 
-                  {(feeNoteToUse.discountKES || 0) > 0 && (
+                  {hasDiscount && (feeNoteToUse.discountKES || 0) > 0 && (
                     <div className="flex justify-between text-slate-700">
                       <span>Discount</span>
                       <span className="font-mono text-emerald-600">
                         - {(feeNoteToUse.discountKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+
+                  {hasTax && (feeNoteToUse.vatKES || 0) > 0 && (
+                    <div className="flex justify-between text-slate-700">
+                      <span>VAT (16%)</span>
+                      <span className="font-mono">
+                        {(feeNoteToUse.vatKES || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   )}
@@ -282,15 +338,53 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Bottom Customer Notes */}
-              <div className="pt-4 text-xs">
-                <p className="text-slate-900 font-medium">{feeNoteToUse.customerNotes || 'Thanks for your business.'}</p>
+              {/* Bottom Customer Notes & Terms */}
+              <div className="space-y-3 pt-3 border-t border-slate-100 text-xs">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-700">Customer Notes</p>
+                  <p className="text-slate-900 font-medium mt-0.5">{feeNoteToUse.customerNotes || feeNoteToUse.notes || 'Thanks for your business.'}</p>
+                </div>
+
+                {feeNoteToUse.termsAndConditions && (
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-700">Terms & Conditions</p>
+                    <p className="text-slate-600 whitespace-pre-wrap mt-0.5">{feeNoteToUse.termsAndConditions}</p>
+                  </div>
+                )}
+
+                {/* Bank Payment Particulars Box */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2 border-l-4 border-l-[#0098db]">
+                  <p className="text-[11px] font-bold text-[#0098db] tracking-wide uppercase">
+                    Bank Payment Particulars
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-800">
+                    <div>
+                      <span className="font-semibold text-slate-600">Bank Name: </span>
+                      <span className="font-bold">{bank.bankName || 'KCB Bank Kenya'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-600">Account Name: </span>
+                      <span className="font-bold">{bank.accountName || 'Muthoni Ahago Advocates Client Trust A/C'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-600">Account Number: </span>
+                      <span className="font-mono font-bold">{bank.accountNumber || '1289405821'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-600">Branch: </span>
+                      <span className="font-bold">{bank.branch || 'Ruiru Branch'}</span>
+                      {bank.paybillNumber && (
+                        <span className="ml-2 font-mono">| Paybill: {bank.paybillNumber}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Footer Line */}
             <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-[10px] text-slate-400">
-              <span>{companyName} | {phone} | {email} | {settings.website || 'www.ceatrontechnologies.com'}</span>
+              <span>{companyName} | {phone} | {email} | {website}</span>
               <span>1</span>
             </div>
 
@@ -321,7 +415,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
               </button>
             )}
 
-            {onEditInvoice && (
+            {onEditInvoice && !isFullyPaid && (
               <button
                 type="button"
                 onClick={() => {
@@ -334,6 +428,16 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                 <Edit3 className="h-4 w-4 text-slate-500" />
                 <span>Edit Invoice</span>
               </button>
+            )}
+
+            {isFullyPaid && (
+              <span
+                className="flex items-center space-x-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 select-none"
+                title="This fee note has been fully paid and cannot be edited"
+              >
+                <Lock className="h-3.5 w-3.5 text-emerald-700" />
+                <span>Paid & Locked</span>
+              </span>
             )}
 
             <button
