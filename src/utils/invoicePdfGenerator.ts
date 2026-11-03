@@ -17,8 +17,40 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   const margin = 15;
   const contentWidth = pageWidth - margin * 2; // 180mm
 
+  // -------------------------------------------------------------
+  // RESOLVE ACTIVE PDF TEMPLATE CUSTOMIZATION
+  // -------------------------------------------------------------
+  const invoiceTemplateId = settings.customization?.selectedTemplates?.['invoices'] || 'tpl-inv-standard';
+  const activeTemplate = settings.customization?.customTemplates?.find((t) => t.id === invoiceTemplateId);
+
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const clean = hex.replace('#', '');
+    if (clean.length === 3) {
+      const r = parseInt(clean[0] + clean[0], 16);
+      const g = parseInt(clean[1] + clean[1], 16);
+      const b = parseInt(clean[2] + clean[2], 16);
+      return [r, g, b];
+    }
+    const num = parseInt(clean, 16);
+    return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+  };
+
+  const primaryAccent: [number, number, number] = activeTemplate?.accentColor
+    ? hexToRgb(activeTemplate.accentColor)
+    : [0, 152, 219];
+  const docFont = activeTemplate?.fontFamily || 'helvetica';
+  const headerStyle = activeTemplate?.headerStyle || 'standard';
+  const docTitle =
+    headerStyle === 'tax-invoice'
+      ? 'Tax Invoice'
+      : headerStyle === 'paid-invoice'
+      ? 'Paid Invoice'
+      : headerStyle === 'classic-law'
+      ? 'Bill of Costs'
+      : 'Fee Note';
+
   // Primary colors matching the firm's brand and invoice style
-  const skyBlue = [0, 152, 219] as const; // #0098db
+  const skyBlue = primaryAccent;
   const textDark = [24, 30, 42] as const; // #181e2a
   const textMuted = [100, 116, 139] as const; // #64748b
   const borderColor = [226, 232, 240] as const; // #e2e8f0
@@ -33,25 +65,25 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
     // Graceful fallback to styled initials if image embedding fails
     doc.setFillColor(...skyBlue);
     doc.circle(margin + 6, currentY + 6, 6, 'F');
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(docFont, 'bold');
     doc.setFontSize(10);
     doc.setTextColor(255, 255, 255);
     doc.text('MA', margin + 3.5, currentY + 8);
   }
 
-  // Top Right: "Fee Note", "# INV-000544", "Balance Due", "KES50,000.00"
-  doc.setFont('helvetica', 'bold');
+  // Top Right: "Fee Note" / Template Title, "# INV-000544", "Balance Due", "KES50,000.00"
+  doc.setFont(docFont, 'bold');
   doc.setFontSize(26);
   doc.setTextColor(...skyBlue);
-  doc.text('Fee Note', pageWidth - margin, currentY + 5, { align: 'right' });
+  doc.text(docTitle, pageWidth - margin, currentY + 5, { align: 'right' });
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(docFont, 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(...textDark);
   const invNumber = feeNote.invoiceNumber || 'INV-000001';
   doc.text(`# ${invNumber}`, pageWidth - margin, currentY + 12, { align: 'right' });
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(docFont, 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...textMuted);
   doc.text('Balance Due', pageWidth - margin, currentY + 18, { align: 'right' });
@@ -412,15 +444,16 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   leftY += notesLines.length * 4.2 + 4;
 
   // Terms & Conditions (User Rule: Terms & Conditions should be saved and appear on PDF invoice)
+  const shouldShowTerms = activeTemplate ? activeTemplate.showTermsAndConditions : true;
   const termsText = (feeNote.termsAndConditions || '').trim();
-  if (termsText) {
-    doc.setFont('helvetica', 'bold');
+  if (shouldShowTerms && termsText) {
+    doc.setFont(docFont, 'bold');
     doc.setFontSize(8);
     doc.setTextColor(...textDark);
     doc.text('Terms & Conditions:', margin, leftY);
     leftY += 3.8;
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(docFont, 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(...textMuted);
     const termsLines: string[] = doc.splitTextToSize(termsText, Math.max(50, leftColWidth));
@@ -430,74 +463,106 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
 
   // -------------------------------------------------------------
   // BANK PAYMENT PARTICULARS BOX
-  // User Rule: "Enable Bank Name and Account Name to appear on the pdf invoice"
   // -------------------------------------------------------------
   const footerY = pageHeight - 12;
-  const bank = settings.bankDetails || {
-    bankName: 'KCB Bank Kenya',
-    accountName: 'Muthoni Ahago Advocates Client Trust A/C',
-    accountNumber: '1289405821',
-    branch: 'Ruiru Branch',
-    paybillNumber: '522522',
-  };
+  const shouldShowBank = activeTemplate ? activeTemplate.showBankDetails : true;
 
-  const bankBoxHeight = 19;
-  let bankBoxY = Math.max(currentY + 4, leftY + 2);
+  if (shouldShowBank) {
+    const bank = settings.bankDetails || {
+      bankName: 'KCB Bank Kenya',
+      accountName: 'Muthoni Ahago Advocates Client Trust A/C',
+      accountNumber: '1289405821',
+      branch: 'Ruiru Branch',
+      paybillNumber: '522522',
+    };
 
-  // If bank box would overlap the footer, move to next page or anchor above footer
-  if (bankBoxY + bankBoxHeight > footerY - 5) {
-    if (currentY + 25 < footerY) {
-      bankBoxY = footerY - 6 - bankBoxHeight;
-    } else {
-      doc.addPage();
-      bankBoxY = 20;
+    const bankBoxHeight = 19;
+    let bankBoxY = Math.max(currentY + 4, leftY + 2);
+
+    // If bank box would overlap the footer, move to next page or anchor above footer
+    if (bankBoxY + bankBoxHeight > footerY - 5) {
+      if (currentY + 25 < footerY) {
+        bankBoxY = footerY - 6 - bankBoxHeight;
+      } else {
+        doc.addPage();
+        bankBoxY = 20;
+      }
+    }
+
+    const bankBoxWidth = contentWidth;
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.setDrawColor(...borderColor);
+    doc.roundedRect(margin, bankBoxY, bankBoxWidth, bankBoxHeight, 1.5, 1.5, 'FD');
+
+    // Left accent bar
+    doc.setFillColor(...skyBlue);
+    doc.rect(margin, bankBoxY, 2.5, bankBoxHeight, 'F');
+
+    // Title
+    doc.setFont(docFont, 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...skyBlue);
+    doc.text('BANK PAYMENT PARTICULARS', margin + 5, bankBoxY + 4.5);
+
+    // Row 1: Bank Name and Account Name
+    doc.setFont(docFont, 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...textDark);
+    doc.text('Bank Name:', margin + 5, bankBoxY + 9.5);
+    doc.setFont(docFont, 'normal');
+    doc.text(bank.bankName || 'KCB Bank Kenya', margin + 22, bankBoxY + 9.5);
+
+    doc.setFont(docFont, 'bold');
+    doc.text('Account Name:', margin + 85, bankBoxY + 9.5);
+    doc.setFont(docFont, 'normal');
+    doc.text(bank.accountName || 'Muthoni Ahago Advocates Client Trust A/C', margin + 107, bankBoxY + 9.5);
+
+    // Row 2: Account Number, Branch, Paybill
+    doc.setFont(docFont, 'bold');
+    doc.text('Account No:', margin + 5, bankBoxY + 15);
+    doc.setFont(docFont, 'normal');
+    doc.text(bank.accountNumber || '1289405821', margin + 22, bankBoxY + 15);
+
+    doc.setFont(docFont, 'bold');
+    doc.text('Branch:', margin + 85, bankBoxY + 15);
+    doc.setFont(docFont, 'normal');
+    doc.text(bank.branch || 'Ruiru Branch', margin + 97, bankBoxY + 15);
+
+    if (bank.paybillNumber) {
+      doc.setFont(docFont, 'bold');
+      doc.text('M-Pesa Paybill:', margin + 135, bankBoxY + 15);
+      doc.setFont(docFont, 'normal');
+      doc.text(bank.paybillNumber, margin + 156, bankBoxY + 15);
     }
   }
 
-  const bankBoxWidth = contentWidth;
-  doc.setFillColor(248, 250, 252); // slate-50
-  doc.setDrawColor(...borderColor);
-  doc.roundedRect(margin, bankBoxY, bankBoxWidth, bankBoxHeight, 1.5, 1.5, 'FD');
+  // Optional Advocate Signature Block
+  if (activeTemplate?.showSignatureBlock) {
+    const sigY = footerY - 24;
+    doc.setDrawColor(...textDark);
+    doc.line(pageWidth - margin - 55, sigY, pageWidth - margin, sigY);
+    doc.setFont(docFont, 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...textDark);
+    doc.text(activeTemplate.signatureLabel || 'Authorized Advocate Signature', pageWidth - margin, sigY + 4, { align: 'right' });
+    doc.setFont(docFont, 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...textMuted);
+    doc.text(companyName, pageWidth - margin, sigY + 7.5, { align: 'right' });
+  }
 
-  // Left accent bar in sky blue
-  doc.setFillColor(...skyBlue);
-  doc.rect(margin, bankBoxY, 2.5, bankBoxHeight, 'F');
-
-  // Title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...skyBlue);
-  doc.text('BANK PAYMENT PARTICULARS', margin + 5, bankBoxY + 4.5);
-
-  // Row 1: Bank Name and Account Name
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...textDark);
-  doc.text('Bank Name:', margin + 5, bankBoxY + 9.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text(bank.bankName || 'KCB Bank Kenya', margin + 22, bankBoxY + 9.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Account Name:', margin + 85, bankBoxY + 9.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text(bank.accountName || 'Muthoni Ahago Advocates Client Trust A/C', margin + 107, bankBoxY + 9.5);
-
-  // Row 2: Account Number, Branch, Paybill
-  doc.setFont('helvetica', 'bold');
-  doc.text('Account No:', margin + 5, bankBoxY + 15);
-  doc.setFont('helvetica', 'normal');
-  doc.text(bank.accountNumber || '1289405821', margin + 22, bankBoxY + 15);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Branch:', margin + 85, bankBoxY + 15);
-  doc.setFont('helvetica', 'normal');
-  doc.text(bank.branch || 'Ruiru Branch', margin + 97, bankBoxY + 15);
-
-  if (bank.paybillNumber) {
-    doc.setFont('helvetica', 'bold');
-    doc.text('M-Pesa Paybill:', margin + 135, bankBoxY + 15);
-    doc.setFont('helvetica', 'normal');
-    doc.text(bank.paybillNumber, margin + 156, bankBoxY + 15);
+  // Watermark for Paid Invoices
+  const isPaid = feeNote.status === 'Paid' || balanceDue <= 0;
+  if (headerStyle === 'paid-invoice' || (activeTemplate?.showWatermarkWhenPaid && isPaid)) {
+    doc.saveGraphicsState?.();
+    doc.setDrawColor(5, 150, 105); // emerald-600
+    doc.setFillColor(236, 253, 245); // emerald-50
+    doc.roundedRect(pageWidth / 2 - 28, pageHeight / 2 - 12, 56, 16, 2, 2, 'D');
+    doc.setFont(docFont, 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(5, 150, 105);
+    doc.text('PAID IN FULL', pageWidth / 2, pageHeight / 2 - 1, { align: 'center' });
+    doc.restoreGraphicsState?.();
   }
 
   // -------------------------------------------------------------
@@ -506,12 +571,13 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   doc.setDrawColor(...borderColor);
   doc.line(margin, footerY - 4, pageWidth - margin, footerY - 4);
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(docFont, 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...textMuted);
   const footerPhone = settings.phone || '+254 (0)20 271 9900';
   const footerEmail = settings.email || 'info@muthoniahago.co.ke';
-  const footerText = `${companyName} | ${footerPhone} | ${footerEmail} | ${settings.website || 'www.muthoniahago.co.ke'}`;
+  const defaultFooter = `${companyName} | ${footerPhone} | ${footerEmail} | ${settings.website || 'www.muthoniahago.co.ke'}`;
+  const footerText = activeTemplate?.footerNotes || defaultFooter;
   doc.text(footerText, margin, footerY);
   doc.text('1', pageWidth - margin, footerY, { align: 'right' });
 

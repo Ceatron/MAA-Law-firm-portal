@@ -657,7 +657,70 @@ export interface ChambersSettings {
     defaultCurrency: string;
     dateFormat: string;
   };
+  customization?: ChambersCustomizationSettings;
   lastSaved?: string;
+}
+
+export type PdfDocumentCategory =
+  | 'quotes'
+  | 'invoices'
+  | 'sales-receipts'
+  | 'credit-notes'
+  | 'payment-receipts'
+  | 'customer-statements'
+  | 'expenses'
+  | 'vendor-statements'
+  | 'journals';
+
+export interface PdfTemplateConfig {
+  id: string;
+  name: string;
+  category: PdfDocumentCategory;
+  isDefault: boolean;
+  accentColor: string; // Hex color code e.g. '#0098db'
+  secondaryColor?: string;
+  fontFamily: 'helvetica' | 'times' | 'courier';
+  headerStyle: 'standard' | 'tax-invoice' | 'paid-invoice' | 'modern-minimal' | 'classic-law';
+  showBankDetails: boolean;
+  showTermsAndConditions: boolean;
+  showTaxColumn: boolean;
+  showDiscountColumn: boolean;
+  showWatermarkWhenPaid: boolean;
+  showSignatureBlock: boolean;
+  signatureLabel?: string;
+  footerNotes?: string;
+  status: 'active' | 'inactive';
+}
+
+export interface TransactionSeriesItem {
+  prefix: string;
+  nextNumber: number;
+  padding: number;
+  suffix?: string;
+}
+
+export interface EmailNotificationTemplate {
+  name: string;
+  subject: string;
+  body: string;
+  ccBillingEmail: boolean;
+  active: boolean;
+}
+
+export interface ChambersCustomizationSettings {
+  selectedTemplates: Record<string, string>; // category -> templateId
+  customTemplates: PdfTemplateConfig[];
+  transactionSeries: {
+    invoices: TransactionSeriesItem;
+    quotes: TransactionSeriesItem;
+    receipts: TransactionSeriesItem;
+    creditNotes: TransactionSeriesItem;
+  };
+  emailNotifications: {
+    invoiceIssued: EmailNotificationTemplate;
+    paymentReceipt: EmailNotificationTemplate;
+    quoteProposal: EmailNotificationTemplate;
+  };
 }
 
 export type NoticeCategory = 'Announcements' | 'Holidays' | 'Birthdays' | 'Company News';

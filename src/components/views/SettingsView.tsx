@@ -23,8 +23,23 @@ import {
   Database,
   Download,
 } from 'lucide-react';
+import {
+  Sliders,
+  Palette,
+  Hash,
+  ArrowLeft,
+  Users,
+  Percent,
+  Settings2,
+  Sparkles,
+  Layers,
+  ChevronRight,
+} from 'lucide-react';
 import { TemplateManager } from '../TemplateManager';
 import { FeeNoteTemplateManager } from '../FeeNoteTemplateManager';
+import { PdfTemplateManager } from '../customization/PdfTemplateManager';
+import { TransactionNumberSeriesManager } from '../customization/TransactionNumberSeriesManager';
+import { EmailNotificationManager } from '../customization/EmailNotificationManager';
 import { CompanyLogo } from '../CompanyLogo';
 import { LoginAuditLogViewer } from '../LoginAuditLogViewer';
 import { ChambersSettings, Advocate } from '../../types';
@@ -46,7 +61,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isSystemAdmin,
   onOpenBackupModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<
+    'hub' | 'customization' | 'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security'
+  >('customization');
+  const [customizationSubTab, setCustomizationSubTab] = useState<
+    'pdf-templates' | 'transaction-series' | 'email-notifications'
+  >('pdf-templates');
   const [settings, setSettings] = useState<ChambersSettings>(() => loadChambersSettings());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -141,6 +161,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }, 4000);
   };
 
+  const handleUpdateSettings = (newSettings: ChambersSettings) => {
+    setSettings(newSettings);
+    try {
+      saveChambersSettings(newSettings);
+    } catch (err) {
+      console.error('Failed to auto-save settings:', err);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Toast Notification */}
@@ -151,18 +180,77 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* View Header with Save Button */}
+      {/* View Header with Save Button & Breadcrumbs */}
       <div className="border-b border-[#e2dfd5] pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
+          {/* Breadcrumbs */}
+          <div className="flex items-center space-x-1.5 text-xs text-stone-500 mb-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('hub')}
+              className={`hover:text-[#0070ba] transition-colors cursor-pointer ${
+                activeTab === 'hub' ? 'font-bold text-stone-800' : 'font-medium'
+              }`}
+            >
+              Organization Settings
+            </button>
+            {activeTab !== 'hub' && (
+              <>
+                <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                <span
+                  onClick={() => {
+                    if (activeTab === 'customization') {
+                      setCustomizationSubTab('pdf-templates');
+                    }
+                  }}
+                  className={`font-semibold cursor-pointer ${
+                    activeTab === 'customization' ? 'text-amber-700' : 'text-stone-800'
+                  }`}
+                >
+                  {activeTab === 'customization' ? 'Customization' : activeTab.replace('-', ' ')}
+                </span>
+                {activeTab === 'customization' && (
+                  <>
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                    <span className="font-bold text-[#0070ba]">
+                      {customizationSubTab === 'pdf-templates'
+                        ? 'PDF Templates'
+                        : customizationSubTab === 'transaction-series'
+                        ? 'Transaction Number Series'
+                        : 'Email Notifications'}
+                    </span>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
           <h2 className="font-serif-title text-2xl font-bold text-[#1a1d20]">
-            Firm Workspace & System Preferences
+            {activeTab === 'hub'
+              ? 'Organization Settings'
+              : activeTab === 'customization'
+              ? 'Customization & Document Templates'
+              : 'Firm Workspace & Preferences'}
           </h2>
           <p className="mt-1 text-xs text-stone-600">
-            Configure {settings.firmName} firm workspace branding, company logo, LSK practicing setup, templates & integrations
+            {activeTab === 'customization'
+              ? 'Configure PDF document templates, transaction numbering series, and automated email notifications'
+              : `Configure ${settings.firmName} workspace branding, practicing setup, customization & integrations`}
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
+          {activeTab !== 'hub' && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('hub')}
+              className="flex items-center space-x-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-stone-500" />
+              <span>All Settings</span>
+            </button>
+          )}
+
           {isDevAdmin && onOpenBackupModal && (
             <button
               type="button"
@@ -172,7 +260,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               title="Admin Only: Non-destructive local storage backup export"
             >
               <Database className="h-3.5 w-3.5 text-amber-700" />
-              <span>Export Data Backup</span>
+              <span>Backup</span>
             </button>
           )}
 
@@ -183,7 +271,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             title="Reset to default settings"
           >
             <RotateCcw className="h-3.5 w-3.5 text-stone-500" />
-            <span>Reset Defaults</span>
+            <span>Reset</span>
           </button>
 
           <button
@@ -201,20 +289,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Sub-Navigation Tabs */}
       <div className="flex items-center space-x-1 border-b border-[#e2dfd5] pb-px overflow-x-auto text-xs font-semibold">
         <button
-          onClick={() => setActiveTab('profile')}
-          className={`flex items-center space-x-2 border-b-2 px-4 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
-            activeTab === 'profile'
+          onClick={() => setActiveTab('hub')}
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'hub'
               ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
               : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
           }`}
         >
           <Building2 className="h-4 w-4" />
-          <span>Firm Profile & Company Logo</span>
+          <span>Organization Hub</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('customization');
+            setCustomizationSubTab('pdf-templates');
+          }}
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'customization'
+              ? 'border-amber-600 text-amber-800 font-bold bg-amber-50/70 rounded-t-md'
+              : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
+          }`}
+        >
+          <Sliders className="h-4 w-4 text-amber-600" />
+          <span>Customization</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'profile'
+              ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
+              : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
+          }`}
+        >
+          <ImageIcon className="h-4 w-4" />
+          <span>Firm Profile & Logo</span>
         </button>
 
         <button
           onClick={() => setActiveTab('templates')}
-          className={`flex items-center space-x-2 border-b-2 px-4 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
             activeTab === 'templates'
               ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
               : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
@@ -226,31 +341,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           onClick={() => setActiveTab('fee-notes')}
-          className={`flex items-center space-x-2 border-b-2 px-4 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
             activeTab === 'fee-notes'
               ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
               : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
           }`}
         >
           <Receipt className="h-4 w-4" />
-          <span>Fee Note & Billing Templates</span>
+          <span>Fee Note & Remuneration Packages</span>
         </button>
 
         <button
           onClick={() => setActiveTab('integrations')}
-          className={`flex items-center space-x-2 border-b-2 px-4 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
             activeTab === 'integrations'
               ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
               : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
           }`}
         >
           <Scale className="h-4 w-4" />
-          <span>Judiciary CTS & e-Citizen Integrations</span>
+          <span>Judiciary CTS Integrations</span>
         </button>
 
         <button
           onClick={() => setActiveTab('security')}
-          className={`flex items-center space-x-2 border-b-2 px-4 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
+          className={`flex items-center space-x-2 border-b-2 px-3.5 py-2.5 transition-colors cursor-pointer whitespace-nowrap ${
             activeTab === 'security'
               ? 'border-[#0070ba] text-[#0070ba] font-bold bg-[#ebf5fc]/60 rounded-t-md'
               : 'border-transparent text-stone-600 hover:text-stone-900 hover:bg-stone-50'
@@ -261,7 +376,269 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </button>
       </div>
 
-      {/* Tab Contents */}
+      {/* ============================================================ */}
+      {/* 1. ORGANIZATION SETTINGS HUB OVERVIEW (Matches image_90e41e64.png) */}
+      {/* ============================================================ */}
+      {activeTab === 'hub' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-6">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">Organization Settings</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Configure your practice entity, roles, tax compliance, default numbering, and custom document templates.
+              </p>
+            </div>
+
+            {/* The 5 Columns / Cards matching user reference screenshot */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Column 1: Organization */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-emerald-300 transition-colors">
+                <div className="flex items-center space-x-2 text-emerald-700 font-bold text-sm border-b border-emerald-100 pb-2.5">
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <span>Organization</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-600">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Profile
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Branding
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Column 2: Users & Roles */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-rose-300 transition-colors">
+                <div className="flex items-center space-x-2 text-rose-700 font-bold text-sm border-b border-rose-100 pb-2.5">
+                  <div className="p-1.5 rounded-lg bg-rose-50 text-rose-700">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <span>Users & Roles</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-600">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('security')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Users
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('security')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Roles
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Column 3: Taxes & Compliance */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-blue-300 transition-colors">
+                <div className="flex items-center space-x-2 text-[#0070ba] font-bold text-sm border-b border-blue-100 pb-2.5">
+                  <div className="p-1.5 rounded-lg bg-blue-50 text-[#0070ba]">
+                    <Percent className="w-4 h-4" />
+                  </div>
+                  <span>Taxes & Compliance</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-600">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Taxes
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Column 4: Setup & Configurations */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-amber-300 transition-colors">
+                <div className="flex items-center space-x-2 text-amber-800 font-bold text-sm border-b border-amber-100 pb-2.5">
+                  <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700">
+                    <Settings2 className="w-4 h-4" />
+                  </div>
+                  <span>Setup & Configurations</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-600">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      General
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Currencies
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('fee-notes')}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium"
+                    >
+                      Payment Terms
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Column 5: Customization (Requested Feature) */}
+              <div className="rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4 shadow-xs space-y-3 ring-1 ring-amber-400/30">
+                <div className="flex items-center space-x-2 text-amber-900 font-bold text-sm border-b border-amber-200/80 pb-2.5">
+                  <div className="p-1.5 rounded-lg bg-amber-500 text-white shadow-2xs">
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <span>Customization</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-800">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('customization');
+                        setCustomizationSubTab('transaction-series');
+                      }}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-semibold text-slate-700 hover:text-[#0070ba]"
+                    >
+                      Transaction Number Series
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('customization');
+                        setCustomizationSubTab('pdf-templates');
+                      }}
+                      className="text-[#0070ba] hover:text-[#005a96] hover:underline cursor-pointer py-1 block w-full text-left font-bold flex items-center justify-between"
+                    >
+                      <span>PDF Templates</span>
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('customization');
+                        setCustomizationSubTab('email-notifications');
+                      }}
+                      className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-semibold text-slate-700 hover:text-[#0070ba]"
+                    >
+                      Email Notifications
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 2. CUSTOMIZATION SECTION (Requested Feature) */}
+      {/* ============================================================ */}
+      {activeTab === 'customization' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Customization Sub-Tabs Bar */}
+          <div className="flex items-center space-x-2 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setCustomizationSubTab('pdf-templates')}
+              className={`flex items-center space-x-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                customizationSubTab === 'pdf-templates'
+                  ? 'bg-white text-[#0070ba] shadow-xs ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-[#0070ba]" />
+              <span>PDF Templates</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCustomizationSubTab('transaction-series')}
+              className={`flex items-center space-x-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                customizationSubTab === 'transaction-series'
+                  ? 'bg-white text-[#0070ba] shadow-xs ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Hash className="w-4 h-4 text-slate-600" />
+              <span>Transaction Number Series</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCustomizationSubTab('email-notifications')}
+              className={`flex items-center space-x-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                customizationSubTab === 'email-notifications'
+                  ? 'bg-white text-[#0070ba] shadow-xs ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Mail className="w-4 h-4 text-slate-600" />
+              <span>Email Notifications</span>
+            </button>
+          </div>
+
+          {/* Sub-tab Contents */}
+          {customizationSubTab === 'pdf-templates' && (
+            <PdfTemplateManager
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              showToast={showToast}
+            />
+          )}
+
+          {customizationSubTab === 'transaction-series' && (
+            <TransactionNumberSeriesManager
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              showToast={showToast}
+            />
+          )}
+
+          {customizationSubTab === 'email-notifications' && (
+            <EmailNotificationManager
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              showToast={showToast}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Tab Contents: Existing Sections */}
       {activeTab === 'templates' && <TemplateManager />}
       {activeTab === 'fee-notes' && <FeeNoteTemplateManager />}
 

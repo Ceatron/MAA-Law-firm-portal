@@ -142,6 +142,19 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
     paybillNumber: '522522',
   };
 
+  // Resolve active invoice template from customization settings
+  const selectedTplId = settings.customization?.selectedTemplates?.['invoices'] || 'tpl-inv-standard';
+  const activeTemplate = settings.customization?.customTemplates?.find((t) => t.id === selectedTplId);
+  const accentColor = activeTemplate?.accentColor || '#0098db';
+  const docTitle =
+    activeTemplate?.headerStyle === 'tax-invoice'
+      ? 'Tax Invoice'
+      : activeTemplate?.headerStyle === 'paid-invoice'
+      ? 'Paid Invoice'
+      : activeTemplate?.headerStyle === 'classic-law'
+      ? 'Bill of Costs'
+      : 'Fee Note';
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
       <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col overflow-y-auto border-l border-slate-200">
@@ -149,9 +162,9 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
         {/* Drawer Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-900 text-white">
           <div className="flex items-center space-x-2">
-            <FileText className="h-5 w-5 text-[#0098db]" />
+            <FileText className="h-5 w-5" style={{ color: accentColor }} />
             <h2 className="font-heading text-base font-bold text-white">
-              Fee Note {invoiceNumber} - {clientName}
+              {docTitle} {invoiceNumber} - {clientName}
             </h2>
           </div>
           <button
@@ -197,8 +210,8 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
 
                 {/* Right: Fee Note Title, Number, Balance Due & Dates */}
                 <div className="text-right sm:self-start space-y-1">
-                  <h1 className="text-3xl font-extrabold text-[#0098db] leading-none">
-                    Fee Note
+                  <h1 className="text-3xl font-extrabold leading-none" style={{ color: accentColor }}>
+                    {docTitle}
                   </h1>
                   <p className="text-sm font-bold text-slate-900"># {invoiceNumber}</p>
                   <p className="text-[11px] text-slate-500 pt-1">Balance Due</p>
@@ -243,7 +256,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
               <div className="overflow-x-auto pt-2">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-[#0098db] text-white font-bold text-[11px]">
+                    <tr className="text-white font-bold text-[11px]" style={{ backgroundColor: accentColor }}>
                       <th className="py-2 px-3 w-8 text-center">#</th>
                       <th className="py-2 px-3">Description</th>
                       <th className="py-2 px-3 text-right w-16">Qty</th>
@@ -345,7 +358,7 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                   <p className="text-slate-900 font-medium mt-0.5">{feeNoteToUse.customerNotes || feeNoteToUse.notes || 'Thanks for your business.'}</p>
                 </div>
 
-                {feeNoteToUse.termsAndConditions && (
+                {(activeTemplate ? activeTemplate.showTermsAndConditions : true) && feeNoteToUse.termsAndConditions && (
                   <div>
                     <p className="text-[11px] font-bold text-slate-700">Terms & Conditions</p>
                     <p className="text-slate-600 whitespace-pre-wrap mt-0.5">{feeNoteToUse.termsAndConditions}</p>
@@ -353,32 +366,37 @@ export const InvoicePreviewDrawer: React.FC<InvoicePreviewDrawerProps> = ({
                 )}
 
                 {/* Bank Payment Particulars Box */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2 border-l-4 border-l-[#0098db]">
-                  <p className="text-[11px] font-bold text-[#0098db] tracking-wide uppercase">
-                    Bank Payment Particulars
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-800">
-                    <div>
-                      <span className="font-semibold text-slate-600">Bank Name: </span>
-                      <span className="font-bold">{bank.bankName || 'KCB Bank Kenya'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-600">Account Name: </span>
-                      <span className="font-bold">{bank.accountName || 'Muthoni Ahago Advocates Client Trust A/C'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-600">Account Number: </span>
-                      <span className="font-mono font-bold">{bank.accountNumber || '1289405821'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-600">Branch: </span>
-                      <span className="font-bold">{bank.branch || 'Ruiru Branch'}</span>
-                      {bank.paybillNumber && (
-                        <span className="ml-2 font-mono">| Paybill: {bank.paybillNumber}</span>
-                      )}
+                {(activeTemplate ? activeTemplate.showBankDetails : true) && (
+                  <div
+                    className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2"
+                    style={{ borderLeftWidth: '4px', borderLeftColor: accentColor }}
+                  >
+                    <p className="text-[11px] font-bold tracking-wide uppercase" style={{ color: accentColor }}>
+                      Bank Payment Particulars
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-800">
+                      <div>
+                        <span className="font-semibold text-slate-600">Bank Name: </span>
+                        <span className="font-bold">{bank.bankName || 'KCB Bank Kenya'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Account Name: </span>
+                        <span className="font-bold">{bank.accountName || 'Muthoni Ahago Advocates Client Trust A/C'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Account Number: </span>
+                        <span className="font-mono font-bold">{bank.accountNumber || '1289405821'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Branch: </span>
+                        <span className="font-bold">{bank.branch || 'Ruiru Branch'}</span>
+                        {bank.paybillNumber && (
+                          <span className="ml-2 font-mono">| Paybill: {bank.paybillNumber}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
