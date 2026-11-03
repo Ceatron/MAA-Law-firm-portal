@@ -429,44 +429,78 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
   currentY += 9;
 
   // -------------------------------------------------------------
-  // LEFT COLUMN: Customer Notes & Terms and Conditions
+  // BOTTOM SECTION: Notes, Terms & Bank Details (Pushed down close to footer)
   // -------------------------------------------------------------
-  let leftY = startTotalsY;
-  const leftColWidth = totalsLabelX - margin - 8;
+  const footerY = pageHeight - 12;
+  const targetBottomY = footerY - 7; // Ends cleanly above footer divider line (which is at footerY - 4)
 
-  // Customer Notes
-  const custNotes = feeNote.customerNotes || feeNote.notes || 'Thanks for your business.';
+  // 1. Customer Notes ("Thanks for your business.")
+  const custNotes = (feeNote.customerNotes || feeNote.notes || 'Thanks for your business.').trim();
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(...textDark);
-  const notesLines: string[] = doc.splitTextToSize(custNotes, Math.max(50, leftColWidth));
-  doc.text(notesLines, margin, leftY + 4);
-  leftY += notesLines.length * 4.2 + 4;
+  const notesLines: string[] = custNotes ? doc.splitTextToSize(custNotes, contentWidth) : [];
+  const notesHeight = notesLines.length > 0 ? (notesLines.length * 4.2 + 3) : 0;
 
-  // Terms & Conditions (User Rule: Terms & Conditions should be saved and appear on PDF invoice)
+  // 2. Terms & Conditions (User Rule: Terms & Conditions saved & appear on PDF)
   const shouldShowTerms = activeTemplate ? activeTemplate.showTermsAndConditions : true;
   const termsText = (feeNote.termsAndConditions || '').trim();
+  let termsLines: string[] = [];
+  let termsHeight = 0;
   if (shouldShowTerms && termsText) {
+    doc.setFont(docFont, 'normal');
+    doc.setFontSize(7.5);
+    termsLines = doc.splitTextToSize(termsText, contentWidth);
+    termsHeight = termsLines.length * 3.4 + 5.5;
+  }
+
+  // 3. Bank Payment Details Box
+  const shouldShowBank = activeTemplate ? activeTemplate.showBankDetails : true;
+  const bankBoxHeight = shouldShowBank ? 19 : 0;
+  const bankGap = (shouldShowBank && (notesHeight > 0 || termsHeight > 0)) ? 4 : 0;
+
+  const totalBottomBlockHeight = notesHeight + termsHeight + bankBoxHeight + bankGap;
+
+  // Anchor bottom section close to footer, while respecting content height
+  const idealStartY = targetBottomY - totalBottomBlockHeight;
+  let bottomStartY = Math.max(currentY + 8, idealStartY);
+
+  // If the total block would overflow the footer on this page, move to next page
+  if (bottomStartY + totalBottomBlockHeight > footerY - 5) {
+    doc.addPage();
+    bottomStartY = Math.max(20, targetBottomY - totalBottomBlockHeight);
+  }
+
+  let currentBottomY = bottomStartY;
+
+  // Render Customer Notes ("Thanks for your business.")
+  if (notesLines.length > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...textDark);
+    notesLines.forEach((line: string, idx: number) => {
+      doc.text(line, margin, currentBottomY + 4 + idx * 4.2);
+    });
+    currentBottomY += notesHeight;
+  }
+
+  // Render Terms & Conditions (if present and enabled)
+  if (shouldShowTerms && termsLines.length > 0) {
     doc.setFont(docFont, 'bold');
     doc.setFontSize(8);
     doc.setTextColor(...textDark);
-    doc.text('Terms & Conditions:', margin, leftY);
-    leftY += 3.8;
+    doc.text('Terms & Conditions:', margin, currentBottomY + 3);
+    currentBottomY += 4.2;
 
     doc.setFont(docFont, 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(...textMuted);
-    const termsLines: string[] = doc.splitTextToSize(termsText, Math.max(50, leftColWidth));
-    doc.text(termsLines, margin, leftY);
-    leftY += termsLines.length * 3.4 + 4;
+    termsLines.forEach((line: string, idx: number) => {
+      doc.text(line, margin, currentBottomY + 2.5 + idx * 3.4);
+    });
+    currentBottomY += termsLines.length * 3.4 + 2.5;
   }
 
-  // -------------------------------------------------------------
-  // BANK PAYMENT PARTICULARS BOX
-  // -------------------------------------------------------------
-  const footerY = pageHeight - 12;
-  const shouldShowBank = activeTemplate ? activeTemplate.showBankDetails : true;
-
+  // Render Bank Payment Particulars Box (anchored right above footer)
   if (shouldShowBank) {
     const bank = settings.bankDetails || {
       bankName: 'KCB Bank Kenya',
@@ -476,18 +510,9 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
       paybillNumber: '522522',
     };
 
-    const bankBoxHeight = 19;
-    let bankBoxY = Math.max(currentY + 4, leftY + 2);
-
-    // If bank box would overlap the footer, move to next page or anchor above footer
-    if (bankBoxY + bankBoxHeight > footerY - 5) {
-      if (currentY + 25 < footerY) {
-        bankBoxY = footerY - 6 - bankBoxHeight;
-      } else {
-        doc.addPage();
-        bankBoxY = 20;
-      }
-    }
+    // Position bank box at targetBottomY - bankBoxHeight so it sits close to footer
+    const targetBankY = targetBottomY - bankBoxHeight;
+    const bankBoxY = Math.max(currentBottomY + bankGap, targetBankY);
 
     const bankBoxWidth = contentWidth;
     doc.setFillColor(248, 250, 252); // slate-50
@@ -538,7 +563,8 @@ export const generateInvoicePdf = (feeNote: FeeNote, customSettings?: ChambersSe
 
   // Optional Advocate Signature Block
   if (activeTemplate?.showSignatureBlock) {
-    const sigY = footerY - 24;
+    const targetBankY = targetBottomY - bankBoxHeight;
+    const sigY = shouldShowBank ? (targetBankY - 14) : (footerY - 24);
     doc.setDrawColor(...textDark);
     doc.line(pageWidth - margin - 55, sigY, pageWidth - margin, sigY);
     doc.setFont(docFont, 'bold');
