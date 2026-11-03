@@ -285,8 +285,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeTab === 'hub' && (
         <div className="space-y-6 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs">
-            {/* The 5 Columns / Cards with active & marked-inactive sections */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* The 4 Columns / Cards with active & marked-inactive sections */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Column 1: Organization */}
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-emerald-300 transition-colors flex flex-col justify-between">
                 <div>
@@ -365,46 +365,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
-              {/* Column 4: Setup & Configurations */}
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-amber-300 transition-colors flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center space-x-2 text-amber-800 font-bold text-sm border-b border-amber-100 pb-2.5">
-                    <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700">
-                      <Settings2 className="w-4 h-4" />
-                    </div>
-                    <span>Setup & Configurations</span>
-                  </div>
-                  <ul className="space-y-1.5 text-xs text-slate-600 mt-2">
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('profile')}
-                        className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
-                      >
-                        General
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('profile')}
-                        className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
-                      >
-                        Currencies
-                      </button>
-                    </li>
-                    {/* Payment Terms: Marked inactive in production per user directive */}
-                    <li className="flex items-center justify-between py-1 text-slate-400 cursor-not-allowed select-none">
-                      <span className="font-medium text-slate-400">Payment Terms</span>
-                      <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-                        Inactive
-                      </span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Column 5: Customization */}
+              {/* Column 4: Customization */}
               <div className="rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4 shadow-xs space-y-3 ring-1 ring-amber-400/30 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center space-x-2 text-amber-900 font-bold text-sm border-b border-amber-200/80 pb-2.5">
