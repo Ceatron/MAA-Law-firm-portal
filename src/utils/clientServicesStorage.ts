@@ -82,6 +82,8 @@ export const defaultConfig: ClientServicesConfig = {
   slaResponseHours: 24,
 };
 
+import ChambersCloudService from '../services/chambersCloudService';
+
 export function getStoredInteractions(): ClientInteraction[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -99,9 +101,27 @@ export function getStoredInteractions(): ClientInteraction[] {
   }
 }
 
+export async function fetchAndHydrateInteractions(): Promise<ClientInteraction[]> {
+  try {
+    const cloudInteractions = await ChambersCloudService.fetchClientInteractions();
+    if (cloudInteractions && Array.isArray(cloudInteractions) && cloudInteractions.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudInteractions));
+      return cloudInteractions;
+    }
+  } catch (e) {
+    console.warn('[ClientServices] Cloud hydration warning:', e);
+  }
+  return getStoredInteractions();
+}
+
 export function saveStoredInteractions(interactions: ClientInteraction[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(interactions));
+    interactions.forEach((i) => {
+      ChambersCloudService.upsertClientInteraction(i).catch((err) =>
+        console.warn('[ClientServices] Supabase upsert error:', err)
+      );
+    });
   } catch (e) {
     console.error('Failed to save client interactions:', e);
   }

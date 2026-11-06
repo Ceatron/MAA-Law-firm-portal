@@ -13,19 +13,10 @@ import {
   buildFirmBrandedHtml,
   isEmailSendingEnabled,
 } from "./server/emailService.ts";
-import {
-  getDatabaseStatus,
-  getAllData,
-  upsertRecord,
-  deleteRecord,
-  syncCollections,
-  getChambersSettings,
-  updateChambersSettings,
-} from "./server/chambersDatabase.ts";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const httpServer = http.createServer(app);
 
   app.use(express.json({ limit: "10mb" }));
@@ -424,86 +415,15 @@ Always format output clearly using Markdown:
     }
   });
 
-  // ==========================================
-  // CENTRAL CHAMBERS DATABASE ENDPOINTS
-  // ==========================================
-  app.get("/api/db/status", (req, res) => {
-    try {
-      const status = getDatabaseStatus();
-      res.json(status);
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to get database status." });
-    }
-  });
-
-  app.get("/api/db/settings", (req, res) => {
-    try {
-      const settings = getChambersSettings();
-      res.json(settings);
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to retrieve chambers settings." });
-    }
-  });
-
-  app.post("/api/db/settings", (req, res) => {
-    try {
-      const updated = updateChambersSettings(req.body);
-      res.json({ success: true, settings: updated });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to update chambers settings." });
-    }
-  });
-
-  app.get("/api/db/all", async (req, res) => {
-    try {
-      const all = await getAllData();
-      res.json(all);
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to retrieve database collections." });
-    }
-  });
-
-  app.post("/api/db/save-record", async (req, res) => {
-    try {
-      const { collection, record } = req.body;
-      if (!collection || !record || !record.id) {
-        return res.status(400).json({ error: "Missing required 'collection' or 'record.id'." });
-      }
-      const saved = await upsertRecord(collection, record);
-      res.json({ success: true, record: saved });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to save record to database." });
-    }
-  });
-
-  app.post("/api/db/delete-record", async (req, res) => {
-    try {
-      const { collection, id } = req.body;
-      if (!collection || !id) {
-        return res.status(400).json({ error: "Missing required 'collection' or 'id'." });
-      }
-      const success = await deleteRecord(collection, id);
-      res.json({ success });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to delete record from database." });
-    }
-  });
-
-  app.post("/api/db/sync", async (req, res) => {
-    try {
-      const synced = await syncCollections(req.body || {});
-      res.json({ success: true, data: synced });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to sync collections with database." });
-    }
-  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: false,
+        hmr: {
+          server: httpServer,
+        },
       },
       appType: "spa",
     });

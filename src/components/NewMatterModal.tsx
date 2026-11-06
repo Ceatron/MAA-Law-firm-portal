@@ -11,19 +11,22 @@ import {
   Clock,
   AlertTriangle,
   Plus,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { PracticeArea, LegalMatter, Client, Advocate } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
 import { DraggableModal } from './common/DraggableModal';
+import { toast } from '../utils/toast';
 
 interface NewMatterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddMatter: (newMatter: LegalMatter) => void;
+  onAddMatter: (newMatter: LegalMatter) => Promise<void> | void;
   clients?: Client[];
   matters?: LegalMatter[];
   advocates?: Advocate[];
-  onAddClient?: (newClient: Client) => void;
+  onAddClient?: (newClient: Client) => Promise<void> | void;
   currentAdvocate?: Advocate;
 }
 
@@ -70,6 +73,8 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
   const [title, setTitle] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [customClientName, setCustomClientName] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isCustomClient, setIsCustomClient] = useState<boolean>(false);
   const [opposingParty, setOpposingParty] = useState('');
   const [practiceArea, setPracticeArea] = useState<PracticeArea>('Civil Litigation');
@@ -126,7 +131,7 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
     setLodgedDate(getYesterdayISO());
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
@@ -241,8 +246,19 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
       createdByName: currentAdvocate?.name || 'Adv. Costa Kimathi',
     };
 
-    onAddMatter(newMatter);
-    onClose();
+    setSaveError(null);
+    setIsSaving(true);
+
+    try {
+      await onAddMatter(newMatter);
+      onClose();
+    } catch (err: any) {
+      console.error('[NewMatterModal] Error registering matter:', err);
+      setSaveError(err.message || 'Database rejected Matter registration. Your inputs have been kept.');
+      toast.error(err.message || 'Database rejected Matter.', 'Registration Failed');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -283,6 +299,27 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Database Save Error Banner */}
+        {saveError && (
+          <div className="bg-rose-50 border-b border-rose-200 px-7 py-3 text-xs text-rose-900 flex items-start justify-between animate-in fade-in">
+            <div className="flex items-start space-x-2.5">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-rose-950">Database Save Rejected</p>
+                <p className="mt-0.5 text-rose-800 font-mono text-[11px] bg-rose-100/50 p-1.5 rounded border border-rose-200/50 break-words">{saveError}</p>
+                <p className="mt-1 text-[11px] text-rose-600">Your matter particulars, assigned counsel, and court details have been retained. Please resolve the issue and retry.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSaveError(null)}
+              className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit}>
@@ -675,9 +712,11 @@ export const NewMatterModal: React.FC<NewMatterModalProps> = ({
               <button
                 type="submit"
                 id="new-matter-submit-btn"
-                className="h-9 px-5 text-xs rounded-lg bg-[#0B63E5] text-white font-bold hover:bg-[#0256D0] shadow-xs cursor-pointer transition-colors"
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 h-9 px-5 text-xs rounded-lg bg-[#0B63E5] text-white font-bold hover:bg-[#0256D0] disabled:bg-stone-300 disabled:cursor-not-allowed shadow-xs cursor-pointer transition-colors"
               >
-                Register Matter
+                {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSaving ? 'Registering Matter...' : 'Register Matter'}</span>
               </button>
             </div>
           </div>

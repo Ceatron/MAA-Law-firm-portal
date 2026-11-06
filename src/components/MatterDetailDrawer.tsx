@@ -57,6 +57,7 @@ import {
   resolveStaffEmail,
 } from '../utils/assignmentNotificationService';
 import { persistSingleTask, deleteStoredTask } from '../utils/chambersDataStorage';
+import ChambersCloudService from '../services/chambersCloudService';
 
 interface MatterDetailDrawerProps {
   matter: LegalMatter | null;
@@ -296,13 +297,29 @@ export const MatterDetailDrawer: React.FC<MatterDetailDrawerProps> = ({
     }
   });
 
+  // Cloud hydration for matter notes
   useEffect(() => {
+    if (!matter?.id) return;
+    let cancelled = false;
+    ChambersCloudService.fetchMatterNotes(matter.id).then((cloudNotes) => {
+      if (!cancelled && cloudNotes && Array.isArray(cloudNotes) && cloudNotes.length > 0) {
+        setCaseNotes(cloudNotes);
+        try {
+          localStorage.setItem(`chambers_matter_notes_${matter.id}`, JSON.stringify(cloudNotes));
+        } catch {}
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [matter?.id]);
+
+  useEffect(() => {
+    if (!matter?.id) return;
     try {
       localStorage.setItem(`chambers_matter_notes_${matter.id}`, JSON.stringify(caseNotes));
     } catch (e) {
       console.warn('Failed to save matter notes:', e);
     }
-  }, [caseNotes, matter.id]);
+  }, [caseNotes, matter?.id]);
 
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');

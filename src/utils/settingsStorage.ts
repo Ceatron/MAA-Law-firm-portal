@@ -1,5 +1,5 @@
 import { ChambersSettings, ChambersCustomizationSettings, PdfTemplateConfig } from '../types';
-import { fetchDbSettings, saveDbSettings } from '../services/chambersDbClient';
+import ChambersCloudService from '../services/chambersCloudService';
 
 export const DEFAULT_PDF_TEMPLATES: PdfTemplateConfig[] = [
   // Invoices
@@ -445,9 +445,9 @@ export const saveChambersSettings = (settings: ChambersSettings): ChambersSettin
     };
     saveChambersSettingsCache(updatedSettings);
 
-    // Asynchronously synchronize with central database
-    saveDbSettings(updatedSettings).catch((err) => {
-      console.warn('[Settings Storage] Server background sync failed:', err);
+    // Asynchronously synchronize with Supabase cloud database
+    ChambersCloudService.upsertChambersSettings(updatedSettings).catch((err) => {
+      console.warn('[Settings Storage] Supabase background sync failed:', err);
     });
 
     return updatedSettings;
@@ -465,21 +465,12 @@ export const saveChambersSettingsAsync = async (settings: ChambersSettings): Pro
   saveChambersSettingsCache(updatedSettings);
 
   try {
-    const serverResult = await saveDbSettings(updatedSettings);
-    if (serverResult && typeof serverResult === 'object') {
-      const merged: ChambersSettings = {
-        ...updatedSettings,
-        ...serverResult,
-        bankDetails: {
-          ...updatedSettings.bankDetails,
-          ...(serverResult.bankDetails || {}),
-        },
-      };
-      saveChambersSettingsCache(merged);
-      return merged;
+    const result = await ChambersCloudService.upsertChambersSettings(updatedSettings);
+    if (!result.success) {
+      console.error('[Settings Storage] Remote Supabase save error:', result.error);
     }
   } catch (err) {
-    console.warn('[Settings Storage] Remote save warning, stored locally:', err);
+    console.warn('[Settings Storage] Remote save exception:', err);
   }
 
   return updatedSettings;
@@ -487,39 +478,44 @@ export const saveChambersSettingsAsync = async (settings: ChambersSettings): Pro
 
 export const fetchAndHydrateChambersSettings = async (): Promise<ChambersSettings> => {
   try {
-    const serverSettings = await fetchDbSettings();
-    if (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0) {
+    const cloudSettings = await ChambersCloudService.fetchChambersSettings();
+    if (cloudSettings && typeof cloudSettings === 'object' && Object.keys(cloudSettings).length > 0) {
       const current = loadChambersSettings();
       const merged: ChambersSettings = {
         ...DEFAULT_CHAMBERS_SETTINGS,
         ...current,
-        ...serverSettings,
+        ...cloudSettings,
         bankDetails: {
           ...DEFAULT_CHAMBERS_SETTINGS.bankDetails,
           ...current.bankDetails,
-          ...(serverSettings.bankDetails || {}),
+          ...(cloudSettings.bankDetails || {}),
         },
         integrations: {
           ...DEFAULT_CHAMBERS_SETTINGS.integrations,
           ...current.integrations,
-          ...(serverSettings.integrations || {}),
+          ...(cloudSettings.integrations || {}),
         },
         compliance: {
           ...DEFAULT_CHAMBERS_SETTINGS.compliance,
           ...current.compliance,
-          ...(serverSettings.compliance || {}),
+          ...(cloudSettings.compliance || {}),
         },
         displayPreferences: {
           ...DEFAULT_CHAMBERS_SETTINGS.displayPreferences,
           ...current.displayPreferences,
-          ...(serverSettings.displayPreferences || {}),
+          ...(cloudSettings.displayPreferences || {}),
+        },
+        customization: {
+          ...DEFAULT_CUSTOMIZATION_SETTINGS,
+          ...(current.customization || {}),
+          ...(cloudSettings.customization || {}),
         },
       };
       saveChambersSettingsCache(merged);
       return merged;
     }
   } catch (err) {
-    console.warn('[Settings Storage] Fetching remote settings failed:', err);
+    console.warn('[Settings Storage] Fetching cloud settings failed:', err);
   }
   return loadChambersSettings();
 };
@@ -530,7 +526,7 @@ export const resetChambersSettings = (): ChambersSettings => {
     window.dispatchEvent(
       new CustomEvent('chambers-settings-updated', { detail: DEFAULT_CHAMBERS_SETTINGS })
     );
-    saveDbSettings(DEFAULT_CHAMBERS_SETTINGS).catch((err) => {
+    ChambersCloudService.upsertChambersSettings(DEFAULT_CHAMBERS_SETTINGS).catch((err) => {
       console.warn('[Settings Storage] Reset central sync warning:', err);
     });
   } catch (err) {

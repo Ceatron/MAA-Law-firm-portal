@@ -55,9 +55,12 @@ import {
   loadSavedQuotes,
   saveStoredQuotes,
   saveStoredQuotesCache,
+  persistSingleQuote,
   deleteStoredQuote,
+  isDummyFeeNote,
+  isDummyPayment,
 } from '../../utils/chambersDataStorage';
-import { fetchAllDbData } from '../../services/chambersDbClient';
+import { toast } from '../../utils/toast';
 import ChambersCloudService from '../../services/chambersCloudService';
 import { downloadInvoicePdf } from '../../utils/invoicePdfGenerator';
 import { isSupabaseConfigured } from '../../utils/supabaseClient';
@@ -97,58 +100,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
     let isCancelled = false;
 
     const loadCentralAndCloudData = async () => {
-      // 1. Fetch from Central Chambers Database
-      try {
-        const dbData = await fetchAllDbData();
-        if (!isCancelled && dbData) {
-          if (Array.isArray(dbData.fee_notes) && dbData.fee_notes.length > 0) {
-            setFeeNotes((prev) => {
-              const map = new Map<string, FeeNote>();
-              dbData.fee_notes.forEach((fn: FeeNote) => {
-                if (fn && (fn.id || fn.invoiceNumber)) map.set(fn.id || fn.invoiceNumber, fn);
-              });
-              prev.forEach((fn) => {
-                if (fn && (fn.id || fn.invoiceNumber)) map.set(fn.id || fn.invoiceNumber, fn);
-              });
-              const merged = Array.from(map.values());
-              saveStoredFeeNotesCache(merged);
-              return merged;
-            });
-          }
-          if (Array.isArray(dbData.payments) && dbData.payments.length > 0) {
-            setPayments((prev) => {
-              const map = new Map<string, PaymentRecord>();
-              dbData.payments.forEach((p: PaymentRecord) => {
-                if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
-              });
-              prev.forEach((p) => {
-                if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
-              });
-              const merged = Array.from(map.values());
-              saveStoredPaymentsCache(merged);
-              return merged;
-            });
-          }
-          if (Array.isArray(dbData.quotes) && dbData.quotes.length > 0) {
-            setQuotes((prev) => {
-              const map = new Map<string, Quotation>();
-              dbData.quotes.forEach((q: Quotation) => {
-                if (q && (q.id || q.quoteNumber)) map.set(q.id || q.quoteNumber, q);
-              });
-              prev.forEach((q) => {
-                if (q && (q.id || q.quoteNumber)) map.set(q.id || q.quoteNumber, q);
-              });
-              const merged = Array.from(map.values());
-              saveStoredQuotesCache(merged);
-              return merged;
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('[BillingView] Central DB hydration notice:', err);
-      }
-
-      // 2. Fetch from Supabase if configured
+      // Fetch directly from Supabase Cloud
       if (!isSupabaseConfigured()) return;
       try {
         const [cloudNotes, cloudPayments, cloudQuotes] = await Promise.all([
@@ -288,15 +240,21 @@ export const BillingView: React.FC<BillingViewProps> = ({
   };
 
   const handleUpdateInvoice = async (updatedInvoice: FeeNote) => {
-    await persistSingleFeeNote(updatedInvoice);
-    setFeeNotes((prev) =>
-      prev.map((fn) => (fn.id === updatedInvoice.id ? updatedInvoice : fn))
-    );
-    showToast(`Fee Note ${updatedInvoice.invoiceNumber} updated successfully.`);
-    setEditingFeeNote(null);
-    setIsGenerateModalOpen(false);
-    if (previewingFeeNote?.id === updatedInvoice.id) {
-      setPreviewingFeeNote(updatedInvoice);
+    try {
+      await persistSingleFeeNote(updatedInvoice);
+      setFeeNotes((prev) =>
+        prev.map((fn) => (fn.id === updatedInvoice.id ? updatedInvoice : fn))
+      );
+      showToast(`Fee Note ${updatedInvoice.invoiceNumber} updated successfully.`);
+      setEditingFeeNote(null);
+      setIsGenerateModalOpen(false);
+      if (previewingFeeNote?.id === updatedInvoice.id) {
+        setPreviewingFeeNote(updatedInvoice);
+      }
+    } catch (err: any) {
+      console.error('[BillingView] Failed to update fee note:', err);
+      toast.error(err.message || 'Database update failed.', 'Update Failed');
+      throw err;
     }
   };
 
@@ -317,50 +275,56 @@ export const BillingView: React.FC<BillingViewProps> = ({
   // PAYMENT RECORDING & RECALCULATION LOGIC
   // ----------------------------------------------------
   const handleRecordPayment = async (newPayment: PaymentRecord) => {
-    await persistSinglePayment(newPayment);
-    // 1. Add to payments list
-    setPayments((prev) => [newPayment, ...prev]);
+    try {
+      await persistSinglePayment(newPayment);
+      // 1. Add to payments list
+      setPayments((prev) => [newPayment, ...prev]);
 
-    // 2. Find and update the linked invoice
-    setFeeNotes((prev) =>
-      prev.map((inv) => {
-        if (inv.id === newPayment.invoiceId || inv.invoiceNumber === newPayment.invoiceNumber) {
-          const prevPaid = inv.amountPaidKES !== undefined
-            ? inv.amountPaidKES
-            : inv.status === 'Paid' ? inv.totalKES : 0;
-          const newAmountPaid = prevPaid + newPayment.amountKES;
-          const newBalance = Math.max(0, inv.totalKES - newAmountPaid);
-          
-          let newStatus = inv.status;
-          if (newBalance === 0) {
-            newStatus = 'Paid';
-          } else if (newAmountPaid > 0) {
-            newStatus = 'Partially Paid';
-          } else {
-            newStatus = 'Unpaid';
+      // 2. Find and update the linked invoice
+      setFeeNotes((prev) =>
+        prev.map((inv) => {
+          if (inv.id === newPayment.invoiceId || inv.invoiceNumber === newPayment.invoiceNumber) {
+            const prevPaid = inv.amountPaidKES !== undefined
+              ? inv.amountPaidKES
+              : inv.status === 'Paid' ? inv.totalKES : 0;
+            const newAmountPaid = prevPaid + newPayment.amountKES;
+            const newBalance = Math.max(0, inv.totalKES - newAmountPaid);
+            
+            let newStatus = inv.status;
+            if (newBalance === 0) {
+              newStatus = 'Paid';
+            } else if (newAmountPaid > 0) {
+              newStatus = 'Partially Paid';
+            } else {
+              newStatus = 'Unpaid';
+            }
+
+            const updatedInv: FeeNote = {
+              ...inv,
+              amountPaidKES: newAmountPaid,
+              balanceKES: newBalance,
+              status: newStatus,
+              paymentRef: newPayment.paymentReference,
+              paymentsCount: (inv.paymentsCount || 0) + 1,
+            };
+            persistSingleFeeNote(updatedInv).catch((err) =>
+              console.warn('[BillingView] Failed to persist invoice payment update:', err)
+            );
+            return updatedInv;
           }
+          return inv;
+        })
+      );
 
-          const updatedInv: FeeNote = {
-            ...inv,
-            amountPaidKES: newAmountPaid,
-            balanceKES: newBalance,
-            status: newStatus,
-            paymentRef: newPayment.paymentReference,
-            paymentsCount: (inv.paymentsCount || 0) + 1,
-          };
-          persistSingleFeeNote(updatedInv).catch((err) =>
-            console.warn('[BillingView] Failed to persist invoice payment update:', err)
-          );
-          return updatedInv;
-        }
-        return inv;
-      })
-    );
-
-    showToast(`Payment of KES ${newPayment.amountKES.toLocaleString()} recorded. Receipt ${newPayment.receiptNumber} generated.`);
+      showToast(`Payment of KES ${newPayment.amountKES.toLocaleString()} recorded. Receipt ${newPayment.receiptNumber} generated.`);
+    } catch (err: any) {
+      console.error('[BillingView] Payment recording rejected:', err);
+      toast.error(err.message || 'Database payment recording rejected.', 'Payment Failed');
+      throw err;
+    }
   };
 
-  const handleDeletePayment = (paymentId: string) => {
+  const handleDeletePayment = async (paymentId: string) => {
     const paymentToDelete = payments.find((p) => p.id === paymentId);
     if (!paymentToDelete) return;
 
@@ -368,54 +332,72 @@ export const BillingView: React.FC<BillingViewProps> = ({
       return;
     }
 
-    // 1. Delete from Supabase & local cache
-    deleteStoredPayment(paymentId);
-    setPayments((prev) => prev.filter((p) => p.id !== paymentId));
+    try {
+      // 1. Delete from Supabase & local cache
+      await deleteStoredPayment(paymentId);
+      setPayments((prev) => prev.filter((p) => p.id !== paymentId));
 
-    // 2. Recalculate invoice
-    setFeeNotes((prev) =>
-      prev.map((inv) => {
-        if (inv.id === paymentToDelete.invoiceId || inv.invoiceNumber === paymentToDelete.invoiceNumber) {
-          const prevPaid = inv.amountPaidKES !== undefined ? inv.amountPaidKES : (inv.status === 'Paid' ? inv.totalKES : 0);
-          const newAmountPaid = Math.max(0, prevPaid - paymentToDelete.amountKES);
-          const newBalance = Math.max(0, inv.totalKES - newAmountPaid);
-          
-          let newStatus = inv.status;
-          if (newBalance === 0) {
-            newStatus = 'Paid';
-          } else if (newAmountPaid > 0) {
-            newStatus = 'Partially Paid';
-          } else {
-            newStatus = 'Unpaid';
+      // 2. Recalculate invoice
+      setFeeNotes((prev) =>
+        prev.map((inv) => {
+          if (inv.id === paymentToDelete.invoiceId || inv.invoiceNumber === paymentToDelete.invoiceNumber) {
+            const prevPaid = inv.amountPaidKES !== undefined ? inv.amountPaidKES : (inv.status === 'Paid' ? inv.totalKES : 0);
+            const newAmountPaid = Math.max(0, prevPaid - paymentToDelete.amountKES);
+            const newBalance = Math.max(0, inv.totalKES - newAmountPaid);
+            
+            let newStatus = inv.status;
+            if (newBalance === 0) {
+              newStatus = 'Paid';
+            } else if (newAmountPaid > 0) {
+              newStatus = 'Partially Paid';
+            } else {
+              newStatus = 'Unpaid';
+            }
+
+            const updatedInv: FeeNote = {
+              ...inv,
+              amountPaidKES: newAmountPaid,
+              balanceKES: newBalance,
+              status: newStatus,
+              paymentsCount: Math.max(0, (inv.paymentsCount || 1) - 1),
+            };
+            persistSingleFeeNote(updatedInv).catch((err) =>
+              console.warn('[BillingView] Failed to persist invoice balance after payment delete:', err)
+            );
+            return updatedInv;
           }
+          return inv;
+        })
+      );
 
-          return {
-            ...inv,
-            amountPaidKES: newAmountPaid,
-            balanceKES: newBalance,
-            status: newStatus,
-            paymentsCount: Math.max(0, (inv.paymentsCount || 1) - 1),
-          };
-        }
-        return inv;
-      })
-    );
-
-    showToast(`Payment ${paymentToDelete.receiptNumber} deleted and invoice balance recalculated.`);
+      showToast(`Payment ${paymentToDelete.receiptNumber} deleted and invoice balance recalculated.`);
+    } catch (err: any) {
+      console.error('[BillingView] Failed to delete payment:', err);
+      toast.error(err.message || 'Database payment delete rejected.', 'Delete Error');
+    }
   };
 
   // ----------------------------------------------------
   // QUOTATION & CONVERSION TO INVOICE LOGIC
   // ----------------------------------------------------
-  const handleSaveQuote = (quote: Quotation) => {
-    setQuotes((prev) => {
-      const exists = prev.some((q) => q.id === quote.id);
-      if (exists) {
-        return prev.map((q) => (q.id === quote.id ? quote : q));
-      }
-      return [quote, ...prev];
-    });
-    showToast(`Quotation ${quote.quoteNumber} saved successfully.`);
+  const handleSaveQuote = async (quote: Quotation) => {
+    try {
+      await persistSingleQuote(quote);
+      setQuotes((prev) => {
+        const exists = prev.some((q) => q.id === quote.id);
+        if (exists) {
+          return prev.map((q) => (q.id === quote.id ? quote : q));
+        }
+        return [quote, ...prev];
+      });
+      showToast(`Quotation ${quote.quoteNumber} saved successfully.`);
+      setIsCreateQuoteModalOpen(false);
+      setEditingQuote(null);
+    } catch (err: any) {
+      console.error('[BillingView] Failed to save quote:', err);
+      toast.error(err.message || 'Database quotation save rejected.', 'Quote Save Failed');
+      throw err;
+    }
   };
 
   const handleUpdateQuoteStatus = (quoteId: string, newStatus: QuoteStatus) => {
@@ -1766,17 +1748,23 @@ export const BillingView: React.FC<BillingViewProps> = ({
         initialSelectedMatterId={selectedMatterForInvoice}
         initialClientId={selectedClientForInvoice}
         onAddInvoice={async (newInvoice) => {
-          await persistSingleFeeNote(newInvoice);
-          setFeeNotes((prev) => {
-            const exists = prev.some((fn) => fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber);
-            if (exists) {
-              return prev.map((fn) => (fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber ? newInvoice : fn));
-            }
-            return [newInvoice, ...prev];
-          });
-          showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created and saved.`);
-          setIsGenerateModalOpen(false);
-          setEditingFeeNote(null);
+          try {
+            await persistSingleFeeNote(newInvoice);
+            setFeeNotes((prev) => {
+              const exists = prev.some((fn) => fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber);
+              if (exists) {
+                return prev.map((fn) => (fn.id === newInvoice.id || fn.invoiceNumber === newInvoice.invoiceNumber ? newInvoice : fn));
+              }
+              return [newInvoice, ...prev];
+            });
+            showToast(`Tax Fee Note ${newInvoice.invoiceNumber} created and saved.`);
+            setIsGenerateModalOpen(false);
+            setEditingFeeNote(null);
+          } catch (err: any) {
+            console.error('[BillingView] Failed to save fee note:', err);
+            toast.error(err.message || 'Database rejected invoice save.', 'Save Failed');
+            throw err;
+          }
         }}
         onUpdateInvoice={handleUpdateInvoice}
         onAddClient={onAddClient}

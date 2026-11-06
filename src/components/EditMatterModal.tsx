@@ -11,6 +11,7 @@ import {
   Gavel,
   AlertTriangle,
   Clock,
+  Loader2,
 } from 'lucide-react';
 import {
   LegalMatter,
@@ -23,12 +24,13 @@ import {
 } from '../types';
 import { loadVisibleStaffRoster, isSysAdminUser } from '../utils/staffStorage';
 import { DraggableModal } from './common/DraggableModal';
+import { toast } from '../utils/toast';
 
 interface EditMatterModalProps {
   isOpen: boolean;
   matter: LegalMatter | null;
   onClose: () => void;
-  onSaveMatter: (updatedMatter: LegalMatter) => void;
+  onSaveMatter: (updatedMatter: LegalMatter) => Promise<void> | void;
   clients?: Client[];
   advocates?: Advocate[];
   currentAdvocate?: Advocate;
@@ -91,6 +93,7 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sync state whenever matter changes or modal opens
   useEffect(() => {
@@ -138,7 +141,7 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -189,12 +192,23 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
       tags: [],
     };
 
-    onSaveMatter(updatedMatter);
-    setToastMessage('Matter changes saved successfully');
-    setTimeout(() => {
-      setToastMessage(null);
-      onClose();
-    }, 400);
+    setIsSaving(true);
+    setErrorMessage(null);
+
+    try {
+      await onSaveMatter(updatedMatter);
+      setToastMessage('Matter changes saved successfully');
+      setTimeout(() => {
+        setToastMessage(null);
+        onClose();
+      }, 400);
+    } catch (err: any) {
+      console.error('[EditMatterModal] Error saving matter updates:', err);
+      setErrorMessage(err.message || 'Database rejected matter update. Your inputs have been kept.');
+      toast.error(err.message || 'Database rejected matter update.', 'Save Failed');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -731,10 +745,11 @@ export const EditMatterModal: React.FC<EditMatterModalProps> = ({
               <button
                 id="edit-matter-save-button"
                 type="submit"
-                className="px-5 py-2 rounded-lg bg-[#0B2840] text-amber-300 font-bold text-xs hover:bg-[#081d2e] shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                disabled={isSaving}
+                className="px-5 py-2 rounded-lg bg-[#0B2840] text-amber-300 font-bold text-xs hover:bg-[#081d2e] disabled:bg-stone-400 disabled:cursor-not-allowed shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Save className="h-3.5 w-3.5" />
-                <span>Save Changes</span>
+                {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                <span>{isSaving ? 'Saving Changes...' : 'Save Changes'}</span>
               </button>
             </div>
           </div>

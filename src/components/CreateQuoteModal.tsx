@@ -12,16 +12,18 @@ import {
   Percent,
   Sparkles,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
 import { Client, LegalMatter, Quotation, QuoteLineItem, QuoteStatus } from '../types';
+import { toast } from '../utils/toast';
 
 interface CreateQuoteModalProps {
   isOpen: boolean;
   onClose: () => void;
   clients: Client[];
   matters: LegalMatter[];
-  onSaveQuote: (quote: Quotation) => void;
-  onAddClient?: (client: Client) => void;
+  onSaveQuote: (quote: Quotation) => Promise<void> | void;
+  onAddClient?: (client: Client) => Promise<void> | void;
   editingQuote?: Quotation | null;
 }
 
@@ -70,6 +72,8 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('Nairobi, Kenya');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Line items
   const [items, setItems] = useState<QuoteLineItem[]>([
@@ -210,7 +214,7 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
     setItems(items.filter((it) => it.id !== id));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     let finalClientId = selectedClientId;
@@ -289,8 +293,19 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    onSaveQuote(newQuote);
-    onClose();
+    setSaveError(null);
+    setIsSaving(true);
+
+    try {
+      await onSaveQuote(newQuote);
+      onClose();
+    } catch (err: any) {
+      console.error('[CreateQuoteModal] Error saving quote:', err);
+      setSaveError(err.message || 'Database rejected Quotation save. Your inputs have been kept.');
+      toast.error(err.message || 'Database rejected Quotation.', 'Quote Failed');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -325,6 +340,19 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 flex-1 overflow-y-auto">
+          {saveError && (
+            <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-2.5 animate-in fade-in">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs">
+                <p className="font-bold text-rose-950">Database Save Rejected</p>
+                <p className="mt-0.5 text-rose-800 font-mono text-[11px] bg-rose-100/50 p-1.5 rounded border border-rose-200/50 break-words">{saveError}</p>
+                <p className="mt-1 text-[11px] text-rose-600">Your quotation items, discounts, and terms have been retained. Please resolve the issue and retry.</p>
+              </div>
+              <button type="button" onClick={() => setSaveError(null)} className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           
           {/* Quote Meta Row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -705,9 +733,11 @@ export const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-[#0098db] hover:bg-[#0087c2] text-white px-5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0098db] hover:bg-[#0087c2] disabled:bg-stone-300 disabled:cursor-not-allowed text-white px-5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
-              {editingQuote ? 'Save Changes' : 'Save Quotation'}
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{isSaving ? 'Saving to Database...' : editingQuote ? 'Save Changes' : 'Save Quotation'}</span>
             </button>
           </div>
         </form>

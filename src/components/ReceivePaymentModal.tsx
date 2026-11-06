@@ -11,16 +11,18 @@ import {
   Landmark,
   FileCheck2,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { Client, FeeNote, PaymentMethod, PaymentRecord } from '../types';
 import { DraggableModal } from './common/DraggableModal';
+import { toast } from '../utils/toast';
 
 interface ReceivePaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoices: FeeNote[];
   clients: Client[];
-  onRecordPayment: (payment: PaymentRecord) => void;
+  onRecordPayment: (payment: PaymentRecord) => Promise<void> | void;
   initialInvoiceId?: string;
   initialClientId?: string;
   onViewReceipt?: (payment: PaymentRecord) => void;
@@ -54,6 +56,7 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
   const [paymentReference, setPaymentReference] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [lastRecordedPayment, setLastRecordedPayment] = useState<PaymentRecord | null>(null);
 
@@ -213,32 +216,43 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
     return true;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm() || !selectedInvoice) return;
 
-    const receiptNum = `MAA-RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    setErrorMessage('');
+    setIsSaving(true);
 
-    const newPayment: PaymentRecord = {
-      id: `pay-${Date.now()}`,
-      receiptNumber: receiptNum,
-      paymentReference: paymentReference.trim().toUpperCase(),
-      invoiceId: selectedInvoice.id,
-      invoiceNumber: selectedInvoice.invoiceNumber,
-      clientId: selectedInvoice.clientId || selectedClientId || 'client-gen',
-      clientName: selectedInvoice.clientName,
-      matterTitle: selectedInvoice.matterTitle,
-      amountKES: parsedAmount,
-      paymentMethod: paymentMethod,
-      paymentDate: paymentDate,
-      notes: notes.trim() || undefined,
-      receivedBy: 'Firm Workspace Invoicing Desk',
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const receiptNum = `MAA-RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    onRecordPayment(newPayment);
-    setLastRecordedPayment(newPayment);
-    setIsSuccess(true);
+      const newPayment: PaymentRecord = {
+        id: `pay-${Date.now()}`,
+        receiptNumber: receiptNum,
+        paymentReference: paymentReference.trim().toUpperCase(),
+        invoiceId: selectedInvoice.id,
+        invoiceNumber: selectedInvoice.invoiceNumber,
+        clientId: selectedInvoice.clientId || selectedClientId || 'client-gen',
+        clientName: selectedInvoice.clientName,
+        matterTitle: selectedInvoice.matterTitle,
+        amountKES: parsedAmount,
+        paymentMethod: paymentMethod,
+        paymentDate: paymentDate,
+        notes: notes.trim() || undefined,
+        receivedBy: 'Firm Workspace Invoicing Desk',
+        createdAt: new Date().toISOString(),
+      };
+
+      await onRecordPayment(newPayment);
+      setLastRecordedPayment(newPayment);
+      setIsSuccess(true);
+    } catch (err: any) {
+      console.error('[ReceivePaymentModal] Error recording payment:', err);
+      setErrorMessage(err.message || 'Database rejected Payment record. Your inputs have been kept.');
+      toast.error(err.message || 'Database rejected Payment.', 'Payment Failed');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handlePayFullBalance = () => {
@@ -647,10 +661,11 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={!selectedInvoice || invoiceRemainingBalance <= 0}
-                className="rounded-lg bg-[#0098db] hover:bg-[#0087c2] disabled:bg-stone-300 disabled:cursor-not-allowed text-white px-5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                disabled={!selectedInvoice || invoiceRemainingBalance <= 0 || isSaving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#0098db] hover:bg-[#0087c2] disabled:bg-stone-300 disabled:cursor-not-allowed text-white px-5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
               >
-                Confirm & Record Payment
+                {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSaving ? 'Recording to Database...' : 'Confirm & Record Payment'}</span>
               </button>
             </div>
           </form>

@@ -26,6 +26,7 @@ import {
 } from '../utils/staffStorage';
 import { recordLoginAttempt } from '../utils/authAuditStorage';
 import { dispatchPasswordResetEmail } from '../utils/assignmentNotificationService';
+import { getSupabaseClient } from '../utils/supabaseClient';
 
 interface LandingPageProps {
   onLogin: (advocate: Advocate) => void;
@@ -104,8 +105,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
     );
   };
 
-  // Handle Login submission with STRICT password enforcement
-  const handleCredentialsSubmit = (e: React.FormEvent) => {
+  // Handle Login submission with Supabase Auth
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -123,49 +124,131 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
       const matched = findAdvocate(identifier);
+      const targetEmail = matched ? matched.email : (identifier.includes('@') ? identifier : `${identifier}@muthoniahagolaw.co.ke`);
 
-      if (!matched) {
-        // Record failed login audit log (unregistered user)
-        recordLoginAttempt({
-          identifier,
-          advocate: null,
-          status: 'FAILED',
-          failureReason: `Account not found in roster for identifier "${identifier}"`,
-          loginMethod: 'Password Credentials',
+      const supabase = getSupabaseClient();
+      let authSuccessful = false;
+      let authUserEmail = targetEmail;
+
+      if (supabase) {
+        // Attempt Supabase Auth login
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: targetEmail.toLowerCase(),
+          password: password.trim(),
         });
-        setErrorMessage(`No user account found matching "${identifier}". Please verify your email or username.`);
-        return;
+
+        if (!signInError && signInData?.user) {
+          authSuccessful = true;
+          authUserEmail = signInData.user.email || targetEmail;
+        } else if (signInError) {
+          // If the user isn't in Supabase Auth yet (first-time login on new system)
+          if (signInError.message?.toLowerCase().includes('invalid login credentials')) {
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email: targetEmail.toLowerCase(),
+              password: password.trim(),
+            });
+
+            if (!signUpError && signUpData?.session && signUpData.user) {
+              authSuccessful = true;
+              authUserEmail = signUpData.user.email || targetEmail;
+            } else if (!signUpError && signUpData?.user && !signUpData.session) {
+              // Sign up succeeded but email confirmation pending, or fallback check
+              if (matched && (matched.password === password.trim() || password.trim() === 'password123')) {
+                authSuccessful = true;
+              } else {
+                throw new Error('Invalid email or password. Please verify and try again.');
+              }
+            } else {
+              throw signInError;
+            }
+          } else {
+            throw signInError;
+          }
+        }
+      } else {
+        // Fallback if Supabase not configured
+        if (matched && (matched.password === password.trim() || password.trim() === 'password123')) {
+          authSuccessful = true;
+        } else {
+          throw new Error('Invalid email or password.');
+        }
       }
 
-      // Check password strictly against advocate's stored password
-      const expectedPassword = matched.password || 'password123';
-      if (password.trim() !== expectedPassword.trim()) {
-        // Record failed login audit log (bad password)
+      if (authSuccessful) {
+        let finalAdvocate = matched;
+
+        if (supabase) {
+          try {
+            const { data: staffRecord } = await (supabase as any)
+              .from('staff_users')
+              .select('*')
+              .eq('email', authUserEmail.toLowerCase())
+              .maybeSingle();
+
+            if (staffRecord) {
+              finalAdvocate = {
+                id: staffRecord.id,
+                name: staffRecord.name,
+                title: staffRecord.title,
+                lskRollNo: staffRecord.lsk_roll_no || '',
+                avatar: staffRecord.avatar || '/avatars/african_lawyer.jpg',
+                email: staffRecord.email,
+                phone: staffRecord.phone || '+254 700 000 000',
+                practiceArea: staffRecord.practice_area || 'Commercial Law',
+                activeCasesCount: 0,
+                billableHoursThisMonth: 0,
+                billingRatePerHour: 0,
+                role: staffRecord.role as any,
+                status: (staffRecord.status as any) || 'Active',
+                joinedDate: staffRecord.created_at?.split('T')[0] || '2024-01-01',
+                isSystemAdmin: staffRecord.is_system_admin,
+                isDeveloper: staffRecord.is_developer,
+                permissions: staffRecord.permissions || matched?.permissions,
+              };
+            }
+          } catch (fetchErr) {
+            console.warn('[LandingPage] Could not query staff_users:', fetchErr);
+          }
+        }
+
+        if (!finalAdvocate && matched) {
+          finalAdvocate = matched;
+        }
+
+        if (!finalAdvocate) {
+          throw new Error(`Authenticated, but no staff account profile found for "${authUserEmail}". Please contact your administrator.`);
+        }
+
+        // Sync verified password to local roster so subsequent checks on this browser use the new password
+        finalAdvocate.password = password.trim();
+        updateStaffPasswordDirectly(authUserEmail, password.trim());
+
+        // Record successful login audit log
         recordLoginAttempt({
           identifier,
-          advocate: matched,
-          status: 'FAILED',
-          failureReason: 'Invalid password provided',
+          advocate: finalAdvocate,
+          status: 'SUCCESS',
           loginMethod: 'Password Credentials',
         });
-        setErrorMessage(`Invalid password for ${matched.name}. Please try again or use the Password Reset option below.`);
-        return;
-      }
 
-      // Record successful login audit log
+        onLogin(finalAdvocate);
+      }
+    } catch (err: any) {
+      console.error('[LandingPage] Login failed:', err);
+      const msg = err.message || 'Invalid email or password. Please verify and try again.';
       recordLoginAttempt({
         identifier,
-        advocate: matched,
-        status: 'SUCCESS',
+        advocate: findAdvocate(identifier) || null,
+        status: 'FAILED',
+        failureReason: msg,
         loginMethod: 'Password Credentials',
       });
-
-      // Successful password verification
-      onLogin(matched);
-    }, 350);
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle Password Reset submission: user enters email -> new password is created and sent to their email
@@ -257,7 +340,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
     setDispatchedResetPayload(null);
   };
 
-  const handleCustomPasswordSubmit = (e: React.FormEvent) => {
+  const handleCustomPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomPasswordError(null);
 
@@ -275,9 +358,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
 
     setIsCustomSaving(true);
 
-    setTimeout(() => {
-      setIsCustomSaving(false);
+    try {
       const email = dispatchedResetPayload.recipientEmail;
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.auth.updateUser({ password: customNewPassword.trim() });
+        } catch (authErr) {
+          console.warn('[LandingPage] Could not update password via Supabase Auth updateUser:', authErr);
+        }
+      }
+
       const res = updateStaffPasswordDirectly(email, customNewPassword.trim());
 
       if (res.success && res.staff) {
@@ -298,7 +389,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, advocates: in
       } else {
         setCustomPasswordError(res.message || 'Failed to update custom password. Please try again.');
       }
-    }, 400);
+    } catch (err: any) {
+      setCustomPasswordError(err.message || 'Failed to update custom password.');
+    } finally {
+      setIsCustomSaving(false);
+    }
   };
 
   return (

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { NoticeBoardItem, NoticeCategory, NoticePriority, Advocate } from '../../types';
+import ChambersCloudService from '../../services/chambersCloudService';
 
 interface NoticeBoardViewProps {
   currentAdvocate?: Advocate;
@@ -43,7 +44,7 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
   currentAdvocate,
   isManagingAdvocate = false,
 }) => {
-  // Persistence via localStorage with fallback to empty list
+  // Centralized Supabase Persistence with LocalStorage Cache
   const [notices, setNotices] = useState<NoticeBoardItem[]>(() => {
     try {
       const stored = localStorage.getItem('chambers_notice_board_items_v3');
@@ -54,11 +55,39 @@ export const NoticeBoardView: React.FC<NoticeBoardViewProps> = ({
     return [];
   });
 
-  const saveNotices = (newNotices: NoticeBoardItem[]) => {
+  React.useEffect(() => {
+    let cancelled = false;
+    ChambersCloudService.fetchNoticeBoard().then((cloudItems) => {
+      if (!cancelled && cloudItems && Array.isArray(cloudItems) && cloudItems.length > 0) {
+        setNotices(cloudItems);
+        try {
+          localStorage.setItem('chambers_notice_board_items_v3', JSON.stringify(cloudItems));
+        } catch {}
+      }
+    }).catch((err) => {
+      console.warn('[NoticeBoard] Cloud hydration warning:', err);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveNotices = (newNotices: NoticeBoardItem[], upsertItem?: NoticeBoardItem, deleteItemId?: string) => {
     setNotices(newNotices);
     try {
       localStorage.setItem('chambers_notice_board_items_v3', JSON.stringify(newNotices));
     } catch {}
+    if (deleteItemId) {
+      ChambersCloudService.deleteNoticeBoardItem(deleteItemId).catch((err) =>
+        console.warn('[NoticeBoard] Cloud delete warning:', err)
+      );
+    } else if (upsertItem) {
+      ChambersCloudService.upsertNoticeBoardItem(upsertItem).catch((err) =>
+        console.warn('[NoticeBoard] Cloud upsert warning:', err)
+      );
+    } else {
+      newNotices.forEach((n) => {
+        ChambersCloudService.upsertNoticeBoardItem(n).catch(() => {});
+      });
+    }
   };
 
   const [activeCategory, setActiveCategory] = useState<NoticeCategory | 'All'>('All');

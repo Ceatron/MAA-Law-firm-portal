@@ -31,11 +31,6 @@ import {
 } from '../types';
 import ChambersCloudService from '../services/chambersCloudService';
 import {
-  fetchAllDbData,
-  saveRecordToDb,
-  deleteRecordFromDb,
-} from '../services/chambersDbClient';
-import {
   loadChambersSettings,
   saveChambersSettingsCache,
 } from './settingsStorage';
@@ -113,7 +108,11 @@ export const saveStoredMatters = async (matters: LegalMatter[]): Promise<void> =
 
 export const persistSingleMatter = async (matter: LegalMatter): Promise<void> => {
   // 1. Immediately persist to cloud
-  await ChambersCloudService.upsertMatter(matter);
+  const result = await ChambersCloudService.upsertMatter(matter);
+  if (!result.success) {
+    console.error('[Storage] Cloud matter upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected matter record.');
+  }
   // 2. Update local cache & notify UI
   const current = loadSavedMatters();
   const idx = current.findIndex((m) => m.id === matter.id);
@@ -123,7 +122,11 @@ export const persistSingleMatter = async (matter: LegalMatter): Promise<void> =>
 
 export const deleteStoredMatter = async (matterId: string): Promise<void> => {
   // 1. Immediately delete from cloud
-  await ChambersCloudService.deleteMatter(matterId);
+  const result = await ChambersCloudService.deleteMatter(matterId);
+  if (!result.success) {
+    console.error('[Storage] Cloud matter delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected matter deletion.');
+  }
   // 2. Update local cache & notify UI
   const current = loadSavedMatters().filter((m) => m.id !== matterId);
   saveStoredMattersCache(current);
@@ -151,7 +154,11 @@ export const saveStoredClients = async (clients: Client[]): Promise<void> => {
 };
 
 export const persistSingleClient = async (client: Client): Promise<void> => {
-  await ChambersCloudService.upsertClient(client);
+  const result = await ChambersCloudService.upsertClient(client);
+  if (!result.success) {
+    console.error('[Storage] Cloud client upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected client record.');
+  }
   const current = loadSavedClients();
   const idx = current.findIndex((c) => c.id === client.id);
   const updated = idx >= 0 ? current.map((c) => (c.id === client.id ? client : c)) : [client, ...current];
@@ -159,7 +166,11 @@ export const persistSingleClient = async (client: Client): Promise<void> => {
 };
 
 export const deleteStoredClient = async (clientId: string): Promise<void> => {
-  await ChambersCloudService.deleteClient(clientId);
+  const result = await ChambersCloudService.deleteClient(clientId);
+  if (!result.success) {
+    console.error('[Storage] Cloud client delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected client deletion.');
+  }
   const current = loadSavedClients().filter((c) => c.id !== clientId);
   saveStoredClientsCache(current);
 };
@@ -202,7 +213,11 @@ export const saveStoredTasks = async (tasks: TaskItem[]): Promise<void> => {
 };
 
 export const persistSingleTask = async (task: TaskItem): Promise<void> => {
-  await ChambersCloudService.upsertTask(task);
+  const result = await ChambersCloudService.upsertTask(task);
+  if (!result.success) {
+    console.error('[Storage] Cloud task upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected task record.');
+  }
   const current = loadSavedTasks();
   const idx = current.findIndex((t) => t.id === task.id);
   const updated = idx >= 0 ? current.map((t) => (t.id === task.id ? task : t)) : [task, ...current];
@@ -210,7 +225,11 @@ export const persistSingleTask = async (task: TaskItem): Promise<void> => {
 };
 
 export const deleteStoredTask = async (taskId: string): Promise<void> => {
-  await ChambersCloudService.deleteTask(taskId);
+  const result = await ChambersCloudService.deleteTask(taskId);
+  if (!result.success) {
+    console.error('[Storage] Cloud task delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected task deletion.');
+  }
   const current = loadSavedTasks().filter((t) => t.id !== taskId);
   saveStoredTasksCache(current);
 };
@@ -237,7 +256,11 @@ export const saveStoredDeadlines = async (deadlines: DeadlineItem[]): Promise<vo
 };
 
 export const persistSingleDeadline = async (deadline: DeadlineItem): Promise<void> => {
-  await ChambersCloudService.upsertDeadline(deadline);
+  const result = await ChambersCloudService.upsertDeadline(deadline);
+  if (!result.success) {
+    console.error('[Storage] Cloud deadline upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected deadline record.');
+  }
   const current = loadSavedDeadlines();
   const idx = current.findIndex((d) => d.id === deadline.id);
   const updated = idx >= 0 ? current.map((d) => (d.id === deadline.id ? deadline : d)) : [deadline, ...current];
@@ -245,7 +268,11 @@ export const persistSingleDeadline = async (deadline: DeadlineItem): Promise<voi
 };
 
 export const deleteStoredDeadline = async (deadlineId: string): Promise<void> => {
-  await ChambersCloudService.deleteDeadline(deadlineId);
+  const result = await ChambersCloudService.deleteDeadline(deadlineId);
+  if (!result.success) {
+    console.error('[Storage] Cloud deadline delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected deadline deletion.');
+  }
   const current = loadSavedDeadlines().filter((d) => d.id !== deadlineId);
   saveStoredDeadlinesCache(current);
 };
@@ -322,23 +349,78 @@ export const deleteStoredNotification = async (notificationId: string): Promise<
 };
 
 // ============================================================================
-// 7. BILLING: FEE NOTES (INVOICES)
+// 7. BILLING: FEE NOTES (INVOICES) & PAYMENTS INTEGRITY
 // ============================================================================
+
+export const isDummyFeeNote = (fn: any): boolean => {
+  if (!fn) return true;
+  const id = String(fn.id || '');
+  const invNum = String(fn.invoiceNumber || '');
+  const clientName = String(fn.clientName || '');
+  const subject = String(fn.subject || '');
+
+  if (['fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(id)) {
+    return true;
+  }
+  if (['INV-000001', 'INV-000002', 'INV-000003'].includes(invNum)) {
+    if (
+      clientName.includes('Stanbic') ||
+      clientName.includes('Apex') ||
+      clientName.includes('East Africa') ||
+      subject.includes('Commercial Recovery') ||
+      subject.includes('ELC Environmental') ||
+      subject.includes('Tax Appeals') ||
+      fn.paymentRef === 'MPESA-SBK78231' ||
+      fn.paymentRef === 'TXN-APX99214' ||
+      fn.paymentRef === 'CHQ-EAG00192'
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const isDummyPayment = (p: any): boolean => {
+  if (!p) return true;
+  const id = String(p.id || '');
+  const payRef = String(p.paymentReference || '');
+  const rcpNum = String(p.receiptNumber || '');
+  const invNum = String(p.invoiceNumber || '');
+  const invId = String(p.invoiceId || '');
+  const client = String(p.clientName || '');
+
+  if (['pay-1', 'pay-2', 'pay-3'].includes(id)) return true;
+  if (['MPESA-SBK78231', 'TXN-APX99214', 'CHQ-EAG00192'].includes(payRef)) return true;
+  if (['MAA-RCP-2026-001', 'MAA-RCP-2026-002', 'MAA-RCP-2026-003'].includes(rcpNum)) return true;
+  if (['fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(invId)) return true;
+  if (
+    ['INV-000001', 'INV-000002', 'INV-000003'].includes(invNum) &&
+    (client.includes('Stanbic') || client.includes('Apex') || client.includes('East Africa'))
+  ) {
+    return true;
+  }
+  return false;
+};
+
 export const loadSavedFeeNotes = (): FeeNote[] => {
-  return safeGet<FeeNote[]>(STORAGE_KEYS.FEE_NOTES, []);
+  const loaded = safeGet<FeeNote[]>(STORAGE_KEYS.FEE_NOTES, []);
+  const filtered = (loaded || []).filter((fn) => !isDummyFeeNote(fn));
+  if (filtered.length !== loaded.length) {
+    safeSet(STORAGE_KEYS.FEE_NOTES, filtered);
+  }
+  return filtered;
 };
 
 export const saveStoredFeeNotesCache = (feeNotes: FeeNote[]): void => {
-  safeSet(STORAGE_KEYS.FEE_NOTES, feeNotes);
-  window.dispatchEvent(new CustomEvent('chambers-invoices-updated', { detail: feeNotes }));
+  const cleaned = (feeNotes || []).filter((fn) => !isDummyFeeNote(fn));
+  safeSet(STORAGE_KEYS.FEE_NOTES, cleaned);
+  window.dispatchEvent(new CustomEvent('chambers-invoices-updated', { detail: cleaned }));
 };
 
 export const saveStoredFeeNotes = async (feeNotes: FeeNote[]): Promise<void> => {
-  saveStoredFeeNotesCache(feeNotes);
-  for (const fn of feeNotes) {
-    saveRecordToDb('fee_notes', fn).catch((err) =>
-      console.warn('[Storage] Background feeNote DB save failed:', err)
-    );
+  const cleaned = (feeNotes || []).filter((fn) => !isDummyFeeNote(fn));
+  saveStoredFeeNotesCache(cleaned);
+  for (const fn of cleaned) {
     ChambersCloudService.upsertFeeNote(fn).catch((err) =>
       console.warn('[Storage] Background feeNote upsert failed:', err)
     );
@@ -346,18 +428,17 @@ export const saveStoredFeeNotes = async (feeNotes: FeeNote[]): Promise<void> => 
 };
 
 export const persistSingleFeeNote = async (feeNote: FeeNote): Promise<void> => {
+  if (isDummyFeeNote(feeNote)) return;
   if (feeNote.invoiceNumber) {
     recordUsedInvoiceNumber(feeNote.invoiceNumber);
   }
-  // 1. Immediately persist to central server DB
-  await saveRecordToDb('fee_notes', feeNote).catch((err) =>
-    console.warn('[Storage] Immediate feeNote DB save failed:', err)
-  );
-  // 2. Synchronize to Supabase if configured
-  ChambersCloudService.upsertFeeNote(feeNote).catch((err) =>
-    console.warn('[Storage] Cloud feeNote upsert warning:', err)
-  );
-  // 3. Update local cache & notify UI
+  // 1. Immediately persist to Supabase
+  const result = await ChambersCloudService.upsertFeeNote(feeNote);
+  if (!result.success) {
+    console.error('[Storage] Cloud feeNote upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected Fee Note save.');
+  }
+  // 2. Update local cache & notify UI
   const current = loadSavedFeeNotes();
   const idx = current.findIndex(
     (fn) => fn.id === feeNote.id || (fn.invoiceNumber && fn.invoiceNumber === feeNote.invoiceNumber)
@@ -369,24 +450,31 @@ export const persistSingleFeeNote = async (feeNote: FeeNote): Promise<void> => {
 };
 
 export const deleteStoredFeeNote = async (feeNoteId: string): Promise<void> => {
-  await deleteRecordFromDb('fee_notes', feeNoteId).catch((err) =>
-    console.warn('[Storage] DB feeNote delete failed:', err)
-  );
-  ChambersCloudService.deleteFeeNote(feeNoteId).catch((err) =>
-    console.warn('[Storage] Cloud feeNote delete warning:', err)
-  );
+  const result = await ChambersCloudService.deleteFeeNote(feeNoteId);
+  if (!result.success) {
+    console.error('[Storage] Cloud feeNote delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected Fee Note deletion.');
+  }
   const current = loadSavedFeeNotes().filter((fn) => fn.id !== feeNoteId);
   saveStoredFeeNotesCache(current);
 };
 
 /**
  * Computes the next sequential invoice number in the format INV-000001, INV-000002, etc.
- * Finds the highest sequence number from existing fee notes and ensures consecutive progression.
+ * Finds the highest sequence number from existing genuine fee notes and ensures consecutive progression.
  */
 export const getNextSequentialInvoiceNumber = (existingInvoices?: FeeNote[]): string => {
-  const invoices = existingInvoices && existingInvoices.length > 0 ? existingInvoices : loadSavedFeeNotes();
-  let maxSeq = 0;
+  const allInvoices = existingInvoices && existingInvoices.length > 0 ? existingInvoices : loadSavedFeeNotes();
+  const invoices = (allInvoices || []).filter((inv) => !isDummyFeeNote(inv));
 
+  if (invoices.length === 0) {
+    try {
+      localStorage.removeItem('chambers_invoice_last_seq');
+    } catch {}
+    return 'INV-000001';
+  }
+
+  let maxSeq = 0;
   for (const inv of invoices) {
     if (!inv.invoiceNumber) continue;
     const match = inv.invoiceNumber.match(/(\d+)/);
@@ -400,7 +488,7 @@ export const getNextSequentialInvoiceNumber = (existingInvoices?: FeeNote[]): st
 
   try {
     const savedLast = parseInt(localStorage.getItem('chambers_invoice_last_seq') || '0', 10);
-    if (!isNaN(savedLast) && savedLast > maxSeq) {
+    if (!isNaN(savedLast) && savedLast > maxSeq && savedLast <= maxSeq + 1) {
       maxSeq = savedLast;
     }
   } catch {
@@ -436,20 +524,23 @@ export const recordUsedInvoiceNumber = (invNumber: string): void => {
 // 8. BILLING: PAYMENTS
 // ============================================================================
 export const loadSavedPayments = (): PaymentRecord[] => {
-  return safeGet<PaymentRecord[]>(STORAGE_KEYS.PAYMENTS, []);
+  const loaded = safeGet<PaymentRecord[]>(STORAGE_KEYS.PAYMENTS, []);
+  const filtered = (loaded || []).filter((p) => !isDummyPayment(p));
+  if (filtered.length !== loaded.length) {
+    safeSet(STORAGE_KEYS.PAYMENTS, filtered);
+  }
+  return filtered;
 };
 
 export const saveStoredPaymentsCache = (payments: PaymentRecord[]): void => {
-  safeSet(STORAGE_KEYS.PAYMENTS, payments);
-  window.dispatchEvent(new CustomEvent('chambers-payments-updated', { detail: payments }));
+  const cleaned = (payments || []).filter((p) => !isDummyPayment(p));
+  safeSet(STORAGE_KEYS.PAYMENTS, cleaned);
+  window.dispatchEvent(new CustomEvent('chambers-payments-updated', { detail: cleaned }));
 };
 
 export const saveStoredPayments = async (payments: PaymentRecord[]): Promise<void> => {
   saveStoredPaymentsCache(payments);
   for (const pay of payments) {
-    saveRecordToDb('payments', pay).catch((err) =>
-      console.warn('[Storage] Background payment DB save failed:', err)
-    );
     ChambersCloudService.upsertPayment(pay).catch((err) =>
       console.warn('[Storage] Background payment upsert failed:', err)
     );
@@ -457,15 +548,14 @@ export const saveStoredPayments = async (payments: PaymentRecord[]): Promise<voi
 };
 
 export const persistSinglePayment = async (payment: PaymentRecord): Promise<void> => {
-  // 1. Immediately persist to central server DB
-  await saveRecordToDb('payments', payment).catch((err) =>
-    console.warn('[Storage] Immediate payment DB save failed:', err)
-  );
-  // 2. Synchronize to Supabase if configured
-  ChambersCloudService.upsertPayment(payment).catch((err) =>
-    console.warn('[Storage] Cloud payment upsert warning:', err)
-  );
-  // 3. Update local cache & notify UI
+  if (isDummyPayment(payment)) return;
+  // 1. Immediately persist to Supabase
+  const result = await ChambersCloudService.upsertPayment(payment);
+  if (!result.success) {
+    console.error('[Storage] Cloud payment upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected Payment record.');
+  }
+  // 2. Update local cache & notify UI
   const current = loadSavedPayments();
   const idx = current.findIndex((p) => p.id === payment.id || (p.receiptNumber && p.receiptNumber === payment.receiptNumber));
   const updated = idx >= 0 ? current.map((p) => (p.id === payment.id || p.receiptNumber === payment.receiptNumber ? payment : p)) : [payment, ...current];
@@ -473,12 +563,11 @@ export const persistSinglePayment = async (payment: PaymentRecord): Promise<void
 };
 
 export const deleteStoredPayment = async (paymentId: string): Promise<void> => {
-  await deleteRecordFromDb('payments', paymentId).catch((err) =>
-    console.warn('[Storage] DB payment delete failed:', err)
-  );
-  ChambersCloudService.deletePayment(paymentId).catch((err) =>
-    console.warn('[Storage] Cloud payment delete warning:', err)
-  );
+  const result = await ChambersCloudService.deletePayment(paymentId);
+  if (!result.success) {
+    console.error('[Storage] Cloud payment delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected Payment deletion.');
+  }
   const current = loadSavedPayments().filter((p) => p.id !== paymentId);
   saveStoredPaymentsCache(current);
 };
@@ -505,7 +594,11 @@ export const saveStoredQuotes = async (quotes: Quotation[]): Promise<void> => {
 };
 
 export const persistSingleQuote = async (quote: Quotation): Promise<void> => {
-  await ChambersCloudService.upsertQuote(quote);
+  const result = await ChambersCloudService.upsertQuote(quote);
+  if (!result.success) {
+    console.error('[Storage] Cloud quote upsert failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected quotation record.');
+  }
   const current = loadSavedQuotes();
   const idx = current.findIndex((q) => q.id === quote.id);
   const updated = idx >= 0 ? current.map((q) => (q.id === quote.id ? quote : q)) : [quote, ...current];
@@ -513,7 +606,11 @@ export const persistSingleQuote = async (quote: Quotation): Promise<void> => {
 };
 
 export const deleteStoredQuote = async (quoteId: string): Promise<void> => {
-  await ChambersCloudService.deleteQuote(quoteId);
+  const result = await ChambersCloudService.deleteQuote(quoteId);
+  if (!result.success) {
+    console.error('[Storage] Cloud quote delete failed:', result.error);
+    throw new Error(result.error?.message || 'Database rejected quotation deletion.');
+  }
   const current = loadSavedQuotes().filter((q) => q.id !== quoteId);
   saveStoredQuotesCache(current);
 };
@@ -856,85 +953,49 @@ export async function syncAllChambersDataFromCloud(user: Advocate): Promise<{
  */
 export async function hydrateFromCentralDatabase(): Promise<void> {
   try {
-    const data = await fetchAllDbData();
-    if (!data) return;
+    const [cloudFeeNotes, cloudPayments, cloudMatters, cloudClients] = await Promise.all([
+      ChambersCloudService.fetchFeeNotes().catch(() => null),
+      ChambersCloudService.fetchPayments().catch(() => null),
+      ChambersCloudService.fetchMatters({ role: 'Managing Partner', name: 'Managing Partner' } as any).catch(() => null),
+      ChambersCloudService.fetchClients().catch(() => null),
+    ]);
 
-    if (Array.isArray(data.fee_notes) && data.fee_notes.length > 0) {
-      const local = loadSavedFeeNotes();
-      const map = new Map<string, FeeNote>();
-      data.fee_notes.forEach((fn: FeeNote) => {
-        if (fn && (fn.id || fn.invoiceNumber)) {
-          map.set(fn.id || fn.invoiceNumber, fn);
-        }
-      });
-      local.forEach((fn: FeeNote) => {
-        if (fn && (fn.id || fn.invoiceNumber)) {
-          map.set(fn.id || fn.invoiceNumber, fn);
-        }
-      });
-      const merged = Array.from(map.values());
-      // Keep sorted sequentially
-      merged.sort((a, b) => {
+    if (cloudFeeNotes && Array.isArray(cloudFeeNotes)) {
+      const validRemoteFeeNotes = cloudFeeNotes.filter((fn: any) => !isDummyFeeNote(fn));
+      validRemoteFeeNotes.sort((a, b) => {
         const seqA = parseInt(a.invoiceNumber?.replace(/\D/g, '') || '0', 10);
         const seqB = parseInt(b.invoiceNumber?.replace(/\D/g, '') || '0', 10);
         return seqA - seqB;
       });
-      saveStoredFeeNotesCache(merged);
-      merged.forEach((fn) => {
-        if (fn.invoiceNumber) recordUsedInvoiceNumber(fn.invoiceNumber);
-      });
+      saveStoredFeeNotesCache(validRemoteFeeNotes);
+      if (validRemoteFeeNotes.length === 0) {
+        try {
+          localStorage.removeItem('chambers_invoice_last_seq');
+        } catch {}
+      } else {
+        validRemoteFeeNotes.forEach((fn) => {
+          if (fn.invoiceNumber) recordUsedInvoiceNumber(fn.invoiceNumber);
+        });
+      }
     }
 
-    if (Array.isArray(data.payments) && data.payments.length > 0) {
-      const local = loadSavedPayments();
-      const map = new Map<string, PaymentRecord>();
-      data.payments.forEach((p: PaymentRecord) => {
-        if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
-      });
-      local.forEach((p: PaymentRecord) => {
-        if (p && (p.id || p.receiptNumber)) map.set(p.id || p.receiptNumber, p);
-      });
-      saveStoredPaymentsCache(Array.from(map.values()));
+    if (cloudPayments && Array.isArray(cloudPayments)) {
+      const validRemotePayments = cloudPayments.filter((p: any) => !isDummyPayment(p));
+      saveStoredPaymentsCache(validRemotePayments);
     }
 
-    if (Array.isArray(data.matters) && data.matters.length > 0) {
-      const local = loadSavedMatters();
-      const map = new Map<string, LegalMatter>();
-      data.matters.forEach((m: LegalMatter) => {
-        if (m && m.id) map.set(m.id, m);
-      });
-      local.forEach((m: LegalMatter) => {
-        if (m && m.id) map.set(m.id, m);
-      });
-      saveStoredMattersCache(Array.from(map.values()));
+    if (cloudMatters && Array.isArray(cloudMatters)) {
+      const validRemoteMatters = cloudMatters.filter(
+        (m: any) => m && m.referenceNumber !== 'MAA/CIV/2026/735' && !m.referenceNumber?.includes('735')
+      );
+      saveStoredMattersCache(validRemoteMatters);
     }
 
-    if (Array.isArray(data.clients) && data.clients.length > 0) {
-      const local = loadSavedClients();
-      const map = new Map<string, Client>();
-      data.clients.forEach((c: Client) => {
-        if (c && c.id) map.set(c.id, c);
-      });
-      local.forEach((c: Client) => {
-        if (c && c.id) map.set(c.id, c);
-      });
-      saveStoredClientsCache(Array.from(map.values()));
-    }
-
-    if (data.settings && typeof data.settings === 'object' && Object.keys(data.settings).length > 0) {
-      const currentSettings = loadChambersSettings();
-      const mergedSettings = {
-        ...currentSettings,
-        ...data.settings,
-        bankDetails: {
-          ...currentSettings.bankDetails,
-          ...(data.settings.bankDetails || {}),
-        },
-      };
-      saveChambersSettingsCache(mergedSettings);
+    if (cloudClients && Array.isArray(cloudClients)) {
+      saveStoredClientsCache(cloudClients);
     }
   } catch (err) {
-    console.warn('[Storage] Hydration from central database failed:', err);
+    console.warn('[Storage] Hydration from Supabase failed:', err);
   }
 }
 

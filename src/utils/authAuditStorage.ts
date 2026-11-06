@@ -1,4 +1,5 @@
 import { LoginAuditEntry, Advocate } from '../types';
+import ChambersCloudService from '../services/chambersCloudService';
 
 const LOGIN_AUDIT_STORAGE_KEY = 'muthoni_ahago_login_audit_logs_v2';
 
@@ -81,6 +82,9 @@ export const recordLoginAttempt = (params: RecordLoginParams): LoginAuditEntry =
   // Prepend to top of logs (limit to last 500 records)
   const updated = [newEntry, ...currentLogs].slice(0, 500);
   saveLoginAuditLogs(updated);
+  ChambersCloudService.recordLoginAuditLog(newEntry).catch((err) =>
+    console.warn('[AuthAudit] Supabase record error:', err)
+  );
   return newEntry;
 };
 

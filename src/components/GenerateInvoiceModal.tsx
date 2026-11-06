@@ -20,6 +20,8 @@ import {
   Download,
   Sparkles,
   Lock,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   Client,
@@ -34,6 +36,7 @@ import {
   getNextSequentialInvoiceNumber,
   recordUsedInvoiceNumber,
 } from '../utils/chambersDataStorage';
+import { toast } from '../utils/toast';
 
 interface GenerateInvoiceModalProps {
   isOpen: boolean;
@@ -42,9 +45,9 @@ interface GenerateInvoiceModalProps {
   matters: LegalMatter[];
   existingInvoices?: FeeNote[];
   editingInvoice?: FeeNote | null;
-  onAddInvoice: (invoice: FeeNote) => void;
-  onUpdateInvoice?: (invoice: FeeNote) => void;
-  onAddClient?: (client: Client) => void;
+  onAddInvoice: (invoice: FeeNote) => Promise<void> | void;
+  onUpdateInvoice?: (invoice: FeeNote) => Promise<void> | void;
+  onAddClient?: (client: Client) => Promise<void> | void;
   initialSelectedMatterId?: string;
   initialClientId?: string;
 }
@@ -219,8 +222,10 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   const [openItemDropdownIndex, setOpenItemDropdownIndex] = useState<number | null>(null);
   const standardSnippets = loadStandardServiceSnippets();
 
-  // Toast / Feedback
+  // Toast / Feedback & Save Status
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Update Due Date whenever Terms change
   const handleTermsChange = (newTerms: string) => {
@@ -418,7 +423,7 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
   };
 
   // Save invoice (Draft or Sent)
-  const handleSaveInvoice = (status: 'Draft' | 'Sent') => {
+  const handleSaveInvoice = async (status: 'Draft' | 'Sent') => {
     if (isEditMode && editingInvoice && isEditingPaidInvoice) {
       setToastMessage('This fee note is fully paid and cannot be edited.');
       setTimeout(() => setToastMessage(null), 3500);
@@ -436,118 +441,129 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
     const finalInvoiceNumber = invoiceNumber.trim() || getNextSequentialInvoiceNumber(existingInvoices);
     recordUsedInvoiceNumber(finalInvoiceNumber);
 
-    if (isEditMode && editingInvoice) {
-      const prevPaid = editingInvoice.amountPaidKES !== undefined
-        ? editingInvoice.amountPaidKES
-        : (editingInvoice.status === 'Paid' ? editingInvoice.totalKES : 0);
-      const newBalance = Math.max(0, totalAmount - prevPaid);
-      let newStatus = editingInvoice.status;
-      if (newBalance === 0) {
-        newStatus = 'Paid';
-      } else if (prevPaid > 0) {
-        newStatus = 'Partially Paid';
-      } else {
-        newStatus = status === 'Draft' ? 'Pending' : 'Unpaid';
+    setSaveError(null);
+    setIsSaving(true);
+
+    try {
+      if (isEditMode && editingInvoice) {
+        const prevPaid = editingInvoice.amountPaidKES !== undefined
+          ? editingInvoice.amountPaidKES
+          : (editingInvoice.status === 'Paid' ? editingInvoice.totalKES : 0);
+        const newBalance = Math.max(0, totalAmount - prevPaid);
+        let newStatus = editingInvoice.status;
+        if (newBalance === 0) {
+          newStatus = 'Paid';
+        } else if (prevPaid > 0) {
+          newStatus = 'Partially Paid';
+        } else {
+          newStatus = status === 'Draft' ? 'Pending' : 'Unpaid';
+        }
+
+        const targetMatter = matters.find(
+          (m) => m.id === initialSelectedMatterId || (editingInvoice && m.id === editingInvoice.matterId)
+        );
+
+        const updatedInvoice: FeeNote = {
+          ...editingInvoice,
+          invoiceNumber: finalInvoiceNumber,
+          clientId: selectedClientId || editingInvoice.clientId || undefined,
+          clientName: finalClientName,
+          clientEmail: activeClient?.email || editingInvoice.clientEmail,
+          clientAddress: activeClient?.city || editingInvoice.clientAddress || 'Nairobi, Kenya',
+          matterId: initialSelectedMatterId || editingInvoice.matterId || undefined,
+          matterRef: targetMatter?.referenceNumber || editingInvoice.matterRef || undefined,
+          matterTitle: subject.trim() || editingInvoice.matterTitle || 'Invoice Services',
+          subject: subject.trim(),
+          terms: terms,
+          dateIssued: invoiceDate,
+          dueDate: dueDate,
+          items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
+          subtotalKES: subTotal,
+          discountKES: editingInvoice.discountKES || 0,
+          adjustmentKES: editingInvoice.adjustmentKES || 0,
+          amountKES: subTotal,
+          vatRatePercent: 16,
+          vatKES: vatAmount,
+          totalKES: totalAmount,
+          amountPaidKES: prevPaid,
+          balanceKES: newBalance,
+          status: newStatus,
+          customerNotes: customerNotes,
+          notes: customerNotes,
+          termsAndConditions: termsAndConditions,
+          attachedFiles: attachedFiles,
+        };
+
+        if (onUpdateInvoice) {
+          await onUpdateInvoice(updatedInvoice);
+        } else {
+          await onAddInvoice(updatedInvoice);
+        }
+
+        if (status === 'Sent') {
+          try {
+            downloadInvoicePdf(updatedInvoice);
+          } catch (err) {
+            console.warn('PDF auto-download warning:', err);
+          }
+        }
+
+        onClose();
+        return;
       }
 
       const targetMatter = matters.find(
         (m) => m.id === initialSelectedMatterId || (editingInvoice && m.id === editingInvoice.matterId)
       );
 
-      const updatedInvoice: FeeNote = {
-        ...editingInvoice,
+      const newInvoice: FeeNote = {
+        id: `fn-${Date.now()}`,
         invoiceNumber: finalInvoiceNumber,
-        clientId: selectedClientId || editingInvoice.clientId || undefined,
+        clientId: selectedClientId || undefined,
         clientName: finalClientName,
-        clientEmail: activeClient?.email || editingInvoice.clientEmail,
-        clientAddress: activeClient?.city || editingInvoice.clientAddress || 'Nairobi, Kenya',
-        matterId: initialSelectedMatterId || editingInvoice.matterId || undefined,
-        matterRef: targetMatter?.referenceNumber || editingInvoice.matterRef || undefined,
-        matterTitle: subject.trim() || editingInvoice.matterTitle || 'Invoice Services',
+        clientEmail: activeClient?.email,
+        clientAddress: activeClient?.city || 'Nairobi, Kenya',
+        matterId: initialSelectedMatterId || undefined,
+        matterRef: targetMatter?.referenceNumber || undefined,
+        matterTitle: targetMatter ? `${targetMatter.referenceNumber}: ${targetMatter.title}` : (subject.trim() || 'Invoice Services'),
         subject: subject.trim(),
         terms: terms,
         dateIssued: invoiceDate,
         dueDate: dueDate,
         items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
         subtotalKES: subTotal,
-        discountKES: editingInvoice.discountKES || 0,
-        adjustmentKES: editingInvoice.adjustmentKES || 0,
+        discountKES: 0,
+        adjustmentKES: 0,
         amountKES: subTotal,
         vatRatePercent: 16,
         vatKES: vatAmount,
         totalKES: totalAmount,
-        amountPaidKES: prevPaid,
-        balanceKES: newBalance,
-        status: newStatus,
+        balanceKES: totalAmount,
+        status: status === 'Draft' ? 'Pending' : 'Unpaid',
         customerNotes: customerNotes,
         notes: customerNotes,
         termsAndConditions: termsAndConditions,
         attachedFiles: attachedFiles,
       };
 
-      if (onUpdateInvoice) {
-        onUpdateInvoice(updatedInvoice);
-      } else {
-        onAddInvoice(updatedInvoice);
-      }
+      await onAddInvoice(newInvoice);
 
       if (status === 'Sent') {
         try {
-          downloadInvoicePdf(updatedInvoice);
+          downloadInvoicePdf(newInvoice);
         } catch (err) {
           console.warn('PDF auto-download warning:', err);
         }
       }
 
       onClose();
-      return;
+    } catch (err: any) {
+      console.error('[GenerateInvoiceModal] Database error saving fee note:', err);
+      setSaveError(err.message || 'Database rejected Fee Note. Your entered details have been preserved.');
+      toast.error(err.message || 'Database rejected Fee Note.', 'Save Failed');
+    } finally {
+      setIsSaving(false);
     }
-
-    const targetMatter = matters.find(
-      (m) => m.id === initialSelectedMatterId || (editingInvoice && m.id === editingInvoice.matterId)
-    );
-
-    const newInvoice: FeeNote = {
-      id: `fn-${Date.now()}`,
-      invoiceNumber: finalInvoiceNumber,
-      clientId: selectedClientId || undefined,
-      clientName: finalClientName,
-      clientEmail: activeClient?.email,
-      clientAddress: activeClient?.city || 'Nairobi, Kenya',
-      matterId: initialSelectedMatterId || undefined,
-      matterRef: targetMatter?.referenceNumber || undefined,
-      matterTitle: targetMatter ? `${targetMatter.referenceNumber}: ${targetMatter.title}` : (subject.trim() || 'Invoice Services'),
-      subject: subject.trim(),
-      terms: terms,
-      dateIssued: invoiceDate,
-      dueDate: dueDate,
-      items: items.filter((it) => it.description.trim() || it.totalPriceKES > 0),
-      subtotalKES: subTotal,
-      discountKES: 0,
-      adjustmentKES: 0,
-      amountKES: subTotal,
-      vatRatePercent: 16,
-      vatKES: vatAmount,
-      totalKES: totalAmount,
-      balanceKES: totalAmount,
-      status: status === 'Draft' ? 'Pending' : 'Unpaid',
-      customerNotes: customerNotes,
-      notes: customerNotes,
-      termsAndConditions: termsAndConditions,
-      attachedFiles: attachedFiles,
-    };
-
-    onAddInvoice(newInvoice);
-
-    if (status === 'Sent') {
-      try {
-        downloadInvoicePdf(newInvoice);
-      } catch (err) {
-        console.warn('PDF auto-download warning:', err);
-      }
-    }
-
-    onClose();
   };
 
   // Preview PDF in new tab
@@ -690,6 +706,27 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
               className="text-amber-500 hover:text-amber-700 cursor-pointer"
             >
               <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Database Save Error Banner */}
+        {saveError && (
+          <div className="bg-rose-50 border-b border-rose-200 px-6 py-3 text-xs text-rose-900 flex items-start justify-between animate-in fade-in">
+            <div className="flex items-start space-x-2.5">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-rose-950">Database Save Rejected</p>
+                <p className="mt-0.5 text-rose-800 font-mono text-[11px] bg-rose-100/50 p-1.5 rounded border border-rose-200/50 break-words">{saveError}</p>
+                <p className="mt-1 text-[11px] text-rose-600">Your invoice line items and notes have been retained. Please resolve the issue and retry.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSaveError(null)}
+              className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+            >
+              <X className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -1235,30 +1272,31 @@ export const GenerateInvoiceModal: React.FC<GenerateInvoiceModalProps> = ({
             <button
               type="button"
               onClick={() => handleSaveInvoice('Draft')}
-              disabled={isEditingPaidInvoice}
+              disabled={isEditingPaidInvoice || isSaving}
               className={`rounded-md border px-4 py-2 text-xs font-semibold transition shadow-2xs ${
-                isEditingPaidInvoice
+                isEditingPaidInvoice || isSaving
                   ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed select-none'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer'
               }`}
               title={isEditingPaidInvoice ? 'Fully paid fee notes cannot be modified' : undefined}
             >
-              {isEditMode ? 'Update as Draft' : 'Save as Draft'}
+              {isSaving ? 'Saving...' : isEditMode ? 'Update as Draft' : 'Save as Draft'}
             </button>
 
             <button
               type="button"
               onClick={() => handleSaveInvoice('Sent')}
-              disabled={isEditingPaidInvoice}
+              disabled={isEditingPaidInvoice || isSaving}
               className={`inline-flex items-center space-x-1.5 rounded-md px-4 py-2 text-xs font-bold transition shadow-2xs ${
-                isEditingPaidInvoice
+                isEditingPaidInvoice || isSaving
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed select-none'
                   : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
               }`}
               title={isEditingPaidInvoice ? 'Fully paid fee notes cannot be modified' : undefined}
             >
-              <span>{isEditMode ? 'Save & Update Fee Note' : 'Save and Send'}</span>
-              <ChevronDown className="h-3.5 w-3.5 border-l border-current opacity-40 pl-1 -mr-1" />
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+              <span>{isSaving ? 'Saving to Database...' : isEditMode ? 'Save & Update Fee Note' : 'Save and Send'}</span>
+              {!isSaving && <ChevronDown className="h-3.5 w-3.5 border-l border-current opacity-40 pl-1 -mr-1" />}
             </button>
 
             <button

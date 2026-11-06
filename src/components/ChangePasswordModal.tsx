@@ -14,6 +14,7 @@ import { Advocate } from '../types';
 import { updateStaffPasswordDirectly, loadStaffRoster } from '../utils/staffStorage';
 import { recordLoginAttempt } from '../utils/authAuditStorage';
 import { DraggableModal } from './common/DraggableModal';
+import { getSupabaseClient } from '../utils/supabaseClient';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -60,7 +61,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
   const strength = getStrength(newPassword);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -75,11 +76,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     if (!currentPassword) {
       setErrorMessage('Please enter your current account password.');
-      return;
-    }
-
-    if (currentPassword.trim() !== actualCurrentPass.trim()) {
-      setErrorMessage('Current password is incorrect. Please verify and try again.');
       return;
     }
 
@@ -100,36 +96,81 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setIsSaving(true);
 
-    setTimeout(() => {
-      setIsSaving(false);
-      const res = updateStaffPasswordDirectly(currentAdvocate.email, newPassword.trim());
+    try {
+      const supabase = getSupabaseClient();
+      let updatedInSupabase = false;
 
-      if (res.success && res.staff) {
-        // Record audit
-        recordLoginAttempt({
-          identifier: currentAdvocate.email,
-          advocate: res.staff,
-          status: 'SUCCESS',
-          loginMethod: 'Password Credentials',
-          failureReason: 'Password changed by user in portal profile',
+      if (supabase) {
+        // 1. Verify current credentials against Supabase Auth
+        const { data: signInData, error: verifyError } = await supabase.auth.signInWithPassword({
+          email: currentAdvocate.email.toLowerCase(),
+          password: currentPassword.trim(),
         });
 
-        setSuccessMessage('Password changed successfully! Your new password is now active.');
-        if (onPasswordUpdated) {
-          onPasswordUpdated(res.staff);
-        }
+        if (!verifyError && signInData?.user) {
+          // Current password verified against Supabase Auth. Update to new password in cloud:
+          const { error: updateError } = await supabase.auth.updateUser({
+            password: newPassword.trim(),
+          });
 
-        setTimeout(() => {
-          onClose();
-          setCurrentPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
-          setSuccessMessage(null);
-        }, 1500);
+          if (updateError) {
+            throw updateError;
+          }
+          updatedInSupabase = true;
+        } else {
+          // If not in Supabase Auth yet or verifyError occurred:
+          // Verify current password against known roster password first
+          if (currentPassword.trim() !== actualCurrentPass.trim()) {
+            throw new Error('Current password is incorrect. Please verify and try again.');
+          }
+
+          // Provision in Supabase Auth directly with the new password
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: currentAdvocate.email.toLowerCase(),
+            password: newPassword.trim(),
+          });
+
+          if (signUpError) {
+            throw new Error(signUpError.message || 'Failed to update cloud password in Supabase Auth.');
+          }
+          updatedInSupabase = true;
+        }
       } else {
-        setErrorMessage(res.message || 'Failed to update password. Please try again.');
+        if (currentPassword.trim() !== actualCurrentPass.trim()) {
+          throw new Error('Current password is incorrect. Please verify and try again.');
+        }
       }
-    }, 400);
+
+      // Sync local roster for instant UI update
+      const res = updateStaffPasswordDirectly(currentAdvocate.email, newPassword.trim());
+
+      // Record audit
+      recordLoginAttempt({
+        identifier: currentAdvocate.email,
+        advocate: res.staff || currentAdvocate,
+        status: 'SUCCESS',
+        loginMethod: 'Password Credentials',
+        failureReason: 'Password changed by user in portal profile',
+      });
+
+      setSuccessMessage('Password changed successfully! Your new password is now active across all devices.');
+      if (onPasswordUpdated && res.staff) {
+        onPasswordUpdated(res.staff);
+      }
+
+      setTimeout(() => {
+        onClose();
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setSuccessMessage(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('[ChangePasswordModal] Password update failed:', err);
+      setErrorMessage(err.message || 'Failed to update password. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

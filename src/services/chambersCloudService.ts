@@ -49,6 +49,16 @@ import {
   loadSavedLeaveBalances,
   saveStoredLeaveBalancesCache,
 } from '../utils/chambersDataStorage';
+export interface CloudOperationResult {
+  success: boolean;
+  error?: {
+    message: string;
+    code?: string;
+    details?: string;
+    hint?: string;
+  };
+}
+
 import {
   Advocate,
   LegalMatter,
@@ -67,6 +77,14 @@ import {
   TimeEntry,
   LeaveRequest,
   LeaveBalance,
+  ChambersSettings,
+  FeeNoteTemplate,
+  StandardServiceItem,
+  NoticeBoardItem,
+  CaseFiledDocument,
+  LegalTemplate,
+  ClientInteraction,
+  LoginAuditEntry,
 } from '../types';
 
 // ============================================================================
@@ -1168,39 +1186,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertMatter(matter: LegalMatter): Promise<boolean> {
+  static async upsertMatter(matter: LegalMatter): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientMatterToSupabase(matter);
       const { error } = await supabase.from('matters').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertMatter error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertMatter failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertMatter exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteMatter(matterId: string): Promise<boolean> {
+  static async deleteMatter(matterId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('matters').delete().eq('id', matterId);
       if (error) {
-        console.error('[ChambersCloudService] deleteMatter error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteMatter failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteMatter exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1238,9 +1256,9 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertTask(task: TaskItem): Promise<boolean> {
+  static async upsertTask(task: TaskItem): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientTaskToSupabase(task);
@@ -1270,30 +1288,30 @@ export class ChambersCloudService {
         const { error: retryError } = await supabase.from('tasks').upsert(corePayload, { onConflict: 'id' });
         if (retryError) {
           console.error('[ChambersCloudService] upsertTask core retry error:', retryError.message);
-          return false;
+          return { success: false, error: { message: retryError.message, code: retryError.code, details: retryError.details } };
         }
       }
-      return true;
-    } catch (err) {
+      return { success: true };
+    } catch (err: any) {
       console.error('[ChambersCloudService] upsertTask exception:', err);
-      return false;
+      return { success: false, error: { message: err?.message || 'Failed to save task.' } };
     }
   }
 
-  static async deleteTask(taskId: string): Promise<boolean> {
+  static async deleteTask(taskId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
       if (error) {
-        console.error('[ChambersCloudService] deleteTask error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteTask failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteTask exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1322,39 +1340,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertClient(client: Client): Promise<boolean> {
+  static async upsertClient(client: Client): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientClientToSupabase(client);
       const { error } = await supabase.from('clients').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertClient error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertClient failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertClient exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteClient(clientId: string): Promise<boolean> {
+  static async deleteClient(clientId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('clients').delete().eq('id', clientId);
       if (error) {
-        console.error('[ChambersCloudService] deleteClient error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteClient failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteClient exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1386,39 +1404,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertDeadline(deadline: DeadlineItem): Promise<boolean> {
+  static async upsertDeadline(deadline: DeadlineItem): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientDeadlineToSupabase(deadline);
       const { error } = await supabase.from('deadlines').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertDeadline error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertDeadline failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertDeadline exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteDeadline(deadlineId: string): Promise<boolean> {
+  static async deleteDeadline(deadlineId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('deadlines').delete().eq('id', deadlineId);
       if (error) {
-        console.error('[ChambersCloudService] deleteDeadline error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteDeadline failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteDeadline exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1448,39 +1466,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async recordActivity(activity: ActivityLog): Promise<boolean> {
+  static async recordActivity(activity: ActivityLog): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientActivityToSupabase(activity);
       const { error } = await supabase.from('activities').insert(payload);
 
       if (error) {
-        console.error('[ChambersCloudService] recordActivity error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] recordActivity failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] recordActivity exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteActivity(activityId: string): Promise<boolean> {
+  static async deleteActivity(activityId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('activities').delete().eq('id', activityId);
       if (error) {
-        console.error('[ChambersCloudService] deleteActivity error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteActivity failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteActivity exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1510,45 +1528,45 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertNotification(notification: NotificationItem): Promise<boolean> {
+  static async upsertNotification(notification: NotificationItem): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientNotificationToSupabase(notification);
       const { error } = await supabase.from('notifications').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertNotification error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertNotification failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertNotification exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteNotification(notificationId: string): Promise<boolean> {
+  static async deleteNotification(notificationId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('notifications').delete().eq('id', notificationId);
       if (error) {
-        console.error('[ChambersCloudService] deleteNotification error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteNotification failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteNotification exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async markAllNotificationsRead(recipientEmail?: string): Promise<boolean> {
+  static async markAllNotificationsRead(recipientEmail?: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       let query = (supabase.from('notifications') as any).update({ read: true });
@@ -1559,13 +1577,13 @@ export class ChambersCloudService {
       }
       const { error } = await query;
       if (error) {
-        console.error('[ChambersCloudService] markAllNotificationsRead error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] markAllNotificationsRead failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] markAllNotificationsRead exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1594,39 +1612,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertFeeNote(feeNote: FeeNote): Promise<boolean> {
+  static async upsertFeeNote(feeNote: FeeNote): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientFeeNoteToSupabase(feeNote);
       const { error } = await supabase.from('fee_notes').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertFeeNote error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertFeeNote failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertFeeNote exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteFeeNote(feeNoteId: string): Promise<boolean> {
+  static async deleteFeeNote(feeNoteId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('fee_notes').delete().eq('id', feeNoteId);
       if (error) {
-        console.error('[ChambersCloudService] deleteFeeNote error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteFeeNote failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteFeeNote exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1655,39 +1673,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertPayment(payment: PaymentRecord): Promise<boolean> {
+  static async upsertPayment(payment: PaymentRecord): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientPaymentToSupabase(payment);
       const { error } = await supabase.from('payments').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertPayment error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertPayment failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertPayment exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deletePayment(paymentId: string): Promise<boolean> {
+  static async deletePayment(paymentId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('payments').delete().eq('id', paymentId);
       if (error) {
-        console.error('[ChambersCloudService] deletePayment error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deletePayment failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deletePayment exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1716,39 +1734,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertQuote(quote: Quotation): Promise<boolean> {
+  static async upsertQuote(quote: Quotation): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientQuoteToSupabase(quote);
       const { error } = await supabase.from('quotations').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertQuote error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertQuote failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertQuote exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteQuote(quoteId: string): Promise<boolean> {
+  static async deleteQuote(quoteId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('quotations').delete().eq('id', quoteId);
       if (error) {
-        console.error('[ChambersCloudService] deleteQuote error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteQuote failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteQuote exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1777,39 +1795,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertDocument(doc: DocumentItem): Promise<boolean> {
+  static async upsertDocument(doc: DocumentItem): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientDocumentToSupabase(doc);
       const { error } = await supabase.from('documents').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertDocument error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertDocument failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertDocument exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteDocument(docId: string): Promise<boolean> {
+  static async deleteDocument(docId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('documents').delete().eq('id', docId);
       if (error) {
-        console.error('[ChambersCloudService] deleteDocument error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteDocument failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteDocument exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1835,39 +1853,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertFolder(folder: DocumentFolder): Promise<boolean> {
+  static async upsertFolder(folder: DocumentFolder): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientFolderToSupabase(folder);
       const { error } = await supabase.from('document_folders').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertFolder error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertFolder failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertFolder exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteFolder(folderId: string): Promise<boolean> {
+  static async deleteFolder(folderId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('document_folders').delete().eq('id', folderId);
       if (error) {
-        console.error('[ChambersCloudService] deleteFolder error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteFolder failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteFolder exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1893,39 +1911,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertDraft(draft: DocumentDraft): Promise<boolean> {
+  static async upsertDraft(draft: DocumentDraft): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientDraftToSupabase(draft);
       const { error } = await supabase.from('document_drafts').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertDraft error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertDraft failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertDraft exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteDraft(draftId: string): Promise<boolean> {
+  static async deleteDraft(draftId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('document_drafts').delete().eq('id', draftId);
       if (error) {
-        console.error('[ChambersCloudService] deleteDraft error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteDraft failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteDraft exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -1954,39 +1972,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertOnboarding(submission: ClientOnboardingSubmission): Promise<boolean> {
+  static async upsertOnboarding(submission: ClientOnboardingSubmission): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientOnboardingToSupabase(submission);
       const { error } = await supabase.from('client_onboardings').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertOnboarding error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertOnboarding failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertOnboarding exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteOnboarding(onboardingId: string): Promise<boolean> {
+  static async deleteOnboarding(onboardingId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('client_onboardings').delete().eq('id', onboardingId);
       if (error) {
-        console.error('[ChambersCloudService] deleteOnboarding error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteOnboarding failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteOnboarding exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -2016,39 +2034,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertTimeEntry(entry: TimeEntry): Promise<boolean> {
+  static async upsertTimeEntry(entry: TimeEntry): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientTimeEntryToSupabase(entry);
       const { error } = await supabase.from('time_entries').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertTimeEntry error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertTimeEntry failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertTimeEntry exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteTimeEntry(entryId: string): Promise<boolean> {
+  static async deleteTimeEntry(entryId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('time_entries').delete().eq('id', entryId);
       if (error) {
-        console.error('[ChambersCloudService] deleteTimeEntry error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteTimeEntry failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteTimeEntry exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -2077,39 +2095,39 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertLeaveRequest(request: LeaveRequest): Promise<boolean> {
+  static async upsertLeaveRequest(request: LeaveRequest): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientLeaveRequestToSupabase(request);
       const { error } = await supabase.from('leave_requests').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertLeaveRequest error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertLeaveRequest failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertLeaveRequest exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
-  static async deleteLeaveRequest(requestId: string): Promise<boolean> {
+  static async deleteLeaveRequest(requestId: string): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const { error } = await supabase.from('leave_requests').delete().eq('id', requestId);
       if (error) {
-        console.error('[ChambersCloudService] deleteLeaveRequest error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] deleteLeaveRequest failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] deleteLeaveRequest exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 
@@ -2135,24 +2153,842 @@ export class ChambersCloudService {
     }
   }
 
-  static async upsertLeaveBalance(balance: LeaveBalance): Promise<boolean> {
+  static async upsertLeaveBalance(balance: LeaveBalance): Promise<CloudOperationResult> {
     const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) return false;
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
 
     try {
       const payload = mapClientLeaveBalanceToSupabase(balance);
       const { error } = await supabase.from('leave_balances').upsert(payload, { onConflict: 'staff_name,role' });
 
       if (error) {
-        console.error('[ChambersCloudService] upsertLeaveBalance error:', error.message);
-        return false;
+        console.error('[ChambersCloudService] upsertLeaveBalance failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
       }
-      return true;
+      return { success: true };
     } catch (err) {
       console.error('[ChambersCloudService] upsertLeaveBalance exception:', err);
-      return false;
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // CHAMBERS SETTINGS (FIRM REGISTRATION, CONTACT & BANK DETAILS)
+  // ==========================================================================
+  static async fetchChambersSettings(): Promise<ChambersSettings | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('chambers_settings')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchChambersSettings error:', error.message);
+        return null;
+      }
+      if (!data) return null;
+
+      const row = data as any;
+      return {
+        firmName: row.firm_name || 'Muthoni Ahago Advocates',
+        tagline: row.motto || 'Exceptional Legal Insight',
+        logoUrl: row.customization?.logoUrl || null,
+        lskFirmRegNo: row.lsk_registration_number || '',
+        kraPin: row.kra_pin || '',
+        physicalAddress: row.physical_address || '',
+        postalAddress: row.postal_address || '',
+        phone: row.official_phone || '',
+        email: row.official_email || '',
+        billingEmail: row.billing_email || '',
+        website: row.website || '',
+        managingPartner: row.senior_partner_name || '',
+        bankDetails: {
+          bankName: row.bank_name || '',
+          accountName: row.bank_account_name || '',
+          accountNumber: row.bank_account_number || '',
+          branch: row.bank_branch || '',
+          swiftCode: row.bank_swift_code || '',
+          paybillNumber: row.mpesa_paybill_number || '',
+        },
+        integrations: row.customization?.integrations || {
+          ctsAutoSync: true,
+          ctsApiKey: 'CTS_SEC_AUTH_2026_MA_RUIRU',
+          ardhiSasaSync: true,
+          brsAutoSearch: true,
+          syncFrequencyMinutes: 30,
+        },
+        compliance: row.customization?.compliance || {
+          lskLicenseActive: true,
+          rollRef: 'P.105/18420/26',
+          auditLoggingEnforced: true,
+          amlThresholdKES: 1000000,
+          requireConflictCheckApproval: true,
+        },
+        displayPreferences: {
+          defaultCurrency: row.default_currency || 'KES',
+          dateFormat: row.customization?.dateFormat || 'DD/MM/YYYY',
+        },
+        customization: row.customization || undefined,
+        lastSaved: row.updated_at || new Date().toISOString(),
+      };
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchChambersSettings exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertChambersSettings(settings: ChambersSettings): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: 'firm_default',
+        firm_name: settings.firmName || 'Muthoni Ahago Advocates',
+        motto: settings.tagline || 'Exceptional Legal Insight',
+        lsk_registration_number: settings.lskFirmRegNo || '',
+        kra_pin: settings.kraPin || '',
+        physical_address: settings.physicalAddress || '',
+        postal_address: settings.postalAddress || '',
+        official_email: settings.email || '',
+        billing_email: settings.billingEmail || '',
+        official_phone: settings.phone || '',
+        website: settings.website || '',
+        senior_partner_name: settings.managingPartner || '',
+        bank_name: settings.bankDetails?.bankName || '',
+        bank_account_name: settings.bankDetails?.accountName || '',
+        bank_account_number: settings.bankDetails?.accountNumber || '',
+        bank_branch: settings.bankDetails?.branch || '',
+        bank_swift_code: settings.bankDetails?.swiftCode || '',
+        mpesa_paybill_number: settings.bankDetails?.paybillNumber || '',
+        default_currency: settings.displayPreferences?.defaultCurrency || 'KES',
+        customization: {
+          ...(settings.customization || {}),
+          integrations: settings.integrations,
+          compliance: settings.compliance,
+          dateFormat: settings.displayPreferences?.dateFormat,
+          logoUrl: settings.logoUrl,
+        },
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await (supabase as any)
+        .from('chambers_settings')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) {
+        console.error('[ChambersCloudService] upsertChambersSettings failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[ChambersCloudService] upsertChambersSettings exception:', err);
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // FEE NOTE TEMPLATES & STANDARD SERVICES
+  // ==========================================================================
+  static async fetchFeeNoteTemplates(): Promise<FeeNoteTemplate[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('fee_note_templates')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchFeeNoteTemplates error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        title: row.name || 'Untitled Template',
+        description: row.default_terms || '',
+        practiceArea: row.practice_area || 'All Practice Areas',
+        items: Array.isArray(row.items) ? row.items : [],
+        defaultNotes: row.default_notes || undefined,
+        author: 'Chambers Finance',
+        createdDate: row.created_at || new Date().toISOString(),
+        lastModified: row.updated_at || new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchFeeNoteTemplates exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertFeeNoteTemplate(template: FeeNoteTemplate): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(template.id),
+        name: template.title || 'Untitled Template',
+        practice_area: template.practiceArea || 'All Practice Areas',
+        items: template.items || [],
+        default_terms: template.description || null,
+        default_notes: template.defaultNotes || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('fee_note_templates').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsertFeeNoteTemplate failed:', { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[ChambersCloudService] upsertFeeNoteTemplate exception:', err);
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteFeeNoteTemplate(templateId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('fee_note_templates').delete().eq('id', templateId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on fee_note_templates failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async fetchStandardServices(): Promise<StandardServiceItem[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('standard_services')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchStandardServices error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        description: row.name || row.description || '',
+        category: row.practice_area || 'Professional Fees',
+        unitPriceKES: Number(row.default_rate || 0),
+        isTaxable: Boolean(row.is_taxable ?? true),
+        statutoryReference: row.service_code || undefined,
+      }));
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchStandardServices exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertStandardService(item: StandardServiceItem): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(item.id),
+        name: item.description || '',
+        description: item.description || '',
+        practice_area: item.category || 'Professional Fees',
+        default_rate: Number(item.unitPriceKES || 0),
+        rate_unit: 'Fixed',
+        is_taxable: Boolean(item.isTaxable),
+        service_code: item.statutoryReference || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('standard_services').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on standard_services failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteStandardService(itemId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('standard_services').delete().eq('id', itemId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on standard_services failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // NOTICE BOARD
+  // ==========================================================================
+  static async fetchNoticeBoard(): Promise<NoticeBoardItem[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('notice_board')
+        .select('*')
+        .order('is_pinned', { ascending: false })
+        .order('date_posted', { ascending: false });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchNoticeBoard error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        title: row.title || '',
+        content: row.content || '',
+        category: row.category || 'Announcements',
+        priority: row.priority || 'Normal',
+        postedBy: row.posted_by || 'Chambers Administration',
+        postedRole: row.target_roles?.postedRole || undefined,
+        date: row.date_posted || row.created_at || new Date().toISOString(),
+        pinned: Boolean(row.is_pinned),
+        targetAudience: row.target_roles?.targetAudience || 'All Staff',
+        eventDate: row.expires_at || undefined,
+        location: row.target_roles?.location || undefined,
+        reactions: Array.isArray(row.target_roles?.reactions) ? row.target_roles.reactions : [],
+        acknowledgedBy: Array.isArray(row.target_roles?.acknowledgedBy) ? row.target_roles.acknowledgedBy : [],
+      }));
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchNoticeBoard exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertNoticeBoardItem(item: NoticeBoardItem): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(item.id),
+        title: item.title || '',
+        content: item.content || '',
+        category: item.category || 'Announcements',
+        priority: item.priority || 'Normal',
+        posted_by: item.postedBy || 'Chambers Administration',
+        date_posted: item.date || new Date().toISOString(),
+        expires_at: item.eventDate || null,
+        is_pinned: Boolean(item.pinned),
+        target_roles: {
+          targetAudience: item.targetAudience,
+          postedRole: item.postedRole,
+          location: item.location,
+          reactions: item.reactions,
+          acknowledgedBy: item.acknowledgedBy,
+        },
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('notice_board').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on notice_board failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteNoticeBoardItem(itemId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('notice_board').delete().eq('id', itemId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on notice_board failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // CASE FILED DOCUMENTS
+  // ==========================================================================
+  static async fetchCaseFiledDocuments(matterId?: string): Promise<CaseFiledDocument[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      let query = (supabase as any).from('case_filed_documents').select('*');
+      if (matterId) {
+        query = query.eq('matter_id', matterId);
+      }
+      const { data, error } = await query.order('filing_date', { ascending: false });
+      if (error) {
+        console.error('[ChambersCloudService] fetchCaseFiledDocuments error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        matterId: row.matter_id || '',
+        matterRef: row.court_station || '',
+        title: row.document_title || 'Untitled Document',
+        docType: row.filing_type || 'Plaint',
+        filingDate: row.filing_date || new Date().toISOString(),
+        ctsReference: row.registry_number || undefined,
+        filedBy: row.filed_by || '',
+        status: row.status || 'Filed',
+        pdfUrl: row.file_url || undefined,
+        summaryOrPrayer: row.notes || undefined,
+      }));
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchCaseFiledDocuments exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertCaseFiledDocument(doc: CaseFiledDocument): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(doc.id),
+        matter_id: doc.matterId || null,
+        document_title: doc.title || '',
+        filing_type: doc.docType || '',
+        filing_date: sanitizeDate(doc.filingDate) || doc.filingDate || new Date().toISOString().split('T')[0],
+        filed_by: doc.filedBy || '',
+        registry_number: doc.ctsReference || null,
+        court_station: doc.matterRef || null,
+        file_url: doc.pdfUrl || null,
+        notes: doc.summaryOrPrayer || null,
+        status: doc.status || 'Filed',
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('case_filed_documents').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on case_filed_documents failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteCaseFiledDocument(docId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('case_filed_documents').delete().eq('id', docId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on case_filed_documents failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // LEGAL TEMPLATES
+  // ==========================================================================
+  static async fetchLegalTemplates(): Promise<LegalTemplate[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any).from('legal_templates').select('*').order('title', { ascending: true });
+      if (error) {
+        console.error('[ChambersCloudService] fetchLegalTemplates error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        title: row.title || 'Untitled Template',
+        category: row.category || 'Court Pleadings',
+        description: row.description || '',
+        practiceArea: row.practice_area || 'All Practice Areas',
+        variables: Array.isArray(row.variables) ? row.variables : [],
+        content: row.content || '',
+        createdDate: row.created_at || new Date().toISOString(),
+        lastModified: row.updated_at || new Date().toISOString(),
+        author: row.created_by || 'Chambers Administration',
+        isSystemDefault: false,
+      }));
+    } catch (err) {
+      console.error('[ChambersCloudService] fetchLegalTemplates exception:', err);
+      return null;
+    }
+  }
+
+  static async upsertLegalTemplate(template: LegalTemplate): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(template.id),
+        title: template.title || '',
+        description: template.description || '',
+        category: template.category || 'General',
+        practice_area: template.practiceArea || 'All Practice Areas',
+        content: template.content || '',
+        variables: template.variables || [],
+        created_by: template.author || 'Chambers Administration',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('legal_templates').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on legal_templates failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteLegalTemplate(templateId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('legal_templates').delete().eq('id', templateId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on legal_templates failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // MATTER NOTES & TIMELINE EVENTS
+  // ==========================================================================
+  static async fetchMatterNotes(matterId: string): Promise<any[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('matter_notes')
+        .select('*')
+        .eq('matter_id', matterId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchMatterNotes error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        matterId: row.matter_id,
+        author: row.author_name || '',
+        authorId: row.author_id,
+        content: row.note_text || '',
+        date: row.note_date || row.created_at,
+        isConfidential: Boolean(row.is_confidential),
+      }));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  static async upsertMatterNote(note: any): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(note.id),
+        matter_id: note.matterId,
+        author_name: note.author || '',
+        author_id: note.authorId || null,
+        note_text: note.content || '',
+        note_date: note.date || new Date().toISOString(),
+        is_confidential: Boolean(note.isConfidential),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('matter_notes').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on matter_notes failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteMatterNote(noteId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('matter_notes').delete().eq('id', noteId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on matter_notes failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async fetchMatterTimelineEvents(matterId: string): Promise<any[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('matter_timeline_events')
+        .select('*')
+        .eq('matter_id', matterId)
+        .order('event_date', { ascending: false });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchMatterTimelineEvents error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        matterId: row.matter_id,
+        date: row.event_date,
+        title: row.title,
+        description: row.description,
+        type: row.category || 'court',
+        authorOrUser: row.created_by,
+      }));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  static async upsertMatterTimelineEvent(event: any): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(event.id),
+        matter_id: event.matterId,
+        event_date: event.date || new Date().toISOString().split('T')[0],
+        title: event.title || '',
+        description: event.description || '',
+        category: event.type || 'court',
+        created_by: event.authorOrUser || null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('matter_timeline_events').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on matter_timeline_events failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteMatterTimelineEvent(eventId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('matter_timeline_events').delete().eq('id', eventId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on matter_timeline_events failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // CLIENT INTERACTIONS
+  // ==========================================================================
+  static async fetchClientInteractions(clientId?: string): Promise<ClientInteraction[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      let query = (supabase as any).from('client_interactions').select('*');
+      if (clientId) query = query.eq('client_id', clientId);
+      const { data, error } = await query.order('interaction_date', { ascending: false });
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchClientInteractions error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any): ClientInteraction => ({
+        id: String(row.id),
+        clientId: row.client_id || '',
+        clientName: row.client_name || 'Client',
+        isExistingClient: true,
+        interactionType: (row.interaction_type || 'Call') as any,
+        date: row.interaction_date || new Date().toISOString(),
+        time: '09:00 AM',
+        channel: 'Phone' as any,
+        direction: 'Inbound' as any,
+        status: 'Logged' as any,
+        priority: 'Normal' as any,
+        matterId: row.matter_id || undefined,
+        subject: row.summary || 'Client Interaction',
+        description: row.details || '',
+        handledById: row.conducted_by_id || '',
+        handledByName: row.conducted_by || 'Staff',
+        followUpRequired: Boolean(row.follow_up_required),
+        followUpDueDate: row.follow_up_date || undefined,
+        createdBy: row.conducted_by || 'Staff',
+        createdDate: row.created_at || new Date().toISOString(),
+        auditTrail: [],
+      }));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  static async upsertClientInteraction(interaction: ClientInteraction): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(interaction.id),
+        client_id: interaction.clientId || null,
+        matter_id: interaction.matterId || null,
+        interaction_type: interaction.interactionType || 'Call',
+        interaction_date: interaction.date || new Date().toISOString(),
+        summary: interaction.subject || '',
+        details: interaction.description || '',
+        conducted_by: interaction.handledByName || '',
+        conducted_by_id: interaction.handledById || null,
+        follow_up_required: Boolean(interaction.followUpRequired),
+        follow_up_date: interaction.followUpDueDate || null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('client_interactions').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on client_interactions failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  static async deleteClientInteraction(interactionId: string): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const { error } = await (supabase as any).from('client_interactions').delete().eq('id', interactionId);
+      if (error) {
+        console.error('[ChambersCloudService] delete on client_interactions failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
+    }
+  }
+
+  // ==========================================================================
+  // LOGIN AUDIT LOGS
+  // ==========================================================================
+  static async fetchLoginAuditLogs(): Promise<LoginAuditEntry[] | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('login_audit_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(200);
+
+      if (error) {
+        console.error('[ChambersCloudService] fetchLoginAuditLogs error:', error.message);
+        return null;
+      }
+      return (data || []).map((row: any) => ({
+        id: String(row.id),
+        userEmail: row.user_email || '',
+        userName: row.user_name || '',
+        userRole: row.user_role || undefined,
+        status: row.attempt_status || 'SUCCESS',
+        failureReason: row.failure_reason || undefined,
+        ipAddress: row.ip_address || '',
+        deviceInfo: row.user_agent || '',
+        location: 'Nairobi, Kenya',
+        loginMethod: 'Password Credentials',
+        identifier: row.user_email || '',
+        timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+      }));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  static async recordLoginAuditLog(log: LoginAuditEntry): Promise<CloudOperationResult> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) return { success: false, error: { message: 'Supabase client is not configured or offline.' } };
+
+    try {
+      const payload = {
+        id: String(log.id),
+        user_email: log.userEmail || log.identifier || '',
+        user_name: log.userName || '',
+        user_role: log.userRole || null,
+        attempt_status: log.status || 'SUCCESS',
+        failure_reason: log.failureReason || null,
+        ip_address: log.ipAddress || null,
+        user_agent: log.deviceInfo || null,
+        timestamp: log.timestamp || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from('login_audit_logs').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[ChambersCloudService] upsert on login_audit_logs failed:', { message: error.message, code: error.code, details: error.details });
+        return { success: false, error: { message: error.message, code: error.code, details: error.details } };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: { message: (typeof err !== 'undefined' && err?.message) ? err.message : 'Database operation failed.' } };
     }
   }
 }
 
 export default ChambersCloudService;
+

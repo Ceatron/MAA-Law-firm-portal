@@ -22,6 +22,7 @@ import {
   Receipt,
   Database,
   Download,
+  Activity,
 } from 'lucide-react';
 import {
   Sliders,
@@ -42,6 +43,7 @@ import { TransactionNumberSeriesManager } from '../customization/TransactionNumb
 import { EmailNotificationManager } from '../customization/EmailNotificationManager';
 import { CompanyLogo } from '../CompanyLogo';
 import { LoginAuditLogViewer } from '../LoginAuditLogViewer';
+import { DataHealthCheck } from '../DataHealthCheck';
 import { ChambersSettings, Advocate } from '../../types';
 import { isSysAdminUser } from '../../utils/staffStorage';
 import {
@@ -64,7 +66,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenBackupModal,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'hub' | 'customization' | 'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security'
+    'hub' | 'customization' | 'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security' | 'data-health'
   >('hub');
   const [customizationSubTab, setCustomizationSubTab] = useState<
     'pdf-templates' | 'transaction-series' | 'email-notifications'
@@ -268,6 +270,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           )}
 
+          <button
+            type="button"
+            id="btn-settings-header-data-health"
+            onClick={() => setActiveTab('data-health')}
+            className={`flex items-center space-x-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-colors cursor-pointer shadow-2xs ${
+              activeTab === 'data-health'
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+            }`}
+            title="Database & Storage Health Diagnostics"
+          >
+            <Activity className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Data Health</span>
+          </button>
+
           {isDevAdmin && onOpenBackupModal && (
             <button
               type="button"
@@ -328,6 +345,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
                       >
                         Profile
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('data-health')}
+                        className="hover:text-emerald-700 hover:underline cursor-pointer py-1 flex items-center justify-between w-full text-left font-semibold text-emerald-800"
+                      >
+                        <span>Data Health & Diagnostics</span>
+                        <Activity className="w-3.5 h-3.5 text-emerald-600" />
                       </button>
                     </li>
                     {/* Branding: Marked inactive in production per user directive */}
@@ -1035,6 +1062,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 8. DATABASE & STORAGE HEALTH CHECK */}
+      {/* ============================================================ */}
+      {activeTab === 'data-health' && (
+        <DataHealthCheck currentAdvocate={currentAdvocate} />
       )}
     </div>
   );

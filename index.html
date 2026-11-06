@@ -8,9 +8,33 @@
     <meta property="og:title" content="Muthoni Ahago Advocates" />
     <meta property="og:description" content="Legal practice management system with VAT-compliant invoicing, M-Pesa/Bank payment recording, and fee quotations for Muthoni Ahago Advocates" />
     <link rel="icon" type="image/jpeg" href="/ma-law-logo.jpg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+      // Suppress benign Vite WebSocket HMR errors in preview iframe per system directives
+      window.addEventListener('error', function(event) {
+        if (
+          event &&
+          (event.message?.includes('WebSocket') ||
+           event.message?.includes('createWebSocketModuleRunnerTransport') ||
+           event.filename?.includes('@vite/client'))
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          return true;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(event) {
+        if (
+          event &&
+          event.reason &&
+          (String(event.reason).includes('WebSocket') ||
+           String(event.reason?.stack).includes('createWebSocketModuleRunnerTransport') ||
+           String(event.reason?.stack).includes('@vite/client'))
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+      }, true);
+    </script>
   </head>
   <body class="bg-[#f6f7f4] text-slate-900 antialiased selection:bg-amber-500 selection:text-white">
     <div id="root"></div>

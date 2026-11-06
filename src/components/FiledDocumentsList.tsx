@@ -25,6 +25,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { LegalMatter, Advocate, CaseFiledDocument, FiledDocumentType, FiledDocumentStatus } from '../types';
+import ChambersCloudService from '../services/chambersCloudService';
 
 interface FiledDocumentsListProps {
   matter: LegalMatter;
@@ -130,7 +131,7 @@ export const FiledDocumentsList: React.FC<FiledDocumentsListProps> = ({
   const [newPrayer, setNewPrayer] = useState('');
   const [newPageCount, setNewPageCount] = useState<string>('4');
 
-  // Save changes to localStorage
+  // Save changes to localStorage & sync to Supabase
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(documents));
@@ -138,6 +139,22 @@ export const FiledDocumentsList: React.FC<FiledDocumentsListProps> = ({
       // ignore
     }
   }, [documents, storageKey]);
+
+  // Initial cloud hydration for this matter
+  useEffect(() => {
+    let cancelled = false;
+    ChambersCloudService.fetchCaseFiledDocuments(matter.id).then((cloudDocs) => {
+      if (!cancelled && cloudDocs && Array.isArray(cloudDocs) && cloudDocs.length > 0) {
+        setDocuments(cloudDocs);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(cloudDocs));
+        } catch {}
+      }
+    }).catch((err) => {
+      console.warn('[FiledDocuments] Cloud load warning:', err);
+    });
+    return () => { cancelled = true; };
+  }, [matter.id, storageKey]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -170,6 +187,9 @@ export const FiledDocumentsList: React.FC<FiledDocumentsListProps> = ({
     };
 
     setDocuments([newDoc, ...documents]);
+    ChambersCloudService.upsertCaseFiledDocument(newDoc).catch((err) =>
+      console.warn('[FiledDocuments] Supabase upsert error:', err)
+    );
     setIsAddModalOpen(false);
     setNewTitle('');
     setNewPrayer('');
@@ -179,13 +199,23 @@ export const FiledDocumentsList: React.FC<FiledDocumentsListProps> = ({
   const handleDeleteDocument = (docId: string, title: string) => {
     if (window.confirm(`Are you sure you want to remove "${title}" from the case pleadings register?`)) {
       setDocuments(documents.filter((d) => d.id !== docId));
+      ChambersCloudService.deleteCaseFiledDocument(docId).catch((err) =>
+        console.warn('[FiledDocuments] Supabase delete error:', err)
+      );
       showToast(`Document "${title}" removed.`);
     }
   };
 
   const handleUpdateStatus = (docId: string, status: FiledDocumentStatus) => {
     setDocuments(
-      documents.map((d) => (d.id === docId ? { ...d, status } : d))
+      documents.map((d) => {
+        if (d.id === docId) {
+          const updated = { ...d, status };
+          ChambersCloudService.upsertCaseFiledDocument(updated).catch(() => {});
+          return updated;
+        }
+        return d;
+      })
     );
     showToast(`Updated status to "${status}"`);
   };

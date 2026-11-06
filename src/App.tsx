@@ -8,7 +8,8 @@ import { SearchModal } from './components/SearchModal';
 import { NotificationsPopover } from './components/NotificationsPopover';
 import { TaskEmailNotificationModal } from './components/TaskEmailNotificationModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
-import { Mail, CheckCircle2, X as CloseIcon } from 'lucide-react';
+import { Mail, CheckCircle2, X as CloseIcon, AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { ToastItem, toast } from './utils/toast';
 import {
   AssignmentEmailPayload,
   createMatterAssignmentNotification,
@@ -49,17 +50,27 @@ import {
 import {
   loadSavedMatters,
   saveStoredMatters,
+  persistSingleMatter,
+  deleteStoredMatter,
   loadSavedClients,
   saveStoredClients,
+  persistSingleClient,
+  deleteStoredClient,
   loadSavedTasks,
   saveStoredTasks,
+  persistSingleTask,
+  deleteStoredTask,
   loadSavedDeadlines,
   saveStoredDeadlines,
+  persistSingleDeadline,
+  deleteStoredDeadline,
   loadSavedActivities,
   saveStoredActivities,
   loadSavedNotifications,
   saveStoredNotifications,
   loadSavedFeeNotes,
+  isDummyFeeNote,
+  isDummyPayment,
   initChambersDatabaseSync,
   syncAllChambersDataFromCloud,
 } from './utils/chambersDataStorage';
@@ -171,6 +182,49 @@ export default function App() {
     };
   }, []);
 
+  // Supabase Auth session listener and auto-refresh
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email) {
+        const staffRoster = loadStaffRoster();
+        const matched = staffRoster.find(
+          (a) => a.email.toLowerCase() === session.user.email?.toLowerCase()
+        );
+        if (matched) {
+          setCurrentAdvocate(matched);
+          setIsAuthenticated(true);
+          saveAuthSession(matched, true);
+        }
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user?.email) {
+        const staffRoster = loadStaffRoster();
+        const matched = staffRoster.find(
+          (a) => a.email.toLowerCase() === session.user.email?.toLowerCase()
+        );
+        if (matched) {
+          setCurrentAdvocate(matched);
+          setIsAuthenticated(true);
+          saveAuthSession(matched, true);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        clearAuthSession();
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   // Auth Handlers
   const handleLogin = (advocate: Advocate) => {
     setCurrentAdvocate(advocate);
@@ -178,7 +232,15 @@ export default function App() {
     saveAuthSession(advocate, true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('[App] Supabase signOut notice:', err);
+      }
+    }
     clearAuthSession();
     setIsAuthenticated(false);
   };
@@ -264,6 +326,37 @@ export default function App() {
           } catch {}
         }
       });
+
+      // Purge dummy fee notes & dummy payments
+      const rawFeeNotes = localStorage.getItem('muthoni_ahago_fee_notes_v1');
+      if (rawFeeNotes) {
+        try {
+          const parsed = JSON.parse(rawFeeNotes);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((fn: any) => !isDummyFeeNote(fn));
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem('muthoni_ahago_fee_notes_v1', JSON.stringify(cleaned));
+              setFeeNotes(cleaned);
+            }
+            if (cleaned.length === 0) {
+              localStorage.removeItem('chambers_invoice_last_seq');
+            }
+          }
+        } catch {}
+      }
+
+      const rawPayments = localStorage.getItem('muthoni_ahago_payments_v1');
+      if (rawPayments) {
+        try {
+          const parsed = JSON.parse(rawPayments);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((p: any) => !isDummyPayment(p));
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem('muthoni_ahago_payments_v1', JSON.stringify(cleaned));
+            }
+          }
+        } catch {}
+      }
     } catch {}
   }, []);
 
@@ -315,6 +408,7 @@ export default function App() {
         setDeadlines(snapshot.deadlines || []);
         setActivities(snapshot.activities || []);
         setNotifications(snapshot.notifications || []);
+        setFeeNotes(snapshot.feeNotes || []);
       } catch (err) {
         console.warn('[App] Direct cloud data fetch error, maintaining cached store:', err);
       }
@@ -439,6 +533,26 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [backupSuccessToast]);
 
+  // Global Chambers Application Toast Stack
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  useEffect(() => {
+    const handleToast = (e: CustomEvent<ToastItem>) => {
+      if (e?.detail) {
+        const item = e.detail;
+        setToasts((prev) => [item, ...prev].slice(0, 5));
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== item.id));
+        }, item.duration || 5000);
+      }
+    };
+
+    window.addEventListener('chambers-app-toast', handleToast as EventListener);
+    return () => {
+      window.removeEventListener('chambers-app-toast', handleToast as EventListener);
+    };
+  }, []);
+
   // Scoped active matters for counts & badges
   const scopedActiveMatters = isManagingAdvocate
     ? matters.filter((m) => m.status !== 'Archived')
@@ -447,99 +561,112 @@ export default function App() {
       );
 
   // Handlers with Direct Cloud Persistence
-  const handleAddMatter = (newMatter: LegalMatter) => {
-    setMatters([newMatter, ...matters]);
-    ChambersCloudService.upsertMatter(newMatter);
-
-    // In-App Notification and email to assigned advocate
+  const handleAddMatter = async (newMatter: LegalMatter) => {
     try {
-      const inAppNotif = createMatterAssignmentNotification(
-        newMatter,
-        currentAdvocate.name,
-        advocates,
-        false
-      );
-      setNotifications((prev) => [inAppNotif, ...prev]);
+      await persistSingleMatter(newMatter);
+      setMatters((prev) => [newMatter, ...prev.filter((m) => m.id !== newMatter.id)]);
+      toast.success(`Matter ${newMatter.referenceNumber} created and saved to cloud.`);
 
-      if (inAppNotif.emailPayload) {
-        dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
-          console.warn('[App] Matter assignment email dispatch notice:', err);
-        });
+      // In-App Notification and email to assigned advocate
+      try {
+        const inAppNotif = createMatterAssignmentNotification(
+          newMatter,
+          currentAdvocate.name,
+          advocates,
+          false
+        );
+        setNotifications((prev) => [inAppNotif, ...prev]);
+
+        if (inAppNotif.emailPayload) {
+          dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
+            console.warn('[App] Matter assignment email dispatch notice:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to record matter assignment notification:', err);
       }
-    } catch (err) {
-      console.warn('Failed to record matter assignment notification:', err);
-    }
 
-    // Log Activity locally and directly to Supabase cloud
-    const newActivity = {
-      id: `act-${Date.now()}`,
-      type: 'Court Event' as const,
-      title: 'New Matter Registered in Firm Workspace',
-      description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
-      timestamp: new Date().toISOString(),
-      user: currentAdvocate.name,
-      matterId: newMatter.id,
-      matterRef: newMatter.referenceNumber,
-    };
-    setActivities([newActivity, ...activities]);
-    ChambersCloudService.recordActivity(newActivity);
+      // Log Activity locally and directly to Supabase cloud
+      const newActivity = {
+        id: `act-${Date.now()}`,
+        type: 'Court Event' as const,
+        title: 'New Matter Registered in Firm Workspace',
+        description: `${newMatter.referenceNumber}: ${newMatter.title} assigned to ${newMatter.responsibleAdvocateName}`,
+        timestamp: new Date().toISOString(),
+        user: currentAdvocate.name,
+        matterId: newMatter.id,
+        matterRef: newMatter.referenceNumber,
+      };
+      setActivities((prev) => [newActivity, ...prev]);
+      ChambersCloudService.recordActivity(newActivity);
+    } catch (err: any) {
+      console.error('[App] Failed to save matter:', err);
+      toast.error(`Failed to save matter: ${err.message || 'Database rejected save'}`);
+      throw err;
+    }
   };
 
-  const handleUpdateMatter = (updatedMatter: LegalMatter) => {
+  const handleUpdateMatter = async (updatedMatter: LegalMatter) => {
     const prevMatter = matters.find((m) => m.id === updatedMatter.id);
     const isReassigned =
       prevMatter &&
       (prevMatter.responsibleAdvocateId !== updatedMatter.responsibleAdvocateId ||
         prevMatter.responsibleAdvocateName !== updatedMatter.responsibleAdvocateName);
 
-    // If assigned advocate changed, dispatch in-app and email reassignment notification
-    if (isReassigned) {
-      try {
-        const inAppNotif = createMatterAssignmentNotification(
-          updatedMatter,
-          currentAdvocate.name,
-          advocates,
-          true
-        );
-        setNotifications((prev) => [inAppNotif, ...prev]);
-
-        if (inAppNotif.emailPayload) {
-          dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
-            console.warn('[App] Matter reassignment email dispatch notice:', err);
-          });
-        }
-      } catch (err) {
-        console.warn('Failed to record matter reassignment notification:', err);
+    try {
+      await persistSingleMatter(updatedMatter);
+      setMatters((prev) =>
+        prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m))
+      );
+      if (selectedMatter && selectedMatter.id === updatedMatter.id) {
+        setSelectedMatter(updatedMatter);
       }
+      toast.success(`Matter ${updatedMatter.referenceNumber} updated.`);
+
+      // If assigned advocate changed, dispatch in-app and email reassignment notification
+      if (isReassigned) {
+        try {
+          const inAppNotif = createMatterAssignmentNotification(
+            updatedMatter,
+            currentAdvocate.name,
+            advocates,
+            true
+          );
+          setNotifications((prev) => [inAppNotif, ...prev]);
+
+          if (inAppNotif.emailPayload) {
+            dispatchAssignmentEmail(inAppNotif.emailPayload).catch((err) => {
+              console.warn('[App] Matter reassignment email dispatch notice:', err);
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to record matter reassignment notification:', err);
+        }
+      }
+
+      // Log Activity locally and to Cloud
+      const updateActivity = {
+        id: `act-${Date.now()}`,
+        type: 'Status Change' as const,
+        title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
+        description: isReassigned
+          ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
+          : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
+        timestamp: new Date().toISOString(),
+        user: currentAdvocate.name,
+        matterId: updatedMatter.id,
+        matterRef: updatedMatter.referenceNumber,
+      };
+      setActivities((prev) => [updateActivity, ...prev]);
+      ChambersCloudService.recordActivity(updateActivity);
+    } catch (err: any) {
+      console.error('[App] Failed to update matter:', err);
+      toast.error(`Failed to update matter: ${err.message || 'Database rejected save'}`);
+      throw err;
     }
-
-    setMatters((prev) =>
-      prev.map((m) => (m.id === updatedMatter.id ? updatedMatter : m))
-    );
-    ChambersCloudService.upsertMatter(updatedMatter);
-
-    if (selectedMatter && selectedMatter.id === updatedMatter.id) {
-      setSelectedMatter(updatedMatter);
-    }
-
-    // Log Activity locally and to Cloud
-    const updateActivity = {
-      id: `act-${Date.now()}`,
-      type: 'Status Change' as const,
-      title: isReassigned ? 'Matter Counsel Reassigned' : 'Matter Record Updated',
-      description: isReassigned
-        ? `${updatedMatter.referenceNumber} reassigned to ${updatedMatter.responsibleAdvocateName} by ${currentAdvocate.name}`
-        : `${updatedMatter.referenceNumber}: ${updatedMatter.title} (${updatedMatter.status}) updated by ${currentAdvocate.name}`,
-      timestamp: new Date().toISOString(),
-      user: currentAdvocate.name,
-      matterId: updatedMatter.id,
-      matterRef: updatedMatter.referenceNumber,
-    };
-    setActivities((prev) => [updateActivity, ...prev]);
-    ChambersCloudService.recordActivity(updateActivity);
   };
 
-  const handleDeleteMatter = (matterId: string) => {
+  const handleDeleteMatter = async (matterId: string) => {
     const isSysAdmin = isSysAdminUser(currentAdvocate);
     const canDelete =
       isSysAdmin ||
@@ -548,52 +675,64 @@ export default function App() {
       currentAdvocate.id === 'adv-1';
 
     if (!canDelete) {
-      alert('Unauthorized: Only System Admin and Managing Advocate can delete a matter.');
+      toast.error('Unauthorized: Only System Admin and Managing Advocate can delete a matter.');
       return;
     }
 
     const matterToDelete = matters.find((m) => m.id === matterId);
 
-    setMatters((prev) => prev.filter((m) => m.id !== matterId));
-    ChambersCloudService.deleteMatter(matterId);
+    try {
+      await deleteStoredMatter(matterId);
+      setMatters((prev) => prev.filter((m) => m.id !== matterId));
+      if (selectedMatter && selectedMatter.id === matterId) {
+        setSelectedMatter(null);
+      }
+      toast.success(`Matter ${matterToDelete?.referenceNumber || matterId} deleted.`);
 
-    if (selectedMatter && selectedMatter.id === matterId) {
-      setSelectedMatter(null);
+      // Log Activity
+      const deleteActivity = {
+        id: `act-${Date.now()}`,
+        type: 'Status Change' as const,
+        title: 'Matter Record Deleted',
+        description: `${matterToDelete?.referenceNumber || matterId}: ${matterToDelete?.title || 'Matter'} deleted by ${currentAdvocate.name}`,
+        timestamp: new Date().toISOString(),
+        user: currentAdvocate.name,
+        matterId,
+        matterRef: matterToDelete?.referenceNumber || '',
+      };
+      setActivities((prev) => [deleteActivity, ...prev]);
+      ChambersCloudService.recordActivity(deleteActivity);
+    } catch (err: any) {
+      console.error('[App] Failed to delete matter:', err);
+      toast.error(`Failed to delete matter: ${err.message || 'Database rejected delete'}`);
     }
-
-    // Log Activity
-    const deleteActivity = {
-      id: `act-${Date.now()}`,
-      type: 'Status Change' as const,
-      title: 'Matter Record Deleted',
-      description: `${matterToDelete?.referenceNumber || matterId}: ${matterToDelete?.title || 'Matter'} deleted by ${currentAdvocate.name}`,
-      timestamp: new Date().toISOString(),
-      user: currentAdvocate.name,
-      matterId,
-      matterRef: matterToDelete?.referenceNumber || '',
-    };
-    setActivities((prev) => [deleteActivity, ...prev]);
-    ChambersCloudService.recordActivity(deleteActivity);
   };
 
-  const handleAddTask = (newTask: TaskItem) => {
-    setTasks((prev) => [newTask, ...prev]);
-    ChambersCloudService.upsertTask(newTask);
-
-    // In-App Notification to assigned advocate
+  const handleAddTask = async (newTask: TaskItem) => {
     try {
-      const targetMatter = matters.find(
-        (m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef
-      );
-      const inAppNotif = createTaskAssignmentNotification(
-        newTask,
-        advocates,
-        targetMatter,
-        currentAdvocate.name
-      );
-      setNotifications((prev) => [inAppNotif, ...prev]);
-    } catch (err) {
-      console.warn('Failed to record task assignment notification:', err);
+      await persistSingleTask(newTask);
+      setTasks((prev) => [newTask, ...prev.filter((t) => t.id !== newTask.id)]);
+      toast.success(`Task "${newTask.title}" saved.`);
+
+      // In-App Notification to assigned advocate
+      try {
+        const targetMatter = matters.find(
+          (m) => m.id === newTask.matterId || m.referenceNumber === newTask.matterRef
+        );
+        const inAppNotif = createTaskAssignmentNotification(
+          newTask,
+          advocates,
+          targetMatter,
+          currentAdvocate.name
+        );
+        setNotifications((prev) => [inAppNotif, ...prev]);
+      } catch (err) {
+        console.warn('Failed to record task assignment notification:', err);
+      }
+    } catch (err: any) {
+      console.error('[App] Failed to save task:', err);
+      toast.error(`Failed to save task: ${err.message || 'Database rejected save'}`);
+      throw err;
     }
   };
 
@@ -603,17 +742,24 @@ export default function App() {
       const nextIds = new Set(next.map((t) => t.id));
       prev.forEach((t) => {
         if (!nextIds.has(t.id)) {
-          ChambersCloudService.deleteTask(t.id);
+          deleteStoredTask(t.id).catch((err) => console.error('[App] Failed to delete task:', err));
         }
       });
-      next.forEach((t) => ChambersCloudService.upsertTask(t));
+      next.forEach((t) => persistSingleTask(t).catch((err) => console.error('[App] Failed to persist task:', err)));
       return next;
     });
   };
 
-  const handleAddClient = (newClient: Client) => {
-    setClients((prev) => [newClient, ...prev]);
-    ChambersCloudService.upsertClient(newClient);
+  const handleAddClient = async (newClient: Client) => {
+    try {
+      await persistSingleClient(newClient);
+      setClients((prev) => [newClient, ...prev.filter((c) => c.id !== newClient.id)]);
+      toast.success(`Client "${newClient.name}" saved.`);
+    } catch (err: any) {
+      console.error('[App] Failed to save client:', err);
+      toast.error(`Failed to save client: ${err.message || 'Database rejected save'}`);
+      throw err;
+    }
   };
 
   const handleUpdateClients = (updater: Client[] | ((prev: Client[]) => Client[])) => {
@@ -622,50 +768,69 @@ export default function App() {
       const nextIds = new Set(next.map((c) => c.id));
       prev.forEach((c) => {
         if (!nextIds.has(c.id)) {
-          ChambersCloudService.deleteClient(c.id);
+          deleteStoredClient(c.id).catch((err) => console.error('[App] Failed to delete client:', err));
         }
       });
-      next.forEach((c) => ChambersCloudService.upsertClient(c));
+      next.forEach((c) => persistSingleClient(c).catch((err) => console.error('[App] Failed to persist client:', err)));
       return next;
     });
   };
 
-  const handleUpdateMatterStatus = (id: string, newStatus: MatterStatus) => {
-    setMatters((prev) => {
-      const next = prev.map((m) => (m.id === id ? { ...m, status: newStatus } : m));
-      const target = next.find((m) => m.id === id);
-      if (target) ChambersCloudService.upsertMatter(target);
-      return next;
-    });
-    if (selectedMatter && selectedMatter.id === id) {
-      setSelectedMatter({ ...selectedMatter, status: newStatus });
+  const handleUpdateMatterStatus = async (id: string, newStatus: MatterStatus) => {
+    const target = matters.find((m) => m.id === id);
+    if (!target) return;
+    const updated = { ...target, status: newStatus };
+    try {
+      await persistSingleMatter(updated);
+      setMatters((prev) => prev.map((m) => (m.id === id ? updated : m)));
+      if (selectedMatter && selectedMatter.id === id) {
+        setSelectedMatter(updated);
+      }
+      toast.success(`Matter status updated to ${newStatus}.`);
+    } catch (err: any) {
+      toast.error(`Failed to update status: ${err.message || 'Database error'}`);
     }
   };
 
-  const handleUpdateMatterTags = (id: string, newTags: string[]) => {
-    setMatters((prev) => {
-      const next = prev.map((m) => (m.id === id ? { ...m, tags: newTags } : m));
-      const target = next.find((m) => m.id === id);
-      if (target) ChambersCloudService.upsertMatter(target);
-      return next;
-    });
-    if (selectedMatter && selectedMatter.id === id) {
-      setSelectedMatter({ ...selectedMatter, tags: newTags });
+  const handleUpdateMatterTags = async (id: string, newTags: string[]) => {
+    const target = matters.find((m) => m.id === id);
+    if (!target) return;
+    const updated = { ...target, tags: newTags };
+    try {
+      await persistSingleMatter(updated);
+      setMatters((prev) => prev.map((m) => (m.id === id ? updated : m)));
+      if (selectedMatter && selectedMatter.id === id) {
+        setSelectedMatter(updated);
+      }
+      toast.success('Matter tags updated.');
+    } catch (err: any) {
+      toast.error(`Failed to update tags: ${err.message || 'Database error'}`);
     }
   };
 
-  const handleToggleDeadline = (id: string) => {
-    setDeadlines((prev) => {
-      const next = prev.map((d) => (d.id === id ? { ...d, completed: !d.completed } : d));
-      const target = next.find((d) => d.id === id);
-      if (target) ChambersCloudService.upsertDeadline(target);
-      return next;
-    });
+  const handleToggleDeadline = async (id: string) => {
+    const target = deadlines.find((d) => d.id === id);
+    if (!target) return;
+    const updated = { ...target, completed: !target.completed };
+    try {
+      await persistSingleDeadline(updated);
+      setDeadlines((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      toast.success(updated.completed ? 'Deadline marked completed.' : 'Deadline marked pending.');
+    } catch (err: any) {
+      toast.error(`Failed to update deadline: ${err.message || 'Database error'}`);
+    }
   };
 
-  const handleAddDeadline = (newDl: DeadlineItem) => {
-    setDeadlines((prev) => [newDl, ...prev]);
-    ChambersCloudService.upsertDeadline(newDl);
+  const handleAddDeadline = async (newDl: DeadlineItem) => {
+    try {
+      await persistSingleDeadline(newDl);
+      setDeadlines((prev) => [newDl, ...prev.filter((d) => d.id !== newDl.id)]);
+      toast.success(`Deadline "${newDl.title}" registered.`);
+    } catch (err: any) {
+      console.error('[App] Failed to save deadline:', err);
+      toast.error(`Failed to save deadline: ${err.message || 'Database rejected save'}`);
+      throw err;
+    }
   };
 
   const handleMarkNotificationsRead = () => {
@@ -958,6 +1123,48 @@ export default function App() {
           </div>
         </aside>
       )}
+
+      {/* Toast Notification Container */}
+      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 pointer-events-none max-w-sm w-full">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-200 animate-in slide-in-from-top-2 ${
+              t.type === 'error'
+                ? 'bg-rose-950/95 border-rose-500/40 text-rose-100 shadow-rose-950/40'
+                : t.type === 'warning'
+                ? 'bg-amber-950/95 border-amber-500/40 text-amber-100 shadow-amber-950/40'
+                : t.type === 'info'
+                ? 'bg-sky-950/95 border-sky-500/40 text-sky-100 shadow-sky-950/40'
+                : 'bg-emerald-950/95 border-emerald-500/40 text-emerald-100 shadow-emerald-950/40'
+            }`}
+            role="alert"
+          >
+            <div className="shrink-0 mt-0.5">
+              {t.type === 'error' ? (
+                <AlertCircle className="w-4 h-4 text-rose-400" />
+              ) : t.type === 'warning' ? (
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+              ) : t.type === 'info' ? (
+                <Info className="w-4 h-4 text-sky-400" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              )}
+            </div>
+            <div className="flex-1 text-xs leading-relaxed font-medium">
+              {t.message}
+            </div>
+            <button
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+              className="shrink-0 p-1 rounded-md text-white/50 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              aria-label="Dismiss toast"
+            >
+              <CloseIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* Admin-Only Data Backup Modal */}
       <AdminBackupModal

@@ -35,6 +35,7 @@ import {
   TaskItem,
   AuditLogEntry,
 } from '../types';
+import ChambersCloudService from '../services/chambersCloudService';
 
 export type TimelineEventType = 'court' | 'meeting' | 'filing' | 'deadline' | 'note' | 'billing';
 
@@ -96,13 +97,29 @@ export const MatterTimeline: React.FC<MatterTimelineProps> = ({
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Cloud hydration for timeline events
   useEffect(() => {
+    if (!matter?.id) return;
+    let cancelled = false;
+    ChambersCloudService.fetchMatterTimelineEvents(matter.id).then((cloudEvents) => {
+      if (!cancelled && cloudEvents && Array.isArray(cloudEvents) && cloudEvents.length > 0) {
+        setLocalEvents(cloudEvents);
+        try {
+          localStorage.setItem(`chambers_timeline_events_${matter.id}`, JSON.stringify(cloudEvents));
+        } catch {}
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [matter?.id]);
+
+  useEffect(() => {
+    if (!matter?.id) return;
     try {
       localStorage.setItem(`chambers_timeline_events_${matter.id}`, JSON.stringify(localEvents));
     } catch (e) {
       console.warn('Failed to save timeline events:', e);
     }
-  }, [localEvents, matter.id]);
+  }, [localEvents, matter?.id]);
 
   // New Event Form State
   const [newTitle, setNewTitle] = useState('');
@@ -365,6 +382,7 @@ export const MatterTimeline: React.FC<MatterTimelineProps> = ({
     };
 
     setLocalEvents([newEv, ...localEvents]);
+    ChambersCloudService.upsertMatterTimelineEvent({ ...newEv, matterId: matter.id }).catch(() => {});
     if (onAddEvent) onAddEvent(newEv);
 
     setShowAddModal(false);

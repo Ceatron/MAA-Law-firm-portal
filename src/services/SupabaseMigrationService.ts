@@ -26,6 +26,8 @@ import {
   loadSavedLeaveBalances,
   loadSavedActivities,
   loadSavedNotifications,
+  isDummyFeeNote,
+  isDummyPayment,
 } from '../utils/chambersDataStorage';
 import { loadStaffRoster } from '../utils/staffStorage';
 import { getStoredInteractions } from '../utils/clientServicesStorage';
@@ -534,7 +536,33 @@ export class SupabaseMigrationService {
     for (const key of LOCAL_STORAGE_KEYS) {
       const config = KEY_TABLE_MAP[key];
       const targetTable = config.table;
-      const rawRecords = this.getRecordsForKey(key);
+      let rawRecords = this.getRecordsForKey(key);
+
+      // Rule R3 & AGENTS.md: Never seed or migrate fake/dummy/demo records into production
+      if (key === 'fee_notes') {
+        rawRecords = rawRecords.filter((rec) => !isDummyFeeNote(rec));
+      } else if (key === 'payments') {
+        rawRecords = rawRecords.filter((rec) => !isDummyPayment(rec));
+      } else if (key === 'matters') {
+        rawRecords = rawRecords.filter(
+          (rec) =>
+            rec &&
+            rec.referenceNumber !== 'MAA/CIV/2026/735' &&
+            !rec.referenceNumber?.includes('735') &&
+            rec.id !== 'mat-dummy-735'
+        );
+      } else if (key === 'tasks') {
+        rawRecords = rawRecords.filter(
+          (rec) =>
+            rec &&
+            rec.id !== 'tsk-1' &&
+            rec.id !== 'tsk-4' &&
+            !rec.title?.includes('Draft Replying Affidavit on Injunction Notice of Motion') &&
+            !rec.title?.includes('E-file Hearing Bundle on CTS and Serve Milimani Commercial Registry') &&
+            rec.matterRef !== 'MAA/CIV/2026/735' &&
+            !rec.matterRef?.includes('735')
+        );
+      }
 
       const normalizedRecords = rawRecords.map((rec, index) =>
         normalizeRecordForTable(key, rec, index)
@@ -640,9 +668,9 @@ export class SupabaseMigrationService {
       resultsByKey[key] = keyResult;
     }
 
-    const isSuccess = true;
+    const isSuccess = errors.length === 0;
 
-    if (typeof localStorage !== 'undefined') {
+    if (isSuccess && typeof localStorage !== 'undefined') {
       localStorage.setItem('migrated_to_supabase', 'true');
       localStorage.setItem(
         'migrated_to_supabase_metadata',
@@ -651,11 +679,15 @@ export class SupabaseMigrationService {
           totalRecordsUpserted,
           totalRecordsFound,
           keysProcessed: LOCAL_STORAGE_KEYS.length,
-          errorsCount: errors.length,
+          errorsCount: 0,
         })
       );
       console.info(
-        `[SupabaseMigrationService] Migration completed successfully. 'localStorage.setItem("migrated_to_supabase", "true")' invoked.`
+        `[SupabaseMigrationService] Migration completed successfully with 0 errors. 'migrated_to_supabase' set to true.`
+      );
+    } else if (!isSuccess) {
+      console.warn(
+        `[SupabaseMigrationService] Migration encountered ${errors.length} error(s). 'migrated_to_supabase' will NOT be set.`
       );
     }
 
@@ -922,7 +954,14 @@ export class SupabaseMigrationService {
     const client = getSupabaseClient();
     if (!client) return false;
 
-    console.info('[SupabaseMigrationService] First-boot unmigrated state detected with valid Supabase config. Executing initial cloud migration...');
+    // Ensure active authenticated session exists so RLS allows inserts
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.user) {
+      console.info('[SupabaseMigrationService] Waiting for authenticated user session before cloud migration.');
+      return false;
+    }
+
+    console.info('[SupabaseMigrationService] First-boot unmigrated state detected with authenticated session. Executing initial cloud migration...');
     try {
       const res = await this.executeMigration({ force: false, clientOverride: client });
       return res.success;

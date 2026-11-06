@@ -20,6 +20,7 @@ import { LegalTemplate, TemplateCategory } from '../types';
 import { INITIAL_TEMPLATES, TEMPLATE_VARIABLES } from '../data/mockTemplates';
 import { TemplateEditorModal } from './TemplateEditorModal';
 import { mockMatters, mockClients } from '../data/mockData';
+import ChambersCloudService from '../services/chambersCloudService';
 
 const LOCAL_STORAGE_KEY = 'maa_chambers_legal_templates_v1';
 
@@ -48,10 +49,26 @@ export const TemplateManager: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
 
-  // Save templates to localStorage
+  // Save templates to localStorage & sync
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(templates));
   }, [templates]);
+
+  // Initial cloud hydration
+  useEffect(() => {
+    let cancelled = false;
+    ChambersCloudService.fetchLegalTemplates().then((cloudTemplates) => {
+      if (!cancelled && cloudTemplates && Array.isArray(cloudTemplates) && cloudTemplates.length > 0) {
+        setTemplates(cloudTemplates);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cloudTemplates));
+        } catch {}
+      }
+    }).catch((err) => {
+      console.warn('[TemplateManager] Cloud load warning:', err);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -78,12 +95,18 @@ export const TemplateManager: React.FC = () => {
       isSystemDefault: false,
     };
     setTemplates((prev) => [copy, ...prev]);
+    ChambersCloudService.upsertLegalTemplate(copy).catch((err) =>
+      console.warn('[TemplateManager] Supabase upsert error:', err)
+    );
     showToast(`Template "${copy.title}" duplicated.`);
   };
 
   const handleDelete = (id: string, title: string) => {
     if (window.confirm(`Are you sure you want to delete the template "${title}"?`)) {
       setTemplates((prev) => prev.filter((t) => t.id !== id));
+      ChambersCloudService.deleteLegalTemplate(id).catch((err) =>
+        console.warn('[TemplateManager] Supabase delete error:', err)
+      );
       showToast(`Template "${title}" deleted.`);
     }
   };
@@ -104,6 +127,9 @@ export const TemplateManager: React.FC = () => {
         return [savedTmpl, ...prev];
       }
     });
+    ChambersCloudService.upsertLegalTemplate(savedTmpl).catch((err) =>
+      console.warn('[TemplateManager] Supabase save error:', err)
+    );
     showToast(`Template "${savedTmpl.title}" saved successfully.`);
   };
 
