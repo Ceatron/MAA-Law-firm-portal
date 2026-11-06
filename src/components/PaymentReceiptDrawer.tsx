@@ -1,18 +1,10 @@
-import React, { useRef } from 'react';
-import {
-  X,
-  Printer,
-  Download,
-  Share2,
-  CheckCircle2,
-  Receipt,
-  Building,
-  ShieldCheck,
-  CreditCard,
-  Calendar,
-} from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { X, Printer, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { PaymentRecord, FeeNote } from '../types';
-import { CompanyLogo } from './CompanyLogo';
+import { loadChambersSettings } from '../utils/settingsStorage';
+import { loadSavedPayments } from '../utils/chambersDataStorage';
 
 interface PaymentReceiptDrawerProps {
   isOpen: boolean;
@@ -28,276 +20,433 @@ export const PaymentReceiptDrawer: React.FC<PaymentReceiptDrawerProps> = ({
   linkedInvoice,
 }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   if (!isOpen || !payment) return null;
+
+  const settings = loadChambersSettings();
+  const navyColor = settings.brandNavyColor || '#14233C';
+  const slateColor = '#5A6475';
+  const lightGreyColor = '#F5F6F8';
+  const hairlineColor = '#D9DDE4';
+
+  const shortAddress =
+    settings.physicalAddress ||
+    '1st Floor, The Triple Two Address, Along the Eastern Bypass, Ruiru';
+
+  // Format Date: "3 November 2026"
+  const formatReceiptDate = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = d.getDate();
+    const month = d.toLocaleDateString('en-GB', { month: 'long' });
+    const year = d.getFullYear();
+    return `${day} ${month} ${year}`;
+  };
+
+  // Format Currency: "KES 25,000.00"
+  const formatCurrencyKES = (amount: number): string => {
+    const formatted = amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `KES ${formatted}`;
+  };
+
+  // Amount in words with hyphenated compound numbers e.g. "Twenty-Five"
+  const numberToWordsKES = (amount: number): string => {
+    const units = [
+      '',
+      'One',
+      'Two',
+      'Three',
+      'Four',
+      'Five',
+      'Six',
+      'Seven',
+      'Eight',
+      'Nine',
+      'Ten',
+      'Eleven',
+      'Twelve',
+      'Thirteen',
+      'Fourteen',
+      'Fifteen',
+      'Sixteen',
+      'Seventeen',
+      'Eighteen',
+      'Nineteen',
+    ];
+    const tens = [
+      '',
+      '',
+      'Twenty',
+      'Thirty',
+      'Forty',
+      'Fifty',
+      'Sixty',
+      'Seventy',
+      'Eighty',
+      'Ninety',
+    ];
+
+    if (amount === 0) return 'Zero Kenya Shillings Only';
+
+    const convertLessThanOneThousand = (n: number): string => {
+      let result = '';
+      if (n >= 100) {
+        result += units[Math.floor(n / 100)] + ' Hundred';
+        n %= 100;
+        if (n > 0) result += ' ';
+      }
+      if (n >= 20) {
+        result += tens[Math.floor(n / 10)];
+        if (n % 10 > 0) {
+          result += '-' + units[n % 10]; // Hyphenate compound numbers per design spec
+        }
+      } else if (n > 0) {
+        result += units[n];
+      }
+      return result.trim();
+    };
+
+    const whole = Math.floor(Math.abs(amount));
+    let words = '';
+
+    if (whole >= 1000000) {
+      const millions = Math.floor(whole / 1000000);
+      words += convertLessThanOneThousand(millions) + ' Million ';
+    }
+    const remainderAfterMillions = whole % 1000000;
+    if (remainderAfterMillions >= 1000) {
+      const thousands = Math.floor(remainderAfterMillions / 1000);
+      words += convertLessThanOneThousand(thousands) + ' Thousand ';
+    }
+    const remainderAfterThousands = remainderAfterMillions % 1000;
+    if (remainderAfterThousands > 0) {
+      words += convertLessThanOneThousand(remainderAfterThousands) + ' ';
+    }
+
+    const trimmed = words.trim();
+    return `${trimmed || 'Zero'} Kenya Shillings Only`;
+  };
+
+  // Derive firm monogram initials if no uploaded logo
+  const getFirmInitials = (name?: string): string => {
+    if (!name) return 'MA';
+    const words = name
+      .replace(/\s+Advocates$/i, '')
+      .trim()
+      .split(/\s+/);
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0][0] + (words[1] ? words[1][0] : '')).toUpperCase();
+  };
+
+  // Data Rule: Balance due = invoice total minus ALL payments recorded including this one
+  const allSavedPayments = loadSavedPayments();
+  const matchingPayments = allSavedPayments.filter(
+    (p) =>
+      (payment.invoiceId && p.invoiceId === payment.invoiceId) ||
+      (payment.invoiceNumber && p.invoiceNumber === payment.invoiceNumber) ||
+      (linkedInvoice && (p.invoiceId === linkedInvoice.id || p.invoiceNumber === linkedInvoice.invoiceNumber))
+  );
+
+  const hasCurrentPayment = matchingPayments.some(
+    (p) => p.id === payment.id || (p.receiptNumber && p.receiptNumber === payment.receiptNumber)
+  );
+  const allRecordedPayments = hasCurrentPayment
+    ? matchingPayments
+    : [...matchingPayments, payment];
+
+  const activePayments = allRecordedPayments.filter((p) => p.status !== 'VOID' || p.id === payment.id);
+  const totalPaidToDate = activePayments.reduce((sum, p) => sum + (Number(p.amountKES) || 0), 0);
+
+  const totalInvoiceAmount =
+    (linkedInvoice?.totalKES && linkedInvoice.totalKES > 0)
+      ? linkedInvoice.totalKES
+      : (payment.invoiceTotalKES && payment.invoiceTotalKES > 0)
+      ? payment.invoiceTotalKES
+      : (linkedInvoice?.balanceKES !== undefined && linkedInvoice?.amountPaidKES !== undefined)
+      ? linkedInvoice.amountPaidKES + linkedInvoice.balanceKES
+      : payment.amountKES;
+
+  const balanceDue = Math.max(0, totalInvoiceAmount - totalPaidToDate);
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleDownload = () => {
-    alert(`Payment Receipt ${payment.receiptNumber} downloaded successfully as PDF.`);
+  const handleDownload = async () => {
+    if (!receiptRef.current) return;
+    setIsDownloading(true);
+    try {
+      const element = receiptRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, Math.min(pageHeight, imgHeight));
+      pdf.save(`Receipt-${payment.receiptNumber}.pdf`);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      window.print();
+    } finally {
+      setIsDownloading(false);
+    }
   };
-
-  // Convert numbers to words helper (for Kenyan legal receipts)
-  const numberToWordsKES = (amount: number): string => {
-    const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    
-    if (amount === 0) return 'Zero';
-    
-    function convertLessThanOneThousand(n: number): string {
-      let current = '';
-      if (n >= 100) {
-        current += units[Math.floor(n / 100)] + ' Hundred ';
-        n %= 100;
-      }
-      if (n >= 20) {
-        current += tens[Math.floor(n / 10)] + ' ';
-        n %= 10;
-      }
-      if (n > 0) {
-        current += units[n] + ' ';
-      }
-      return current.trim();
-    }
-
-    let wholeAmount = Math.floor(amount);
-    let words = '';
-
-    if (wholeAmount >= 1000000) {
-      words += convertLessThanOneThousand(Math.floor(wholeAmount / 1000000)) + ' Million ';
-      wholeAmount %= 1000000;
-    }
-    if (wholeAmount >= 1000) {
-      words += convertLessThanOneThousand(Math.floor(wholeAmount / 1000)) + ' Thousand ';
-      wholeAmount %= 1000;
-    }
-    if (wholeAmount > 0) {
-      words += convertLessThanOneThousand(wholeAmount);
-    }
-
-    return `${words.trim()} Kenya Shillings Only`;
-  };
-
-  const totalInvoiceAmount = linkedInvoice?.totalKES ?? payment.amountKES;
-  const currentPaid = linkedInvoice?.amountPaidKES ?? payment.amountKES;
-  const balanceDue = linkedInvoice?.balanceKES ?? Math.max(0, totalInvoiceAmount - currentPaid);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
-      <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col border-l border-stone-200">
-        
-        {/* Drawer Header */}
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-[#132c3f] text-white shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0098db]/20 text-[#0098db] border border-[#0098db]/40">
-              <Receipt className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="font-serif-title text-base font-bold text-white">
-                  Firm Workspace Official Payment Receipt
-                </h2>
-                <span className="rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 text-[10px] font-bold font-mono">
-                  VERIFIED
-                </span>
-              </div>
-              <p className="text-xs text-stone-300 font-mono">
-                {payment.receiptNumber} • {payment.paymentReference}
-              </p>
-            </div>
-          </div>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:p-0 print:bg-white animate-in fade-in duration-150">
+      <div className="w-full max-w-4xl bg-white rounded-lg shadow-2xl flex flex-col max-h-[96vh] print:max-h-none print:shadow-none print:rounded-none overflow-hidden">
+        {/* Minimal Modal Header */}
+        <div className="receipt-modal-chrome flex items-center justify-between border-b border-stone-200 px-6 py-3.5 bg-white text-slate-800 shrink-0">
+          <h2 className="font-sans text-sm font-semibold text-slate-800 tracking-tight">Receipt</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-stone-300 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
+            title="Close receipt"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Printable Receipt Body */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8 bg-stone-100/70">
+        {/* Scrollable Modal Body containing the A4 Printable Sheet */}
+        <div className="receipt-print-container flex-1 overflow-y-auto p-4 sm:p-8 bg-[#EDF0F4] print:bg-white print:p-0">
+          {/* Official Formal Legal Receipt Paper Sheet */}
           <div
             ref={receiptRef}
-            className="mx-auto max-w-2xl bg-white p-8 rounded-xl shadow-sm border border-stone-200 space-y-6 text-stone-800"
+            id="official-receipt-sheet"
+            style={{
+              borderTopColor: navyColor,
+              borderTopWidth: '8px',
+              borderTopStyle: 'solid',
+            }}
+            className="receipt-print-sheet mx-auto w-full max-w-[794px] min-h-[1050px] p-[56px] sm:p-[64px] bg-white flex flex-col justify-between font-inter text-slate-800 shadow-sm print:shadow-none print:min-h-0"
           >
-            
-            {/* Law Firm Header */}
-            <div className="border-b-2 border-[#132c3f] pb-5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center space-x-3">
-                  <CompanyLogo className="h-12 w-12 text-[#132c3f]" />
+            <div>
+              {/* 1. Letterhead */}
+              <div className="flex items-center gap-5">
+                {settings.logoUrl ? (
+                  <img
+                    src={settings.logoUrl}
+                    alt={settings.firmName}
+                    className="w-16 h-16 object-contain shrink-0"
+                  />
+                ) : (
+                  <div
+                    style={{ backgroundColor: navyColor }}
+                    className="w-14 h-14 shrink-0 flex items-center justify-center text-white font-playfair font-bold text-xl tracking-wider select-none"
+                  >
+                    {getFirmInitials(settings.firmName)}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h1
+                    style={{ color: navyColor }}
+                    className="font-playfair text-[25px] font-bold leading-tight tracking-tight"
+                  >
+                    {settings.firmName || 'Muthoni Ahago Advocates'}
+                  </h1>
+                  <p
+                    style={{ color: slateColor }}
+                    className="text-[11px] font-medium uppercase tracking-[0.2em] mt-1"
+                  >
+                    Advocates · Commissioners for Oaths · Notaries Public
+                  </p>
+                  <p style={{ color: slateColor }} className="text-[12px] mt-0.5">
+                    {shortAddress}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Thin Divider */}
+              <div
+                style={{ borderColor: hairlineColor }}
+                className="border-b my-7"
+              />
+
+              {/* 3. Title Row */}
+              <div className="flex items-baseline justify-between mb-8">
+                <h2
+                  style={{ color: navyColor }}
+                  className="font-playfair text-[34px] font-bold leading-none tracking-tight"
+                >
+                  Official Receipt
+                </h2>
+                <div className="text-right text-[13px] space-y-1">
                   <div>
-                    <h1 className="font-serif-title text-lg font-bold text-[#132c3f] tracking-tight">
-                      MUTHONI AHAGO & ASSOCIATES
-                    </h1>
-                    <p className="text-[11px] font-semibold text-stone-600 uppercase tracking-wider">
-                      Advocates • Commissioners for Oaths • Notaries Public
-                    </p>
-                    <p className="text-[10px] text-stone-500">
-                      Upper Hill Chambers, 4th Floor, 2nd Ngong Ave, Nairobi • Tel: +254 20 271 0000
-                    </p>
+                    <span style={{ color: slateColor }}>Receipt No. </span>
+                    <span style={{ color: navyColor }} className="font-semibold">
+                      {payment.receiptNumber}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: slateColor }}>Date </span>
+                    <span style={{ color: navyColor }} className="font-semibold">
+                      {formatReceiptDate(payment.paymentDate)}
+                    </span>
                   </div>
                 </div>
+              </div>
 
-                <div className="text-right sm:border-l sm:border-stone-200 sm:pl-4">
-                  <span className="inline-block rounded bg-emerald-100 text-emerald-900 px-2.5 py-1 text-xs font-bold font-mono uppercase tracking-wider">
-                    OFFICIAL RECEIPT
+              {/* 4. Two Columns */}
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div>
+                  <span
+                    style={{ color: slateColor }}
+                    className="text-[10px] font-semibold uppercase tracking-[0.18em] block"
+                  >
+                    RECEIVED FROM
                   </span>
-                  <p className="text-xs font-mono font-bold text-stone-900 mt-1">
-                    {payment.receiptNumber}
+                  <p
+                    style={{ color: navyColor }}
+                    className="text-[17px] font-semibold mt-1 leading-snug"
+                  >
+                    {payment.clientName}
                   </p>
-                  <p className="text-[10px] text-stone-500">
-                    Date: {new Date(payment.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+                <div>
+                  <span
+                    style={{ color: slateColor }}
+                    className="text-[10px] font-semibold uppercase tracking-[0.18em] block"
+                  >
+                    IN RESPECT OF
+                  </span>
+                  <p
+                    style={{ color: navyColor }}
+                    className="text-[17px] font-semibold mt-1 leading-snug"
+                  >
+                    Invoice {payment.invoiceNumber}
                   </p>
+                </div>
+              </div>
+
+              {/* 5. Payment Table */}
+              <div className="mb-6">
+                <div
+                  style={{ borderTopColor: navyColor, borderTopWidth: '2px', borderTopStyle: 'solid' }}
+                  className="pt-2"
+                >
+                  <div
+                    className="grid grid-cols-12 py-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                    style={{ color: slateColor }}
+                  >
+                    <div className="col-span-7">Payment method</div>
+                    <div className="col-span-5 text-right">Amount received</div>
+                  </div>
+                  <div
+                    style={{ borderColor: hairlineColor }}
+                    className="grid grid-cols-12 py-4 border-b items-baseline"
+                  >
+                    <div className="col-span-7 text-[15px] font-medium" style={{ color: navyColor }}>
+                      {payment.paymentMethod}
+                      {payment.paymentReference ? ` · ${payment.paymentReference}` : ''}
+                    </div>
+                    <div
+                      style={{ color: navyColor }}
+                      className="col-span-5 text-right text-[20px] font-semibold leading-none"
+                    >
+                      {formatCurrencyKES(payment.amountKES)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Light Grey Strip: Amount in words */}
+              <div
+                style={{ backgroundColor: lightGreyColor, borderColor: hairlineColor }}
+                className="px-5 py-3.5 mb-8 border flex items-center justify-between gap-4"
+              >
+                <span
+                  style={{ color: slateColor }}
+                  className="text-[10px] font-semibold uppercase tracking-[0.18em] shrink-0"
+                >
+                  AMOUNT IN WORDS
+                </span>
+                <span
+                  style={{ color: navyColor }}
+                  className="font-playfair text-[15px] font-semibold text-right"
+                >
+                  {numberToWordsKES(payment.amountKES)}
+                </span>
+              </div>
+
+              {/* 7. Right-aligned summary block, 340px wide */}
+              <div className="w-[340px] ml-auto space-y-2 mb-12">
+                <div className="flex justify-between items-baseline text-[14px]">
+                  <span style={{ color: slateColor }}>Invoice total</span>
+                  <span style={{ color: navyColor }} className="font-medium">
+                    {formatCurrencyKES(totalInvoiceAmount)}
+                  </span>
+                </div>
+                <div
+                  style={{ borderTopColor: navyColor, borderTopWidth: '2px', borderTopStyle: 'solid' }}
+                  className="pt-2 flex justify-between items-baseline text-[16px] font-bold"
+                >
+                  <span style={{ color: navyColor }}>Balance due</span>
+                  <span style={{ color: navyColor }}>
+                    {formatCurrencyKES(balanceDue)}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Client & Matter Particulars */}
-            <div className="grid grid-cols-2 gap-4 rounded-lg bg-stone-50 p-4 border border-stone-200 text-xs">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-stone-400 block mb-1">
-                  Received From (Client)
-                </span>
-                <p className="font-bold text-stone-900 text-sm">{payment.clientName}</p>
-                {linkedInvoice?.clientKraPin && (
-                  <p className="text-[11px] font-mono text-stone-600">KRA PIN: {linkedInvoice.clientKraPin}</p>
-                )}
-                {linkedInvoice?.clientAddress && (
-                  <p className="text-[11px] text-stone-500 truncate">{linkedInvoice.clientAddress}</p>
-                )}
-              </div>
-
-              <div>
-                <span className="text-[10px] uppercase font-bold text-stone-400 block mb-1">
-                  Against Invoice / Matter
-                </span>
-                <p className="font-mono font-bold text-[#0098db]">{payment.invoiceNumber}</p>
-                <p className="text-[11px] font-medium text-stone-700 mt-0.5 line-clamp-2">
-                  {payment.matterTitle || linkedInvoice?.matterTitle || 'General Legal Representation'}
+            {/* 8. Pinned to the bottom: Empty signature line & simple navy RECEIVED stamp */}
+            <div className="mt-auto pt-14 flex items-end justify-between">
+              <div className="space-y-2">
+                <div style={{ borderColor: navyColor }} className="w-56 border-b" />
+                <p
+                  style={{ color: slateColor }}
+                  className="text-[10px] font-medium uppercase tracking-[0.18em]"
+                >
+                  Authorised signature & date
                 </p>
               </div>
-            </div>
-
-            {/* Payment Details Section */}
-            <div className="rounded-xl border border-stone-200 overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
-                  <tr>
-                    <th className="py-2.5 px-4">Payment Method</th>
-                    <th className="py-2.5 px-4 font-mono">Reference / Trans No.</th>
-                    <th className="py-2.5 px-4 text-right">Amount Received (KES)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  <tr>
-                    <td className="py-3 px-4 font-bold text-stone-900 flex items-center space-x-2">
-                      <CreditCard className="h-4 w-4 text-[#0098db]" />
-                      <span>{payment.paymentMethod}</span>
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-stone-800">
-                      {payment.paymentReference}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-base text-emerald-800">
-                      KES {payment.amountKES.toLocaleString()}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Amount in Words */}
-            <div className="rounded-lg bg-blue-50/70 border border-blue-200/80 p-3 text-xs">
-              <span className="text-[10px] uppercase font-bold text-blue-900 block">
-                Amount in Words:
-              </span>
-              <p className="font-serif italic font-bold text-blue-950 text-sm mt-0.5">
-                {numberToWordsKES(payment.amountKES)}
-              </p>
-            </div>
-
-            {/* Notes if any */}
-            {payment.notes && (
-              <div className="text-xs text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-200">
-                <strong className="text-stone-800 block text-[11px] mb-0.5">Particulars / Notes:</strong>
-                <p>{payment.notes}</p>
-              </div>
-            )}
-
-            {/* Invoice Settlement Status */}
-            <div className="border-t border-stone-200 pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
-              <div className="space-y-1">
-                <span className="text-stone-500">Invoice Total: <strong className="font-mono text-stone-800">KES {totalInvoiceAmount.toLocaleString()}</strong></span>
-                <br />
-                <span className="text-stone-500">Total Paid to Date: <strong className="font-mono text-emerald-700">KES {currentPaid.toLocaleString()}</strong></span>
-              </div>
-
-              <div className="rounded-lg bg-stone-50 p-3 border border-stone-200 text-right sm:min-w-48">
-                <span className="text-[11px] text-stone-500 block">Remaining Invoice Balance</span>
-                <span className={`font-mono text-base font-bold ${balanceDue === 0 ? 'text-emerald-700' : 'text-amber-800'}`}>
-                  KES {balanceDue.toLocaleString()}
-                </span>
-                <p className="text-[10px] font-bold mt-0.5">
-                  {balanceDue === 0 ? '✓ Fully Settled' : '⚠️ Partial Settlement'}
-                </p>
+              <div
+                style={{ borderColor: navyColor, color: navyColor }}
+                className="border-2 px-5 py-2 font-playfair font-bold text-base tracking-[0.25em] uppercase select-none transform -rotate-3"
+              >
+                RECEIVED
               </div>
             </div>
-
-            {/* Sign-off and Stamp block */}
-            <div className="pt-6 border-t-2 border-stone-200 grid grid-cols-2 gap-6 text-[11px]">
-              <div>
-                <p className="font-bold text-stone-800">Received By:</p>
-                <div className="h-10 flex items-end">
-                  <span className="font-serif italic text-stone-600 text-sm font-semibold">
-                    {payment.receivedBy || 'Finance & Accounts Desk'}
-                  </span>
-                </div>
-                <p className="border-t border-stone-300 pt-1 text-stone-400">Authorized Signature & Date</p>
-              </div>
-
-              <div className="text-right">
-                <p className="font-bold text-stone-800">Firm Workspace Stamp:</p>
-                <div className="h-10 flex items-center justify-end">
-                  <span className="inline-block rounded-full border-2 border-dashed border-[#0098db]/60 text-[#0098db] px-3 py-1 text-[10px] font-bold uppercase tracking-wider">
-                    ★ MUTHONI AHAGO CASH RECEIVED ★
-                  </span>
-                </div>
-                <p className="border-t border-stone-300 pt-1 text-stone-400">Advocates Client Trust Account</p>
-              </div>
-            </div>
-
           </div>
         </div>
 
-        {/* Action Footer */}
-        <div className="border-t border-stone-200 p-4 bg-white flex items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-stone-500">
-            Receipt: <strong className="font-mono text-stone-900">{payment.receiptNumber}</strong>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="flex items-center space-x-1.5 rounded-lg border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
-            >
-              <Printer className="h-4 w-4" />
-              <span>Print Receipt</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="flex items-center space-x-1.5 rounded-lg bg-[#0098db] text-white px-4 py-2 text-xs font-bold hover:bg-[#0087c2] transition-colors cursor-pointer shadow-xs"
-            >
-              <Download className="h-4 w-4" />
-              <span>Download PDF</span>
-            </button>
-          </div>
+        {/* Minimal Action Footer */}
+        <div className="receipt-modal-chrome flex items-center justify-end space-x-3 border-t border-stone-200 px-6 py-4 bg-white shrink-0">
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="flex items-center space-x-1.5 rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-stone-50 transition-colors cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-slate-500" />
+            <span>Print</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            style={{ backgroundColor: navyColor }}
+            className="flex items-center space-x-1.5 rounded-lg text-white px-5 py-2 text-xs font-bold hover:opacity-95 transition-opacity cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            <span>{isDownloading ? 'Generating PDF...' : 'Download PDF'}</span>
+          </button>
         </div>
-
       </div>
     </div>
   );

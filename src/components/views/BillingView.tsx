@@ -110,12 +110,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
         ]);
         if (isCancelled) return;
         if (cloudNotes && cloudNotes.length > 0) {
-          setFeeNotes(cloudNotes);
-          saveStoredFeeNotesCache(cloudNotes);
+          const cleanNotes = cloudNotes.filter((fn) => !isDummyFeeNote(fn));
+          setFeeNotes(cleanNotes);
+          saveStoredFeeNotesCache(cleanNotes);
         }
         if (cloudPayments && cloudPayments.length > 0) {
-          setPayments(cloudPayments);
-          saveStoredPaymentsCache(cloudPayments);
+          const cleanPayments = cloudPayments.filter((p) => !isDummyPayment(p));
+          setPayments(cleanPayments);
+          saveStoredPaymentsCache(cleanPayments);
         }
         if (cloudQuotes && cloudQuotes.length > 0) {
           setQuotes(cloudQuotes);

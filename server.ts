@@ -4,6 +4,7 @@ dotenv.config();
 import express from "express";
 import http from "http";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -415,6 +416,125 @@ Always format output clearly using Markdown:
     }
   });
 
+  // ============================================================
+  // Payment Recording & Server-Side Atomic Receipt Numbering
+  // Format: [FIRMCODE]-RCP-[YEAR]-[0000] (e.g. MAA-RCP-2026-0001)
+  // One counter per firm resetting each year; never reused or deleted.
+  // ============================================================
+  const RECEIPT_COUNTERS_FILE = path.join(process.cwd(), "server_receipt_counters.json");
+  const PAYMENTS_LOG_FILE = path.join(process.cwd(), "server_payments_log.json");
+
+  const loadCounters = (): Record<string, number> => {
+    try {
+      if (fs.existsSync(RECEIPT_COUNTERS_FILE)) {
+        return JSON.parse(fs.readFileSync(RECEIPT_COUNTERS_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.warn("[Receipt Counter] Could not read counters file:", e);
+    }
+    return {};
+  };
+
+  const saveCounters = (counters: Record<string, number>) => {
+    try {
+      fs.writeFileSync(RECEIPT_COUNTERS_FILE, JSON.stringify(counters, null, 2), "utf-8");
+    } catch (e) {
+      console.error("[Receipt Counter] Could not save counters file:", e);
+    }
+  };
+
+  const loadPaymentsLog = (): any[] => {
+    try {
+      if (fs.existsSync(PAYMENTS_LOG_FILE)) {
+        return JSON.parse(fs.readFileSync(PAYMENTS_LOG_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.warn("[Payments Log] Could not read log file:", e);
+    }
+    return [];
+  };
+
+  const appendPaymentLog = (payment: any) => {
+    try {
+      const logs = loadPaymentsLog();
+      const existingIdx = logs.findIndex((p: any) => p.id === payment.id || (p.receiptNumber && p.receiptNumber === payment.receiptNumber));
+      if (existingIdx >= 0) {
+        logs[existingIdx] = payment;
+      } else {
+        logs.push(payment);
+      }
+      fs.writeFileSync(PAYMENTS_LOG_FILE, JSON.stringify(logs, null, 2), "utf-8");
+    } catch (e) {
+      console.error("[Payments Log] Could not append payment log:", e);
+    }
+  };
+
+  app.post("/api/payments/record", (req, res) => {
+    try {
+      const { payment, firmCode = "MAA" } = req.body;
+      if (!payment || typeof payment !== "object") {
+        return res.status(400).json({ success: false, error: "Payment payload is required." });
+      }
+
+      const cleanFirmCode = (firmCode || "MAA").trim().toUpperCase();
+      const paymentDate = payment.paymentDate || new Date().toISOString().split("T")[0];
+      const year = new Date(paymentDate).getFullYear() || new Date().getFullYear();
+      const counterKey = `${cleanFirmCode}-${year}`;
+
+      const counters = loadCounters();
+      const currentVal = counters[counterKey] || 0;
+      const nextVal = currentVal + 1;
+      counters[counterKey] = nextVal;
+      saveCounters(counters);
+
+      const receiptNumber = `${cleanFirmCode}-RCP-${year}-${String(nextVal).padStart(4, "0")}`;
+      const paymentId = payment.id || `pay-${Date.now()}-${nextVal}`;
+
+      const finalPayment = {
+        ...payment,
+        id: paymentId,
+        receiptNumber,
+        firmCode: cleanFirmCode,
+        paymentDate,
+        status: "ACTIVE",
+        createdAt: payment.createdAt || new Date().toISOString(),
+      };
+
+      appendPaymentLog(finalPayment);
+
+      return res.json({
+        success: true,
+        receiptNumber,
+        payment: finalPayment,
+      });
+    } catch (err: any) {
+      console.error("[Payments Record API Error]:", err);
+      return res.status(500).json({ success: false, error: err.message || "Failed to record payment on server." });
+    }
+  });
+
+  app.post("/api/payments/void", (req, res) => {
+    try {
+      const { paymentId, receiptNumber } = req.body;
+      if (!paymentId && !receiptNumber) {
+        return res.status(400).json({ success: false, error: "Payment ID or Receipt Number is required to void." });
+      }
+
+      const logs = loadPaymentsLog();
+      const match = logs.find((p: any) => p.id === paymentId || p.receiptNumber === receiptNumber);
+      if (match) {
+        match.status = "VOID";
+        match.voidedAt = new Date().toISOString();
+        fs.writeFileSync(PAYMENTS_LOG_FILE, JSON.stringify(logs, null, 2), "utf-8");
+        return res.json({ success: true, payment: match, message: `Receipt ${match.receiptNumber} marked as VOID.` });
+      }
+
+      return res.json({ success: true, message: "Receipt marked as VOID." });
+    } catch (err: any) {
+      console.error("[Payments Void API Error]:", err);
+      return res.status(500).json({ success: false, error: err.message || "Failed to void payment on server." });
+    }
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

@@ -218,7 +218,7 @@ export type PaymentMethod = 'M-Pesa' | 'Bank Transfer' | 'Cheque';
 
 export interface PaymentRecord {
   id: string;
-  receiptNumber: string; // e.g. "MAA-RCP-2026-001"
+  receiptNumber: string; // e.g. "MAA-RCP-2026-0001"
   paymentReference: string; // e.g. "MPESA-QWE12345", "TXN98231", "CHQ-88214"
   invoiceId: string;
   invoiceNumber: string;
@@ -231,6 +231,9 @@ export interface PaymentRecord {
   notes?: string;
   receivedBy?: string;
   createdAt: string;
+  status?: 'ACTIVE' | 'VOID';
+  invoiceTotalKES?: number;
+  firmCode?: string;
 }
 
 export type QuoteStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired' | 'Converted to Fee Note' | 'Converted to Invoice';
@@ -622,6 +625,9 @@ export interface ChambersSettings {
   firmName: string;
   tagline: string;
   logoUrl: string | null;
+  brandNavyColor?: string;
+  brandGoldColor?: string;
+  firmCode?: string;
   lskFirmRegNo: string;
   kraPin: string;
   physicalAddress: string;

@@ -23,6 +23,12 @@ import {
   Database,
   Download,
   Activity,
+  Search,
+  Filter,
+  Briefcase,
+  Award,
+  UserCheck,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Sliders,
@@ -45,7 +51,7 @@ import { CompanyLogo } from '../CompanyLogo';
 import { LoginAuditLogViewer } from '../LoginAuditLogViewer';
 import { DataHealthCheck } from '../DataHealthCheck';
 import { ChambersSettings, Advocate } from '../../types';
-import { isSysAdminUser } from '../../utils/staffStorage';
+import { isSysAdminUser, loadStaffRoster } from '../../utils/staffStorage';
 import {
   loadChambersSettings,
   saveChambersSettings,
@@ -66,17 +72,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenBackupModal,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'hub' | 'customization' | 'profile' | 'templates' | 'fee-notes' | 'integrations' | 'security' | 'data-health'
+    'hub' | 'customization' | 'profile' | 'taxes' | 'users' | 'roles' | 'templates' | 'fee-notes' | 'integrations' | 'security' | 'data-health'
   >('hub');
   const [customizationSubTab, setCustomizationSubTab] = useState<
     'pdf-templates' | 'transaction-series' | 'email-notifications'
   >('pdf-templates');
   const [settings, setSettings] = useState<ChambersSettings>(() => loadChambersSettings());
+  const [staffRoster, setStaffRoster] = useState<Advocate[]>(() => loadStaffRoster());
+  const [staffSearchQuery, setStaffSearchQuery] = useState<string>('');
+  const [staffRoleFilter, setStaffRoleFilter] = useState<string>('All');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
-  // Hydrate settings on mount and listen for real-time firm updates
+  // Hydrate settings on mount and listen for real-time firm & staff updates
   React.useEffect(() => {
     fetchAndHydrateChambersSettings()
       .then((fresh) => {
@@ -91,9 +100,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     };
 
+    const handleStaffUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<Advocate[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setStaffRoster(customEvent.detail);
+      } else {
+        setStaffRoster(loadStaffRoster());
+      }
+    };
+
     window.addEventListener('chambers-settings-updated', handleSettingsUpdate);
+    window.addEventListener('chambers-staff-updated', handleStaffUpdate);
     return () => {
       window.removeEventListener('chambers-settings-updated', handleSettingsUpdate);
+      window.removeEventListener('chambers-staff-updated', handleStaffUpdate);
     };
   }, []);
 
@@ -217,22 +237,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 onClick={() => setActiveTab('hub')}
                 className="hover:text-[#0070ba] transition-colors cursor-pointer font-medium text-stone-600 flex items-center space-x-1"
               >
-                <span>Organization Settings</span>
+                <span>All Settings</span>
               </button>
               <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
               <span className="font-bold text-[#0070ba]">
-                {activeTab === 'customization'
+                {activeTab === 'users'
+                  ? 'Users & Staff Roster'
+                  : activeTab === 'roles'
+                  ? 'Roles & Permissions'
+                  : activeTab === 'customization'
                   ? customizationSubTab === 'pdf-templates'
                     ? 'PDF Templates'
                     : 'Transaction Number Series'
                   : activeTab === 'profile'
                   ? 'Firm Profile'
+                  : activeTab === 'taxes'
+                  ? 'Taxes & Compliance'
                   : activeTab === 'templates'
                   ? 'Legal Document Templates'
                   : activeTab === 'fee-notes'
                   ? 'Fee Note Templates'
                   : activeTab === 'integrations'
                   ? 'Judiciary Integrations'
+                  : activeTab === 'data-health'
+                  ? 'Data Health Diagnostics'
                   : 'Security & Compliance'}
               </span>
             </div>
@@ -241,19 +269,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <h2 className="font-serif-title text-2xl font-bold text-[#1a1d20]">
             {activeTab === 'hub'
               ? 'Organization Settings'
+              : activeTab === 'users'
+              ? 'Users & Chambers Staff'
+              : activeTab === 'roles'
+              ? 'Chambers Roles & Permissions'
               : activeTab === 'customization'
               ? customizationSubTab === 'pdf-templates'
                 ? 'PDF Templates Customizer'
                 : 'Transaction Number Series'
               : activeTab === 'profile'
               ? 'Firm Practice Profile & Details'
+              : activeTab === 'taxes'
+              ? 'Taxes & Statutory Compliance'
+              : activeTab === 'data-health'
+              ? 'System & Storage Health Diagnostics'
               : 'Workspace Preferences'}
           </h2>
           <p className="mt-1 text-xs text-stone-600">
             {activeTab === 'hub'
               ? 'Configure your practice entity, roles, tax compliance, default numbering, and custom document templates.'
+              : activeTab === 'users'
+              ? 'Manage active advocates, partners, registry clerks, and chambers administrators across Muthoni & Ahago Advocates.'
+              : activeTab === 'roles'
+              ? 'Review role classifications, access control permissions, and statutory authorization matrices.'
               : activeTab === 'customization'
               ? 'Configure document styling, color schemes, and numbering series for Muthoni & Ahago Advocates'
+              : activeTab === 'taxes'
+              ? 'Configure Kenya Revenue Authority (KRA) tax identification, standard 16% VAT, and withholding tax terms'
+              : activeTab === 'data-health'
+              ? 'Real-time database connectivity, index integrity, and persistent browser storage diagnostics.'
               : `Configure ${settings.firmName} workspace details & preferences`}
           </p>
         </div>
@@ -266,24 +310,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="flex items-center space-x-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer shadow-2xs"
             >
               <ArrowLeft className="h-3.5 w-3.5 text-stone-500" />
-              <span>Back to Hub</span>
+              <span>All Settings</span>
             </button>
           )}
 
-          <button
-            type="button"
-            id="btn-settings-header-data-health"
-            onClick={() => setActiveTab('data-health')}
-            className={`flex items-center space-x-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-colors cursor-pointer shadow-2xs ${
-              activeTab === 'data-health'
-                ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
-                : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-            }`}
-            title="Database & Storage Health Diagnostics"
-          >
-            <Activity className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Data Health</span>
-          </button>
+          {isDevAdmin && (
+            <button
+              type="button"
+              id="btn-settings-header-data-health"
+              onClick={() => setActiveTab('data-health')}
+              className={`flex items-center space-x-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-colors cursor-pointer shadow-2xs ${
+                activeTab === 'data-health'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                  : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+              }`}
+              title="Database & Storage Health Diagnostics (Developer Only)"
+            >
+              <Activity className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Data Health</span>
+            </button>
+          )}
 
           {isDevAdmin && onOpenBackupModal && (
             <button
@@ -347,16 +393,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         Profile
                       </button>
                     </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('data-health')}
-                        className="hover:text-emerald-700 hover:underline cursor-pointer py-1 flex items-center justify-between w-full text-left font-semibold text-emerald-800"
-                      >
-                        <span>Data Health & Diagnostics</span>
-                        <Activity className="w-3.5 h-3.5 text-emerald-600" />
-                      </button>
-                    </li>
+                    {isDevAdmin && (
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('data-health')}
+                          className="hover:text-emerald-700 hover:underline cursor-pointer py-1 flex items-center justify-between w-full text-left font-semibold text-emerald-800"
+                        >
+                          <span>Data Health & Diagnostics</span>
+                          <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                        </button>
+                      </li>
+                    )}
                     {/* Branding: Marked inactive in production per user directive */}
                     <li className="flex items-center justify-between py-1 text-slate-400 cursor-not-allowed select-none">
                       <span className="font-medium text-slate-400">Branding</span>
@@ -368,26 +416,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
-              {/* Column 2: Users & Roles (Marked Inactive for production per user directive) */}
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 shadow-2xs space-y-3 opacity-65 flex flex-col justify-between">
+              {/* Column 2: Users & Roles (Active) */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 hover:border-rose-300 transition-colors flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center justify-between text-slate-500 font-bold text-sm border-b border-slate-200 pb-2.5">
+                  <div className="flex items-center justify-between text-rose-700 font-bold text-sm border-b border-rose-100 pb-2.5">
                     <div className="flex items-center space-x-2">
-                      <div className="p-1.5 rounded-lg bg-slate-200 text-slate-500">
+                      <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
                         <Users className="w-4 h-4" />
                       </div>
                       <span>Users & Roles</span>
                     </div>
-                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-200/90 px-1.5 py-0.5 rounded">
-                      Inactive
+                    <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                      {staffRoster.length} Active
                     </span>
                   </div>
-                  <ul className="space-y-1.5 text-xs text-slate-400 mt-2">
-                    <li className="flex items-center justify-between py-1 cursor-not-allowed select-none">
-                      <span className="font-medium">Users</span>
+                  <ul className="space-y-1.5 text-xs text-slate-600 mt-2">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('users')}
+                        className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
+                      >
+                        Users
+                      </button>
                     </li>
-                    <li className="flex items-center justify-between py-1 cursor-not-allowed select-none">
-                      <span className="font-medium">Roles</span>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('roles')}
+                        className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
+                      >
+                        Roles
+                      </button>
                     </li>
                   </ul>
                 </div>
@@ -406,7 +466,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <li>
                       <button
                         type="button"
-                        onClick={() => setActiveTab('profile')}
+                        onClick={() => setActiveTab('taxes')}
                         className="hover:text-[#0070ba] hover:underline cursor-pointer py-1 block w-full text-left font-medium text-slate-700"
                       >
                         Taxes
@@ -541,6 +601,603 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Tab Contents: Existing Sections */}
       {activeTab === 'templates' && <TemplateManager />}
       {activeTab === 'fee-notes' && <FeeNoteTemplateManager />}
+
+      {/* ============================================================ */}
+      {/* USERS & ROLES SECTIONS (ACTIVE IN PRODUCTION) */}
+      {/* ============================================================ */}
+      {(activeTab === 'users' || activeTab === 'roles') && (
+        <div className="space-y-5 text-xs animate-in fade-in duration-150">
+          {/* Sub-Tabs Switcher */}
+          <div className="flex items-center space-x-2 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center space-x-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'users'
+                  ? 'bg-white text-[#0070ba] shadow-xs ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Users className="w-4 h-4 text-[#0070ba]" />
+              <span>Users & Chambers Staff ({staffRoster.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('roles')}
+              className={`flex items-center space-x-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'roles'
+                  ? 'bg-white text-[#0070ba] shadow-xs ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-600" />
+              <span>Roles & Access Permissions Matrix</span>
+            </button>
+          </div>
+
+          {/* ACTIVE TAB: USERS LIST */}
+          {activeTab === 'users' && (
+            <div className="space-y-4">
+              {/* Search & Role Filter Header */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={staffSearchQuery}
+                    onChange={(e) => setStaffSearchQuery(e.target.value)}
+                    placeholder="Search by advocate name, email, roll number, or practice area..."
+                    className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0070ba] focus:outline-none"
+                  />
+                  {staffSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setStaffSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500 font-semibold text-[11px] whitespace-nowrap">Role Filter:</span>
+                  <select
+                    value={staffRoleFilter}
+                    onChange={(e) => setStaffRoleFilter(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-800 focus:border-[#0070ba] focus:outline-none cursor-pointer"
+                  >
+                    <option value="All">All Roles ({staffRoster.length})</option>
+                    <option value="Managing Advocate">Managing Advocate</option>
+                    <option value="Consultant Advocate">Consultant Advocate</option>
+                    <option value="Advocate">Advocate</option>
+                    <option value="Office Manager">Office Manager</option>
+                    <option value="Legal Support Clerk">Legal Support Clerk</option>
+                    <option value="System Admin">System Admin</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Staff Cards Grid */}
+              {(() => {
+                const query = staffSearchQuery.trim().toLowerCase();
+                const filtered = staffRoster.filter((member) => {
+                  const matchesRole = staffRoleFilter === 'All' || member.role === staffRoleFilter;
+                  if (!query) return matchesRole;
+                  const matchesSearch =
+                    member.name.toLowerCase().includes(query) ||
+                    member.email.toLowerCase().includes(query) ||
+                    member.role.toLowerCase().includes(query) ||
+                    (member.lskRollNo && member.lskRollNo.toLowerCase().includes(query)) ||
+                    (member.title && member.title.toLowerCase().includes(query)) ||
+                    (member.practiceArea && member.practiceArea.toLowerCase().includes(query));
+                  return matchesRole && matchesSearch;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+                      <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-700">No matching staff members found</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Try clearing your search query or role filter.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filtered.map((member) => {
+                      const isSysAdmin = member.role === 'System Admin' || Boolean(member.isSystemAdmin);
+                      const isManagingPartner = member.role === 'Managing Advocate';
+                      
+                      const roleBadgeColor = (() => {
+                        switch (member.role) {
+                          case 'Managing Advocate':
+                            return 'bg-purple-50 text-purple-800 border-purple-200';
+                          case 'Consultant Advocate':
+                            return 'bg-blue-50 text-blue-800 border-blue-200';
+                          case 'Advocate':
+                            return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                          case 'Office Manager':
+                            return 'bg-amber-50 text-amber-800 border-amber-200';
+                          case 'Legal Support Clerk':
+                            return 'bg-teal-50 text-teal-800 border-teal-200';
+                          case 'System Admin':
+                            return 'bg-slate-800 text-white border-slate-700';
+                          default:
+                            return 'bg-slate-100 text-slate-800 border-slate-200';
+                        }
+                      })();
+
+                      return (
+                        <div
+                          key={member.id}
+                          className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs hover:border-[#0070ba]/40 transition-all flex flex-col justify-between space-y-3"
+                        >
+                          {/* Card Header */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <img
+                                src={member.avatar || '/avatars/african_lawyer.jpg'}
+                                alt={member.name}
+                                className="w-12 h-12 rounded-full object-cover border-2 border-slate-200 shrink-0 bg-slate-100"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/avatars/african_lawyer.jpg';
+                                }}
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center space-x-1.5 flex-wrap">
+                                  <h4 className="font-serif-title font-bold text-slate-900 text-sm truncate">
+                                    {member.name}
+                                  </h4>
+                                  {isManagingPartner && (
+                                    <span className="text-[10px] bg-purple-100 text-purple-900 border border-purple-300 font-bold px-1.5 py-0.2 rounded shrink-0">
+                                      Partner
+                                    </span>
+                                  )}
+                                  {isSysAdmin && (
+                                    <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-300 font-bold px-1.5 py-0.2 rounded shrink-0">
+                                      Dev / Sys Admin
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-600 truncate mt-0.5" title={member.title}>
+                                  {member.title}
+                                </p>
+                                <div className="mt-1 flex items-center space-x-1.5">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${roleBadgeColor}`}>
+                                    {member.role}
+                                  </span>
+                                  {member.practiceArea && (
+                                    <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                                      {member.practiceArea}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span>Active</span>
+                            </span>
+                          </div>
+
+                          {/* Contact & Statutory Metadata */}
+                          <div className="bg-slate-50/80 rounded-lg p-2.5 border border-slate-100 space-y-1.5 text-[11px]">
+                            {member.lskRollNo && (
+                              <div className="flex items-center justify-between text-slate-700">
+                                <span className="font-medium text-slate-500">Roll / Registration No:</span>
+                                <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                  {member.lskRollNo}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between text-slate-700 truncate">
+                              <span className="font-medium text-slate-500 shrink-0">Official Email:</span>
+                              <a
+                                href={`mailto:${member.email}`}
+                                className="font-medium text-[#0070ba] hover:underline truncate ml-2 text-right"
+                              >
+                                {member.email}
+                              </a>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-700">
+                              <span className="font-medium text-slate-500">Chambers Phone:</span>
+                              <a href={`tel:${member.phone}`} className="font-medium text-slate-800 hover:text-[#0070ba]">
+                                {member.phone}
+                              </a>
+                            </div>
+                            {member.joinedDate && (
+                              <div className="flex items-center justify-between text-slate-500 text-[10px]">
+                                <span>Appointment Date:</span>
+                                <span>{member.joinedDate}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Permissions Chips */}
+                          <div className="pt-1 border-t border-slate-100">
+                            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
+                              Authorized Permissions:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {member.permissions?.canViewAllMatters ? (
+                                <span className="text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  ✓ All Matters
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium bg-slate-50 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded">
+                                  Assigned Matters Only
+                                </span>
+                              )}
+
+                              {member.permissions?.canEditBilling && (
+                                <span className="text-[10px] font-medium bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded">
+                                  ✓ Invoicing & Billing
+                                </span>
+                              )}
+
+                              {member.permissions?.canManageStaff && (
+                                <span className="text-[10px] font-medium bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded">
+                                  ✓ Staff Admin
+                                </span>
+                              )}
+
+                              {member.permissions?.canAccessTrustAudit && (
+                                <span className="text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                  ✓ Trust Escrow Audit
+                                </span>
+                              )}
+
+                              {member.permissions?.canViewFinancialInsights && (
+                                <span className="text-[10px] font-medium bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                  ✓ Revenue Insights
+                                </span>
+                              )}
+
+                              {member.permissions?.canExportReports && (
+                                <span className="text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded">
+                                  ✓ Export Reports
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ACTIVE TAB: ROLES & PERMISSIONS MATRIX */}
+          {activeTab === 'roles' && (
+            <div className="space-y-6">
+              {/* Role Classifications Description Cards */}
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="p-1.5 rounded-lg bg-purple-50 text-purple-700">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif-title font-bold text-slate-900 text-sm">
+                        Chambers Role Classifications & Governance
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Configured pursuant to the Advocates Act (Cap 16, Laws of Kenya) and LSK Practice Guidelines.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded">
+                    6 Practice Roles
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/40 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-purple-950 text-xs">Managing Advocate</span>
+                      <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
+                        Partner Tier
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-purple-900/80 leading-relaxed">
+                      Statutory practice partner with universal authorization over matter dockets, trust account audits, partner disbursements, fee notes, and advocate assignments.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/40 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-blue-950 text-xs">Consultant Advocate</span>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                        Senior Advisory
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-blue-900/80 leading-relaxed">
+                      Senior counsel providing high-level constitutional, energy, and tax law advisory. Exercises case oversight and exports statutory compliance reports.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-emerald-950 text-xs">Advocate</span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                        Associate Tier
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-900/80 leading-relaxed">
+                      Practicing advocate handling assigned litigation, pleadings drafting, conveyancing transactions, court diary schedules, and client communications.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/40 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-950 text-xs">Office Manager</span>
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                        Operations Head
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-900/80 leading-relaxed">
+                      Oversees day-to-day chambers administration, client onboarding, invoicing and fee note dispatch, and task coordination across practice groups.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50/40 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-teal-950 text-xs">Legal Support Clerk</span>
+                      <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
+                        Registry & CTS
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-teal-900/80 leading-relaxed">
+                      Registry filing, court service of process, Judiciary CTS portal document upload, and hearing date confirmation across Kenyan court stations.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-300 bg-slate-50 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">System Admin</span>
+                      <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded">
+                        Technical Lead
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-700 leading-relaxed">
+                      Technical administrator managing workspace database integrity, local storage backups, API integrations, and developer health diagnostics.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comprehensive Permissions Matrix Table */}
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div>
+                    <h3 className="font-serif-title font-bold text-slate-900 text-sm">
+                      Role & Permissions Access Matrix
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Granular operational authorization by practice role.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                    Strict RBAC Enforced
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-700">
+                        <th className="py-2.5 px-3 font-bold text-left">Security Permission / Capability</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">System Admin</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">Managing Advocate</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">Consultant Advocate</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">Advocate</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">Office Manager</th>
+                        <th className="py-2.5 px-2.5 font-bold text-center">Legal Clerk</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">View All Practice Matters</span>
+                          <span className="text-[11px] text-slate-500">Access files across all practice departments</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">Manage Staff Accounts & Roster</span>
+                          <span className="text-[11px] text-slate-500">Invite, configure roles, and set practicing credentials</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">Draft & Issue Invoices / Fee Notes</span>
+                          <span className="text-[11px] text-slate-500">Create tax fee notes, record client disbursements</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">Financial Insights & Revenue</span>
+                          <span className="text-[11px] text-slate-500">Chambers billings, partner draw calculations</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">Trust & Escrow Account Audit</span>
+                          <span className="text-[11px] text-slate-500">Advocates Trust Account Rules audit access</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3">
+                          <span className="font-semibold text-slate-800 block">Export Statutory & Practice Reports</span>
+                          <span className="text-[11px] text-slate-500">Case summaries, matter export PDFs, client statements</span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 inline" /></td>
+                        <td className="py-2.5 px-2.5 text-center text-slate-300 font-bold">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dedicated Taxes & Statutory Compliance View */}
+      {activeTab === 'taxes' && (
+        <div className="space-y-6 text-xs animate-in fade-in duration-150">
+          <div className="rounded-xl border border-[#d1d7dc] bg-white p-6 shadow-2xs space-y-6">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-4">
+              <div className="flex items-center space-x-2.5 font-serif-title font-bold text-stone-900 text-base">
+                <Percent className="h-5 w-5 text-[#0070ba]" />
+                <span>Taxes & Practice Compliance Settings</span>
+              </div>
+              <span className="rounded bg-blue-50 border border-blue-200 px-2.5 py-1 text-[11px] font-bold text-[#0070ba]">
+                Kenya Tax Compliance (KRA & LSK)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* KRA PIN */}
+              <div className="space-y-1.5">
+                <label className="block text-stone-700 font-bold">
+                  KRA Tax PIN Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={settings.kraPin}
+                  onChange={(e) => setSettings({ ...settings, kraPin: e.target.value.toUpperCase() })}
+                  placeholder="e.g. P0512839401Z"
+                  className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2.5 font-mono font-medium text-stone-900 focus:border-[#0070ba] focus:outline-none uppercase"
+                />
+                <p className="text-[11px] text-stone-500">
+                  Statutory PIN required for Tax Invoices, withholding tax certificates, and iTax filing reconciliations.
+                </p>
+              </div>
+
+              {/* LSK Firm Reg */}
+              <div className="space-y-1.5">
+                <label className="block text-stone-700 font-bold">
+                  Law Society of Kenya (LSK) Firm Reg No.
+                </label>
+                <input
+                  type="text"
+                  value={settings.lskFirmRegNo}
+                  onChange={(e) => setSettings({ ...settings, lskFirmRegNo: e.target.value })}
+                  placeholder="e.g. LSK/FIRM/2026/0411"
+                  className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2.5 font-mono font-medium text-stone-900 focus:border-[#0070ba] focus:outline-none"
+                />
+                <p className="text-[11px] text-stone-500">
+                  Regulatory registration displayed on fee notes, formal statements of account, and court pleadings.
+                </p>
+              </div>
+
+              {/* Standard VAT Card */}
+              <div className="rounded-xl border border-stone-200 bg-slate-50/70 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-800 text-xs uppercase tracking-wide">
+                    Standard Value Added Tax (VAT)
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    16.0% (Statutory Rate)
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-600">
+                  Kenya VAT Act standard statutory rate applied to professional legal fees, advisory charges, and retainer billing.
+                </p>
+                <div className="flex items-center space-x-2 pt-1 text-slate-700">
+                  <input
+                    type="checkbox"
+                    id="vat-auto-enabled"
+                    checked={true}
+                    disabled
+                    className="rounded border-slate-300 text-[#0070ba]"
+                  />
+                  <label htmlFor="vat-auto-enabled" className="text-[11px] font-medium text-slate-700">
+                    Auto-calculate 16% VAT on taxable professional fee note items
+                  </label>
+                </div>
+              </div>
+
+              {/* Withholding Tax Card */}
+              <div className="rounded-xl border border-stone-200 bg-slate-50/70 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-800 text-xs uppercase tracking-wide">
+                    Withholding Tax (WHT) Particulars
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                    5% Professional Fees
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-600">
+                  Clients withholding 5% income tax and 2% withholding VAT should remit against firm PIN: <strong className="font-mono">{settings.kraPin || 'P0512839401Z'}</strong>.
+                </p>
+                <div className="text-[11px] text-slate-500">
+                  Compliant with Income Tax Act (Cap 470, Laws of Kenya).
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-stone-200">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-2 rounded-lg bg-[#0070ba] px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#005a96] transition-colors cursor-pointer"
+              >
+                <Save className="h-4 w-4" />
+                <span>Save Tax Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'profile' && (
         <div className="space-y-6 text-xs animate-in fade-in duration-150">
@@ -1065,10 +1722,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {/* ============================================================ */}
-      {/* 8. DATABASE & STORAGE HEALTH CHECK */}
+      {/* 8. DATABASE & STORAGE HEALTH CHECK (Developer Only) */}
       {/* ============================================================ */}
-      {activeTab === 'data-health' && (
+      {activeTab === 'data-health' && isDevAdmin && (
         <DataHealthCheck currentAdvocate={currentAdvocate} />
+      )}
+
+      {activeTab === 'data-health' && !isDevAdmin && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center space-y-3">
+          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+            <Lock className="w-5 h-5" />
+          </div>
+          <h3 className="font-serif-title font-bold text-amber-950 text-base">Restricted Technical Diagnostics</h3>
+          <p className="text-xs text-amber-900/80 max-w-md mx-auto">
+            Database & storage health checks are restricted to technical administrators and system developers.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('hub')}
+            className="mt-2 inline-flex items-center space-x-1.5 rounded-lg bg-[#0070ba] px-4 py-2 text-xs font-bold text-white hover:bg-[#005a96] transition-colors cursor-pointer shadow-xs"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Return to All Settings</span>
+          </button>
+        </div>
       )}
     </div>
   );

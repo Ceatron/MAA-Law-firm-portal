@@ -78,8 +78,13 @@
   font-weight: 600;
 }
 
-.font-sans-body {
-  font-family: var(--font-sans);
+.font-sans-body,
+.font-inter {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.font-playfair {
+  font-family: 'Playfair Display', Georgia, serif;
 }
 
 /* Custom scrollbar styling for clean legal ops dashboard */
@@ -99,4 +104,50 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5);
+}
+
+/* Print Styles for Official Receipt Sheet */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  
+  body {
+    background: #ffffff !important;
+    color: #14233c !important;
+  }
+
+  /* Hide all modal chrome, backdrop, headers, footer buttons */
+  .receipt-modal-chrome,
+  .receipt-no-print,
+  nav,
+  header,
+  aside {
+    display: none !important;
+  }
+
+  /* Position printable receipt sheet cleanly on A4 paper */
+  .receipt-print-container {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+
+  .receipt-print-sheet {
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    border: none !important;
+    border-top: 8px solid #14233c !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+  }
 }

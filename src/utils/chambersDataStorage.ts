@@ -354,48 +354,53 @@ export const deleteStoredNotification = async (notificationId: string): Promise<
 
 export const isDummyFeeNote = (fn: any): boolean => {
   if (!fn) return true;
-  const id = String(fn.id || '');
-  const invNum = String(fn.invoiceNumber || '');
-  const clientName = String(fn.clientName || '');
-  const subject = String(fn.subject || '');
+  const id = String(fn.id || '').toLowerCase();
+  const invNum = String(fn.invoiceNumber || '').trim().toUpperCase();
+  const clientName = String(fn.clientName || fn.clientParticulars || '').toLowerCase();
+  const subject = String(fn.subject || fn.matterReference || '').toLowerCase();
+  const payRef = String(fn.paymentRef || '').toUpperCase();
 
   if (['fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(id)) {
     return true;
   }
-  if (['INV-000001', 'INV-000002', 'INV-000003'].includes(invNum)) {
-    if (
-      clientName.includes('Stanbic') ||
-      clientName.includes('Apex') ||
-      clientName.includes('East Africa') ||
-      subject.includes('Commercial Recovery') ||
-      subject.includes('ELC Environmental') ||
-      subject.includes('Tax Appeals') ||
-      fn.paymentRef === 'MPESA-SBK78231' ||
-      fn.paymentRef === 'TXN-APX99214' ||
-      fn.paymentRef === 'CHQ-EAG00192'
-    ) {
-      return true;
-    }
+  // User directive: Permanently remove the 3 dummy hardcoded invoices:
+  // - Stanbic Bank Kenya Limited (INV-000001, KES 450,000, MPESA-SBK78231)
+  // - Apex Properties Limited (INV-000002, KES 600,000, TXN-APX99214)
+  // - East Africa Grain Mills Limited (INV-000003, KES 750,000, CHQ-EAG00192)
+  if (
+    clientName.includes('stanbic') ||
+    clientName.includes('apex properties') ||
+    clientName.includes('apex') ||
+    clientName.includes('east africa grain') ||
+    clientName.includes('grain mills') ||
+    subject.includes('commercial recovery') ||
+    subject.includes('elc environmental') ||
+    subject.includes('tax appeals') ||
+    ['MPESA-SBK78231', 'TXN-APX99214', 'CHQ-EAG00192'].includes(payRef)
+  ) {
+    return true;
   }
   return false;
 };
 
 export const isDummyPayment = (p: any): boolean => {
   if (!p) return true;
-  const id = String(p.id || '');
-  const payRef = String(p.paymentReference || '');
-  const rcpNum = String(p.receiptNumber || '');
-  const invNum = String(p.invoiceNumber || '');
-  const invId = String(p.invoiceId || '');
-  const client = String(p.clientName || '');
+  const id = String(p.id || '').toLowerCase();
+  const payRef = String(p.paymentReference || '').trim().toUpperCase();
+  const rcpNum = String(p.receiptNumber || '').trim().toUpperCase();
+  const invNum = String(p.invoiceNumber || '').trim().toUpperCase();
+  const invId = String(p.invoiceId || '').toLowerCase();
+  const client = String(p.clientName || '').toLowerCase();
 
-  if (['pay-1', 'pay-2', 'pay-3'].includes(id)) return true;
+  if (['pay-1', 'pay-2', 'pay-3', 'fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(id) || ['fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(invId)) return true;
   if (['MPESA-SBK78231', 'TXN-APX99214', 'CHQ-EAG00192'].includes(payRef)) return true;
   if (['MAA-RCP-2026-001', 'MAA-RCP-2026-002', 'MAA-RCP-2026-003'].includes(rcpNum)) return true;
-  if (['fn-1', 'fn-2', 'fn-3', 'inv-1', 'inv-2', 'inv-3'].includes(invId)) return true;
   if (
-    ['INV-000001', 'INV-000002', 'INV-000003'].includes(invNum) &&
-    (client.includes('Stanbic') || client.includes('Apex') || client.includes('East Africa'))
+    client.includes('stanbic') ||
+    client.includes('apex properties') ||
+    client.includes('apex') ||
+    client.includes('east africa grain') ||
+    client.includes('grain mills')
   ) {
     return true;
   }

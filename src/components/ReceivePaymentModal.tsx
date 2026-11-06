@@ -224,11 +224,43 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
     setIsSaving(true);
 
     try {
-      const receiptNum = `MAA-RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      let serverPayment: PaymentRecord | null = null;
+      try {
+        const resp = await fetch('/api/payments/record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payment: {
+              paymentReference: paymentReference.trim().toUpperCase(),
+              invoiceId: selectedInvoice.id,
+              invoiceNumber: selectedInvoice.invoiceNumber,
+              clientId: selectedInvoice.clientId || selectedClientId || 'client-gen',
+              clientName: selectedInvoice.clientName,
+              matterTitle: selectedInvoice.matterTitle,
+              amountKES: parsedAmount,
+              paymentMethod: paymentMethod,
+              paymentDate: paymentDate,
+              notes: notes.trim() || undefined,
+              receivedBy: 'Firm Workspace Invoicing Desk',
+              invoiceTotalKES: selectedInvoice.totalKES,
+            },
+            firmCode: 'MAA',
+          }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.success && data.payment) {
+            serverPayment = data.payment;
+          }
+        }
+      } catch (srvErr) {
+        console.warn('[ReceivePaymentModal] Server receipt generation notice:', srvErr);
+      }
 
-      const newPayment: PaymentRecord = {
+      const year = paymentDate ? new Date(paymentDate).getFullYear() : new Date().getFullYear();
+      const newPayment: PaymentRecord = serverPayment || {
         id: `pay-${Date.now()}`,
-        receiptNumber: receiptNum,
+        receiptNumber: `MAA-RCP-${year}-0001`,
         paymentReference: paymentReference.trim().toUpperCase(),
         invoiceId: selectedInvoice.id,
         invoiceNumber: selectedInvoice.invoiceNumber,
@@ -241,6 +273,8 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
         notes: notes.trim() || undefined,
         receivedBy: 'Firm Workspace Invoicing Desk',
         createdAt: new Date().toISOString(),
+        invoiceTotalKES: selectedInvoice.totalKES,
+        status: 'ACTIVE',
       };
 
       await onRecordPayment(newPayment);
